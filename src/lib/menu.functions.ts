@@ -13,7 +13,7 @@ function serverPublicClient() {
 export const getPublicMenu = createServerFn({ method: "GET" }).handler(async () => {
   const supabase = serverPublicClient();
   const { data, error } = await supabase
-    .from("menu_items" as never)
+    .from("menu_items" as any)
     .select("id,name,description,price_bs,stock,image_url,category,is_active")
     .eq("is_active", true)
     .eq("category", "non_seasonal")
@@ -44,11 +44,11 @@ export const placeOrder = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => orderInput.parse(data))
   .handler(async ({ data }) => {
     const supabase = serverPublicClient();
-    const { data: orderId, error } = await supabase.rpc("place_order" as never, {
+    const { data: orderId, error } = await supabase.rpc("place_order" as any, {
       _discord_username: data.discord_username,
       _note: data.note ?? null,
       _items: data.items,
-    } as never);
+    } as any);
     if (error) throw new Error(error.message);
     return { order_id: orderId as unknown as string };
   });
@@ -57,7 +57,7 @@ export const getOrder = createServerFn({ method: "GET" })
   .inputValidator((data: unknown) => z.object({ id: z.string().uuid() }).parse(data))
   .handler(async ({ data }) => {
     const supabase = serverPublicClient();
-    const { data: rows, error } = await supabase.rpc("get_order_public" as never, { _order_id: data.id } as never);
+    const { data: rows, error } = await supabase.rpc("get_order_public" as any, { _order_id: data.id } as any);
     if (error) throw new Error(error.message);
     const first = Array.isArray(rows) ? rows[0] : rows;
     if (!first) throw new Error("Order not found");
@@ -76,7 +76,7 @@ export const getOrder = createServerFn({ method: "GET" })
 
 async function assertStaff(context: { supabase: ReturnType<typeof createClient<Database>>; userId: string }) {
   const { data, error } = await context.supabase
-    .from("user_roles" as never)
+    .from("user_roles" as any)
     .select("role")
     .eq("user_id", context.userId);
   if (error) throw new Error(error.message);
@@ -91,7 +91,7 @@ export const getMyRoles = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data } = await context.supabase
-      .from("user_roles" as never)
+      .from("user_roles" as any)
       .select("role")
       .eq("user_id", context.userId);
     const roles = (data as Array<{ role: string }> | null)?.map((r) => r.role) ?? [];
@@ -103,7 +103,7 @@ export const listAllMenu = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await assertStaff(context);
     const { data, error } = await context.supabase
-      .from("menu_items" as never)
+      .from("menu_items" as any)
       .select("*")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
@@ -137,12 +137,12 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
     if (!isAdmin) throw new Error("Admin only");
     const payload = { ...data, category: "non_seasonal" as const };
     if (data.id) {
-      const { error } = await context.supabase.from("menu_items" as never).update(payload).eq("id", data.id);
+      const { error } = await context.supabase.from("menu_items" as any).update(payload).eq("id", data.id);
       if (error) throw new Error(error.message);
       return { id: data.id };
     }
     const { data: row, error } = await context.supabase
-      .from("menu_items" as never)
+      .from("menu_items" as any)
       .insert(payload)
       .select("id")
       .single();
@@ -156,7 +156,7 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     const { isAdmin } = await assertStaff(context);
     if (!isAdmin) throw new Error("Admin only");
-    const { error } = await context.supabase.from("menu_items" as never).delete().eq("id", data.id);
+    const { error } = await context.supabase.from("menu_items" as any).delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -166,14 +166,14 @@ export const listOrders = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await assertStaff(context);
     const { data: orders, error } = await context.supabase
-      .from("orders" as never)
+      .from("orders" as any)
       .select("*")
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
     const ids = ((orders as Array<{ id: string }> | null) ?? []).map((o) => o.id);
     const { data: items } = ids.length
-      ? await context.supabase.from("order_items" as never).select("*").in("order_id", ids)
+      ? await context.supabase.from("order_items" as any).select("*").in("order_id", ids)
       : { data: [] as Array<Record<string, unknown>> };
     return {
       orders: (orders ?? []) as Array<{
@@ -206,7 +206,7 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertStaff(context);
     const { error } = await context.supabase
-      .from("orders" as never)
+      .from("orders" as any)
       .update({ status: data.status })
       .eq("id", data.id);
     if (error) throw new Error(error.message);
@@ -219,7 +219,7 @@ export const listStaffUsers = createServerFn({ method: "GET" })
     const { isAdmin } = await assertStaff(context);
     if (!isAdmin) throw new Error("Admin only");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: userRoles } = await context.supabase.from("user_roles" as never).select("user_id,role");
+    const { data: userRoles } = await context.supabase.from("user_roles" as any).select("user_id,role");
     const { data: usersResp, error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
     if (error) throw new Error(error.message);
     const roles = (userRoles as Array<{ user_id: string; role: string }> | null) ?? [];
@@ -241,12 +241,12 @@ export const setUserRole = createServerFn({ method: "POST" })
     if (!isAdmin) throw new Error("Admin only");
     if (data.enabled) {
       const { error } = await context.supabase
-        .from("user_roles" as never)
+        .from("user_roles" as any)
         .upsert({ user_id: data.user_id, role: data.role }, { onConflict: "user_id,role" });
       if (error) throw new Error(error.message);
     } else {
       const { error } = await context.supabase
-        .from("user_roles" as never)
+        .from("user_roles" as any)
         .delete()
         .eq("user_id", data.user_id)
         .eq("role", data.role);
@@ -276,7 +276,7 @@ export const createStaffUser = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const uid = created.user!.id;
     const { error: rerr } = await context.supabase
-      .from("user_roles" as never)
+      .from("user_roles" as any)
       .upsert({ user_id: uid, role: data.role }, { onConflict: "user_id,role" });
     if (rerr) throw new Error(rerr.message);
     return { id: uid };
