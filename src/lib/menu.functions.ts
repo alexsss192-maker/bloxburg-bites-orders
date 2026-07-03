@@ -19,7 +19,7 @@ export const getPublicMenu = createServerFn({ method: "GET" }).handler(async () 
     .eq("category", "non_seasonal")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []) as Array<{
+  return (data ?? []) as unknown as Array<{
     id: string;
     name: string;
     description: string;
@@ -61,7 +61,7 @@ export const getOrder = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     const first = Array.isArray(rows) ? rows[0] : rows;
     if (!first) throw new Error("Order not found");
-    return first as {
+    return first as unknown as {
       id: string;
       discord_username: string;
       note: string | null;
@@ -80,7 +80,7 @@ async function assertStaff(context: { supabase: ReturnType<typeof createClient<D
     .select("role")
     .eq("user_id", context.userId);
   if (error) throw new Error(error.message);
-  const roles = (data as Array<{ role: string }> | null)?.map((r) => r.role) ?? [];
+  const roles = (data as unknown as Array<{ role: string }> | null)?.map((r) => r.role) ?? [];
   const isAdmin = roles.includes("admin");
   const isChef = roles.includes("chef");
   if (!isAdmin && !isChef) throw new Error("Forbidden");
@@ -94,7 +94,7 @@ export const getMyRoles = createServerFn({ method: "GET" })
       .from("user_roles" as any)
       .select("role")
       .eq("user_id", context.userId);
-    const roles = (data as Array<{ role: string }> | null)?.map((r) => r.role) ?? [];
+    const roles = (data as unknown as Array<{ role: string }> | null)?.map((r) => r.role) ?? [];
     return { roles, isAdmin: roles.includes("admin"), isChef: roles.includes("chef") };
   });
 
@@ -107,7 +107,7 @@ export const listAllMenu = createServerFn({ method: "GET" })
       .select("*")
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return data as Array<{
+    return data as unknown as Array<{
       id: string;
       name: string;
       description: string;
@@ -147,7 +147,7 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    return { id: (row as { id: string }).id };
+    return { id: (row as unknown as { id: string }).id };
   });
 
 export const deleteMenuItem = createServerFn({ method: "POST" })
@@ -171,12 +171,12 @@ export const listOrders = createServerFn({ method: "GET" })
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) throw new Error(error.message);
-    const ids = ((orders as Array<{ id: string }> | null) ?? []).map((o) => o.id);
+    const ids = ((orders as unknown as Array<{ id: string }> | null) ?? []).map((o) => o.id);
     const { data: items } = ids.length
       ? await context.supabase.from("order_items" as any).select("*").in("order_id", ids)
-      : { data: [] as Array<Record<string, unknown>> };
+      : { data: [] as unknown as Array<Record<string, unknown>> };
     return {
-      orders: (orders ?? []) as Array<{
+      orders: (orders ?? []) as unknown as Array<{
         id: string;
         discord_username: string;
         note: string | null;
@@ -184,7 +184,7 @@ export const listOrders = createServerFn({ method: "GET" })
         status: string;
         created_at: string;
       }>,
-      items: (items ?? []) as Array<{
+      items: (items ?? []) as unknown as Array<{
         order_id: string;
         item_name: string;
         quantity: number;
@@ -222,7 +222,7 @@ export const listStaffUsers = createServerFn({ method: "GET" })
     const { data: userRoles } = await context.supabase.from("user_roles" as any).select("user_id,role");
     const { data: usersResp, error } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 200 });
     if (error) throw new Error(error.message);
-    const roles = (userRoles as Array<{ user_id: string; role: string }> | null) ?? [];
+    const roles = (userRoles as unknown as Array<{ user_id: string; role: string }> | null) ?? [];
     return usersResp.users.map((u) => ({
       id: u.id,
       email: u.email ?? "",
