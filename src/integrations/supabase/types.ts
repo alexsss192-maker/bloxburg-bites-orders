@@ -14,16 +14,177 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      menu_items: {
+        Row: {
+          category: Database["public"]["Enums"]["food_category"]
+          created_at: string
+          description: string
+          id: string
+          image_url: string | null
+          is_active: boolean
+          name: string
+          price_bs: number
+          stock: number
+          updated_at: string
+        }
+        Insert: {
+          category?: Database["public"]["Enums"]["food_category"]
+          created_at?: string
+          description?: string
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name: string
+          price_bs: number
+          stock?: number
+          updated_at?: string
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["food_category"]
+          created_at?: string
+          description?: string
+          id?: string
+          image_url?: string | null
+          is_active?: boolean
+          name?: string
+          price_bs?: number
+          stock?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      order_items: {
+        Row: {
+          id: string
+          item_name: string
+          menu_item_id: string
+          order_id: string
+          quantity: number
+          unit_price_bs: number
+        }
+        Insert: {
+          id?: string
+          item_name: string
+          menu_item_id: string
+          order_id: string
+          quantity: number
+          unit_price_bs: number
+        }
+        Update: {
+          id?: string
+          item_name?: string
+          menu_item_id?: string
+          order_id?: string
+          quantity?: number
+          unit_price_bs?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_menu_item_id_fkey"
+            columns: ["menu_item_id"]
+            isOneToOne: false
+            referencedRelation: "menu_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          created_at: string
+          discord_username: string
+          id: string
+          note: string | null
+          status: Database["public"]["Enums"]["order_status"]
+          total_bs: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          discord_username: string
+          id?: string
+          note?: string | null
+          status?: Database["public"]["Enums"]["order_status"]
+          total_bs?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          discord_username?: string
+          id?: string
+          note?: string | null
+          status?: Database["public"]["Enums"]["order_status"]
+          total_bs?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_order_public: {
+        Args: { _order_id: string }
+        Returns: {
+          created_at: string
+          discord_username: string
+          id: string
+          items: Json
+          note: string
+          status: Database["public"]["Enums"]["order_status"]
+          total_bs: number
+        }[]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      is_staff: { Args: { _user_id: string }; Returns: boolean }
+      place_order: {
+        Args: { _discord_username: string; _items: Json; _note: string }
+        Returns: string
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "chef"
+      food_category: "non_seasonal" | "seasonal"
+      order_status:
+        | "pending"
+        | "preparing"
+        | "ready"
+        | "delivered"
+        | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +311,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "chef"],
+      food_category: ["non_seasonal", "seasonal"],
+      order_status: ["pending", "preparing", "ready", "delivered", "cancelled"],
+    },
   },
 } as const
