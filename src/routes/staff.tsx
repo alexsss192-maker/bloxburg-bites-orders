@@ -144,7 +144,7 @@ function StaffLogin() {
           {loading ? "Signing in..." : "Sign in"}
         </Button>
         <p className="text-xs text-muted-foreground">
-          Admin: <span className="font-mono">Hellosavagesavage79@pandabites.local</span> · password: <span className="font-mono">Panda Bites</span>
+          Staff-only. If you need access, ask an admin in the Panda Bites Discord.
         </p>
       </motion.form>
     </div>

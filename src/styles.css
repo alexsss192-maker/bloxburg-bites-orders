@@ -12,8 +12,8 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
-  --font-display: "Abril Fatface", ui-serif, Georgia, serif;
-  --font-sans: "Cabin", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Syne", ui-serif, Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -46,41 +46,48 @@
   --color-cherry: var(--cherry);
   --color-cream: var(--cream);
   --color-ink: var(--ink);
+  --color-petal: var(--petal);
+  --color-sakura: var(--sakura);
+  --color-blossom: var(--blossom);
 }
 
 :root {
   --radius: 1rem;
-  --ink: oklch(0.16 0.01 60);
-  --cream: oklch(0.965 0.015 85);
-  --bamboo: oklch(0.62 0.08 145);
-  --cherry: oklch(0.63 0.19 35);
+  /* Cherry Blossom palette */
+  --ink: oklch(0.22 0.05 350);            /* deep plum */
+  --blossom: oklch(0.985 0.012 350);      /* near-white blush */
+  --cream: oklch(0.965 0.025 350);        /* #fef0f5 blossom white */
+  --petal: oklch(0.905 0.055 350);        /* #f8c8d8 soft petal */
+  --sakura: oklch(0.75 0.13 355);         /* #e88aab mid pink */
+  --cherry: oklch(0.62 0.15 355);         /* #c45c7c deep rose */
+  --bamboo: oklch(0.68 0.08 155);         /* keep leaf green as small accent */
 
   --background: var(--cream);
   --foreground: var(--ink);
-  --card: oklch(1 0 0);
+  --card: var(--blossom);
   --card-foreground: var(--ink);
-  --popover: oklch(1 0 0);
+  --popover: var(--blossom);
   --popover-foreground: var(--ink);
   --primary: var(--ink);
-  --primary-foreground: var(--cream);
-  --secondary: oklch(0.92 0.02 80);
+  --primary-foreground: var(--blossom);
+  --secondary: oklch(0.94 0.03 350);
   --secondary-foreground: var(--ink);
-  --muted: oklch(0.93 0.015 80);
-  --muted-foreground: oklch(0.45 0.02 60);
+  --muted: oklch(0.94 0.025 350);
+  --muted-foreground: oklch(0.45 0.04 350);
   --accent: var(--cherry);
-  --accent-foreground: var(--cream);
+  --accent-foreground: var(--blossom);
   --destructive: oklch(0.55 0.22 27);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.87 0.015 80);
-  --input: oklch(0.9 0.01 80);
+  --border: oklch(0.88 0.035 350);
+  --input: oklch(0.9 0.03 350);
   --ring: var(--cherry);
   --sidebar: var(--ink);
-  --sidebar-foreground: var(--cream);
+  --sidebar-foreground: var(--blossom);
   --sidebar-primary: var(--cherry);
-  --sidebar-primary-foreground: var(--cream);
-  --sidebar-accent: oklch(0.24 0.01 60);
-  --sidebar-accent-foreground: var(--cream);
-  --sidebar-border: oklch(0.28 0.01 60);
+  --sidebar-primary-foreground: var(--blossom);
+  --sidebar-accent: oklch(0.28 0.05 350);
+  --sidebar-accent-foreground: var(--blossom);
+  --sidebar-border: oklch(0.32 0.05 350);
   --sidebar-ring: var(--cherry);
 }
 
@@ -102,4 +109,17 @@
 @utility panda-grain {
   background-image: radial-gradient(oklch(0 0 0 / 0.04) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+@utility blossom-grain {
+  background-image: radial-gradient(color-mix(in oklab, var(--cherry) 12%, transparent) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+@utility blossom-shadow {
+  box-shadow: 0 30px 60px -30px color-mix(in oklab, var(--cherry) 45%, transparent);
+}
+
+@utility text-balance {
+  text-wrap: balance;
 }

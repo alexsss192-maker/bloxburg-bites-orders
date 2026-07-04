@@ -1,78 +1,40 @@
-# Panda Bites — Ordering System Plan
+# Panda Bites — Visual Redesign
 
-A bold, playful ordering site for your Bloxburg food shop, with a menu, a sexy cart, a seasonal-redirect modal, and a staff portal where admins manage items and chefs fulfill orders.
+Keep every feature and route intact. Rework only styling, layout, and motion so the site reads as a soft, editorial, cherry-blossom Panda Bites — not the current ugly build.
 
 ## Design direction
 
-- **Palette**: "Panda Noir" — near-black `#0d0d0d`, warm off-white `#f5f3ee`, bamboo green `#7d9b76`, cherry-red accent `#e85d3a`. Playful but premium.
-- **Typography**: Abril Fatface (display headings) + Cabin (body). Bold food-editorial feel.
-- **Vibe**: Big juicy hero, sticky floating cart drawer with spring animation, glossy card menu tiles with hover lift, panda mascot accents.
+- **Palette (Cherry Blossom):**
+  - `--cream` blossom white `#fef0f5`
+  - `--petal` soft pink `#f8c8d8`
+  - `--sakura` mid pink `#e88aab` (accents, buttons)
+  - `--cherry` deep rose `#c45c7c` (primary CTAs, highlights)
+  - `--ink` near-black plum for text
+- **Type (Syne + Plus Jakarta Sans):** loaded via Google Fonts `<link>` in `__root.tsx`. Syne for display/H1/H2 with tight tracking, Plus Jakarta Sans for body/UI.
+- **Feel:** editorial magazine — big serif-adjacent display type, generous whitespace, one hero photo, blossom petal SVG motifs, subtle grain, soft rose shadows (`0 30px 60px -30px rgba(196,92,124,.35)`).
+- **Motion (Framer Motion, already installed):** hero letters stagger-in, petal drift on landing, card hover lift + soft glow, cart drawer slide with spring, tab underline morph.
 
-## Pages / routes
+## Pages to restyle
 
-```text
-/                       Landing (hero, "Order now", featured items)
-/menu                   Tabs: Non-Seasonals | Seasonals
-                          - Non-Seasonals: live menu grid with add-to-cart
-                          - Seasonals: opens modal → button to seasonalfoods.lovable.app
-/checkout               Cart review + Discord username + B$ payment note → places order
-/order/:id              Order confirmation with reference code
-/staff                  Staff login (email + password)
-/staff/orders           Chef + Admin: list orders, mark preparing/ready/delivered
-/staff/menu             Admin only: create/edit/delete menu items, stock, images, price (B$)
-/staff/users            Admin only: promote chef accounts
-```
-
-## Ordering / stock behavior
-
-- Customers browse anonymously (no login required per your call — Discord bot login comes later).
-- Add to cart → sexy slide-in drawer with quantity steppers, running B$ total, remove buttons, empty state with mascot.
-- Checkout captures: Discord username (validated), optional note, cart contents. Payment method is fixed to "Bloxburg Cash (B$)" with instructions to DM staff in Discord.
-- On order submit (server function, transactional): for each line item, atomically decrement `stock` — if any item has insufficient stock the whole order fails with a clear error. Stock of 77 → order 5 → becomes 72 automatically.
-- Out-of-stock items show a "Sold out" badge and disable add-to-cart.
-
-## Staff portal
-
-- **Admin** (Hellosavagesavage79 / Panda Bites — seeded): full menu CRUD, view all orders, change order status, promote users to `chef`.
-- **Chef**: view orders queue, update status (pending → preparing → ready → delivered), cannot edit menu.
-- Roles stored in a separate `user_roles` table with `has_role()` security-definer function (standard secure pattern).
-
-## Seasonal tab
-
-Clicking the Seasonals tab opens a themed modal:
-
-> "Seasonal foods live on a separate shop! Join that Discord to gain access."
-> Primary button → `https://seasonalfoods.lovable.app/` (opens new tab). Non-Seasonals tab stays active underneath.
-
-## Technical details
-
-- **Backend**: Lovable Cloud (Supabase) enabled.
-- **Auth**: Email/password for staff only. Admin account seeded via migration using Auth Admin API ([Hellosavagesavage79@pandabites.local](mailto:Hellosavagesavage79@pandabites.local) / Panda Bites) and granted `admin` role.
-- **DB schema** (all with GRANTs + RLS):
-  - `menu_items` (id, name, description, price_bs int, stock int, image_url, category enum('non_seasonal','seasonal'), is_active, timestamps). Public `SELECT` for `anon` where `is_active` + `non_seasonal`. Admin-only write via RLS + `has_role`.
-  - `orders` (id, discord_username, note, total_bs, status enum, created_at). Public `INSERT` for anon; `SELECT/UPDATE` for staff (chef or admin).
-  - `order_items` (id, order_id, menu_item_id, quantity, unit_price_bs).
-  - `user_roles` (id, user_id, role enum('admin','chef')) — per security guidance.
-  - `app_role` enum + `has_role()` SECURITY DEFINER function.
-- **Stock decrement**: Postgres function `place_order(items jsonb, discord text, note text)` runs the insert + `UPDATE ... SET stock = stock - qty WHERE stock >= qty` in one transaction, returning the new order id. Called from a public server route.
-- **Server functions**: `staff/*` protected via `requireSupabaseAuth` + role check. Menu reads for the public site use the server publishable client with the narrow anon SELECT policy.
-- **Cart state**: Zustand + localStorage persistence.
-- **Animations**: Framer Motion for cart drawer, tab switch, and card hovers.
-
-## Out of scope (per your message)
-
-- Discord bot login (later).
-- Real payment processing — payment is a manual B$ note captured on the order.
-- Seasonal menu management (that's the other site).
-
-## Deliverables in this build
-
-1. Enable Lovable Cloud + migrations (tables, enums, RLS, GRANTs, `place_order` fn, seed admin).
-2. Public site: landing, menu with tabs, cart drawer, checkout, order confirmation.
-3. Staff portal: login, orders queue, menu CRUD (admin), user role management (admin).
-4. Seasonal redirect modal.
-5. SEO head metadata per route, favicon reuse, error/not-found boundaries.  
+1. **Landing (`/`)** — Magazine layout: left column oversized Syne headline "Panda Bites" + kicker + CTA to `/menu`; right column featured menu item card (or panda mascot) framed as a magazine cover with issue number and date. Below: a 3-up "This week's bites" strip and a soft-pink footer band.
+2. `**/menu**` — Editorial header with section label ("Vol. 01 — The Menu"), two big tab pills (Non-Seasonal / Seasonal) with animated underline. Non-seasonal grid becomes a magazine grid: 1 featured large card + smaller cards, stock shown as a delicate meter, price in B$ set in Syne. Seasonal modal restyled as a blossom-framed dialog with the redirect button.
+3. **Cart drawer** — Keep behavior, upgrade visuals: blossom-pink panel, Syne totals, rose-tinted item cards, tabular B$ numbers, softer spring, quantity steppers as pill buttons.
+4. `**/checkout` & `/order/$id**` — Two-column editorial layout: left order summary "receipt" styled like a torn magazine coupon; right Discord username + notes form. Success page shows a large order number in Syne with confetti petals.
+5. **Staff (`/staff*`)** — Same palette, but calmer: darker plum sidebar, cream content, tables with generous rows, status pills in sakura/cherry. Functionality unchanged.
+6. **Site header/footer** — Sticky blush header with wordmark, thin bottom hairline. Footer: dark plum band, Syne wordmark, small links, Discord CTA.  
   
-Thisa MUST look so sexy as you have so little to do
+Fix staff portal, it does not work and keeps taking me bacxk to the staff portal page, also, the user of an admin & its password is ON the same page as the staff portal... remove it... hige secuirty risk
 
-Approve and I'll build it end-to-end.
+## Technical changes (frontend only)
+
+- `**src/routes/__root.tsx**` — add Google Fonts `<link>` preconnect + stylesheet for Syne (500–800) and Plus Jakarta Sans (400–700). Do NOT `@import` URLs in CSS.
+- `**src/styles.css**` — replace palette tokens with Cherry Blossom oklch values, swap `--font-display` to `"Syne"` and `--font-sans` to `"Plus Jakarta Sans"`, add new tokens: `--petal`, `--sakura`, `--shadow-rose`, `--gradient-blossom`. Update `@theme inline` colors. Add `@utility` for `blossom-grain` and `petal-mask`.
+- **Components touched:** `site-header.tsx`, `site-footer.tsx`, `cart-drawer.tsx`, all four `routes/*.tsx` pages, staff pages (light restyle). No changes to `cart-store.ts`, `menu.functions.ts`, migrations, `place_order`, auth, or any server logic.
+- **Assets:** reuse existing `panda-mascot.png`; add 1–2 generated blossom / petal SVG or PNG accents inline where useful (or pure SVG in JSX to avoid new binary files).
+- **Motion:** wrap hero, cards, and tab content in `motion.div` with `whileHover`/`whileInView`; keep existing AnimatePresence on cart.
+
+## Out of scope
+
+- No DB, RLS, auth, cart logic, or route changes.
+- No new dependencies beyond what's already installed (Framer Motion + shadcn stay).
+- Seasonal-site link and admin bootstrap unchanged.
