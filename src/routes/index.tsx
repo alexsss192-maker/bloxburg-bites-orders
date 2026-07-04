@@ -1,93 +1,191 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles, Utensils, Shield } from "lucide-react";
+import { ArrowUpRight, Sparkles } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import pandaMascot from "@/assets/panda-mascot.png";
 
 export const Route = createFileRoute("/")({ component: Landing });
 
+function Petal({ className = "", style }: { className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 40 40" className={className} style={style} aria-hidden>
+      <path
+        d="M20 3c6 7 12 11 12 18s-6 12-12 12S8 28 8 21 14 10 20 3z"
+        fill="currentColor"
+        opacity="0.85"
+      />
+      <circle cx="20" cy="21" r="3" fill="oklch(0.98 0.03 350)" opacity="0.6" />
+    </svg>
+  );
+}
+
 function Landing() {
   return (
     <div className="min-h-screen bg-cream text-ink">
       <SiteHeader />
+
       <main>
+        {/* Magazine hero */}
         <section className="relative overflow-hidden">
-          <div className="panda-grain absolute inset-0 opacity-60" />
-          <div className="relative mx-auto grid max-w-7xl gap-10 px-6 pb-20 pt-16 md:grid-cols-[1.15fr_1fr] md:pt-24">
-            <div className="flex flex-col justify-center">
-              <motion.span
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="inline-flex w-fit items-center gap-2 rounded-full border border-ink/15 bg-cream/80 px-4 py-1.5 text-xs font-medium uppercase tracking-widest text-ink/70"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-cherry" /> Bloxburg's favorite food shop
-              </motion.span>
-              <motion.h1
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 }}
-                className="mt-6 font-display text-6xl leading-[0.95] md:text-8xl"
-              >
-                Serving <span className="text-cherry">tasty bites</span>
-                <br /> straight from the panda.
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="mt-6 max-w-lg text-lg text-ink/70"
-              >
-                Panda Bites is a Discord-run kitchen delivering fresh Bloxburg foods. Non-seasonals available all year,
-                seasonals rotate with the calendar.
-              </motion.p>
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                className="mt-8 flex flex-wrap gap-3"
-              >
-                <Link
-                  to="/menu"
-                  className="group inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry"
-                >
-                  Explore the menu
-                  <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-                </Link>
-                <a
-                  href="https://seasonalfoods.lovable.app/"
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center gap-2 rounded-full border border-ink/20 px-6 py-3 text-sm font-semibold text-ink transition hover:border-cherry hover:text-cherry"
-                >
-                  Seasonal shop
-                </a>
-              </motion.div>
-              <div className="mt-12 grid max-w-lg grid-cols-3 gap-6 text-xs uppercase tracking-widest text-ink/60">
-                <Stat label="Paid in" value="B$" />
-                <Stat label="Delivery" value="In-game" />
-                <Stat label="Rating" value="5.0 ★" />
-              </div>
+          <div className="blossom-grain pointer-events-none absolute inset-0 opacity-60" />
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute -left-10 top-24 text-petal"
+            initial={{ y: -30, opacity: 0, rotate: -30 }}
+            animate={{ y: 0, opacity: 1, rotate: 0 }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+          >
+            <Petal className="h-20 w-20" />
+          </motion.div>
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute right-12 top-56 text-sakura"
+            initial={{ y: -20, opacity: 0, rotate: 20 }}
+            animate={{ y: 0, opacity: 1, rotate: 15 }}
+            transition={{ delay: 0.3, duration: 1.4, ease: "easeOut" }}
+          >
+            <Petal className="h-14 w-14" />
+          </motion.div>
+
+          <div className="relative mx-auto max-w-7xl px-6 pt-10 md:pt-16">
+            {/* Masthead strip */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ink/10 pb-4 text-[0.7rem] uppercase tracking-[0.35em] text-ink/60">
+              <span>Vol. 01 · The Blossom Issue</span>
+              <span className="hidden md:inline">Panda Bites Magazine · Bloxburg Kitchen Quarterly</span>
+              <span>
+                {new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+              </span>
             </div>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, rotate: -6 }}
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              transition={{ type: "spring", stiffness: 120, damping: 14 }}
-              className="relative flex items-center justify-center"
-            >
-              <div className="absolute inset-10 rounded-full bg-cherry/20 blur-3xl" />
-              <div className="relative aspect-square w-full max-w-md rounded-[3rem] border border-ink/10 bg-gradient-to-br from-cream to-white p-8 shadow-[0_30px_60px_-30px_rgba(0,0,0,0.35)]">
-                <img src={pandaMascot} alt="Panda Bites mascot" width={512} height={512} className="h-full w-full object-contain" />
+
+            <div className="grid gap-12 pb-24 pt-12 md:grid-cols-[1.35fr_1fr] md:pt-16">
+              <div className="flex flex-col justify-center">
+                <motion.span
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="inline-flex w-fit items-center gap-2 rounded-full border border-cherry/30 bg-petal/40 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.25em] text-cherry"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Bloxburg's cutest kitchen
+                </motion.span>
+
+                <motion.h1
+                  initial={{ opacity: 0, y: 24 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.05, duration: 0.6 }}
+                  className="mt-6 font-display text-6xl leading-[0.92] tracking-tight text-balance md:text-[7.5rem]"
+                >
+                  A little
+                  <span className="italic text-cherry"> blossom </span>
+                  in every bite.
+                </motion.h1>
+
+                <motion.p
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="mt-8 max-w-xl text-lg leading-relaxed text-ink/70"
+                >
+                  Panda Bites is a Discord-run kitchen serving fresh Bloxburg foods. Order in
+                  <span className="font-semibold text-ink"> B$ </span>, delivered in-game by chefs who actually care.
+                </motion.p>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25 }}
+                  className="mt-10 flex flex-wrap items-center gap-3"
+                >
+                  <Link
+                    to="/menu"
+                    className="group inline-flex items-center gap-2 rounded-full bg-ink px-7 py-3.5 text-sm font-semibold uppercase tracking-[0.15em] text-cream transition hover:bg-cherry"
+                  >
+                    Open the menu
+                    <ArrowUpRight className="h-4 w-4 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  </Link>
+                  <a
+                    href="https://seasonalfoods.lovable.app/"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-2 rounded-full border border-ink/25 bg-blossom px-7 py-3.5 text-sm font-semibold uppercase tracking-[0.15em] text-ink transition hover:border-cherry hover:text-cherry"
+                  >
+                    Seasonal shop
+                  </a>
+                </motion.div>
+
+                <div className="mt-14 grid max-w-lg grid-cols-3 divide-x divide-ink/10 border-y border-ink/10 py-6 text-xs uppercase tracking-[0.25em] text-ink/60">
+                  <Stat label="Currency" value="B$" />
+                  <Stat label="Delivery" value="In-game" />
+                  <Stat label="Rating" value="5.0★" />
+                </div>
               </div>
-            </motion.div>
+
+              {/* Magazine cover card */}
+              <motion.aside
+                initial={{ opacity: 0, y: 30, rotate: -2 }}
+                animate={{ opacity: 1, y: 0, rotate: 2 }}
+                transition={{ type: "spring", stiffness: 90, damping: 16, delay: 0.1 }}
+                className="relative mx-auto w-full max-w-md"
+              >
+                <div className="absolute -inset-6 rounded-[2.5rem] bg-petal/70 blur-2xl" />
+                <div className="blossom-shadow relative overflow-hidden rounded-[2.25rem] border border-ink/10 bg-gradient-to-br from-blossom via-cream to-petal p-6">
+                  <div className="flex items-center justify-between text-[0.65rem] uppercase tracking-[0.3em] text-ink/60">
+                    <span>Issue №01</span>
+                    <span>B$ · 2026</span>
+                  </div>
+                  <p className="mt-3 font-display text-5xl leading-none text-ink">Panda<br />Bites</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.3em] text-cherry">The Blossom Issue</p>
+
+                  <div className="relative mt-6 aspect-square overflow-hidden rounded-3xl bg-gradient-to-b from-petal/60 to-blossom">
+                    <motion.div
+                      animate={{ y: [0, -8, 0] }}
+                      transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+                      className="absolute inset-0 grid place-items-center"
+                    >
+                      <img src={pandaMascot} alt="Panda Bites mascot" width={512} height={512} className="h-4/5 w-4/5 object-contain" />
+                    </motion.div>
+                    <Petal className="absolute -left-2 top-6 h-10 w-10 rotate-12 text-sakura/80" />
+                    <Petal className="absolute right-4 bottom-8 h-8 w-8 -rotate-12 text-cherry/70" />
+                  </div>
+
+                  <ul className="mt-6 space-y-2 border-t border-ink/10 pt-4 text-xs uppercase tracking-[0.22em] text-ink/70">
+                    <li className="flex justify-between"><span>01 · Non-seasonal menu</span><span className="text-cherry">pg. 02</span></li>
+                    <li className="flex justify-between"><span>02 · Basket & checkout</span><span className="text-cherry">pg. 05</span></li>
+                    <li className="flex justify-between"><span>03 · Seasonal drops</span><span className="text-cherry">pg. 08</span></li>
+                  </ul>
+                </div>
+              </motion.aside>
+            </div>
           </div>
         </section>
 
-        <section className="mx-auto max-w-7xl px-6 pb-20">
-          <div className="grid gap-4 md:grid-cols-3">
-            <Feature icon={<Utensils className="h-5 w-5" />} title="Fresh non-seasonal menu" text="Cakes, pastas, bento boxes and more — always in stock, always fresh." />
-            <Feature icon={<Sparkles className="h-5 w-5" />} title="Seasonal drops" text="Valentine's, Halloween, Winter — rotating menus on our sister shop." />
-            <Feature icon={<Shield className="h-5 w-5" />} title="Handled by chefs" text="Our chef team plates and delivers every order inside Bloxburg." />
+        {/* Editorial trio */}
+        <section className="mx-auto max-w-7xl px-6 pb-24">
+          <div className="mb-10 flex items-end justify-between gap-6 border-b border-ink/10 pb-4">
+            <h2 className="font-display text-4xl md:text-5xl">Editor's picks</h2>
+            <span className="text-xs uppercase tracking-[0.3em] text-ink/50">— read the issue</span>
+          </div>
+          <div className="grid gap-6 md:grid-cols-3">
+            <Article
+              tag="01 · The menu"
+              title="Cakes, pastas & bento — always in stock."
+              text="Our non-seasonal shelf runs year-round. Stock updates the instant an order clears."
+              cta={{ to: "/menu", label: "Browse menu" }}
+              tone="petal"
+            />
+            <Article
+              tag="02 · The basket"
+              title="A checkout softer than a blossom."
+              text="Add a bite, we save it. Pay in B$ and a chef DMs you in Discord to deliver."
+              cta={{ to: "/checkout", label: "Open basket" }}
+              tone="cream"
+            />
+            <Article
+              tag="03 · Seasonal"
+              title="Valentine's, Halloween, Winter — elsewhere."
+              text="Seasonal drops live on a sister site & Discord. Members-only, blossom-approved."
+              cta={{ href: "https://seasonalfoods.lovable.app/", label: "Seasonal shop ↗" }}
+              tone="dark"
+            />
           </div>
         </section>
       </main>
@@ -98,21 +196,61 @@ function Landing() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="font-display text-2xl text-ink">{value}</p>
-      <p className="mt-1">{label}</p>
+    <div className="px-4 first:pl-0">
+      <p className="font-display text-3xl text-ink">{value}</p>
+      <p className="mt-1 text-[0.65rem]">{label}</p>
     </div>
   );
 }
 
-function Feature({ icon, title, text }: { icon: React.ReactNode; title: string; text: string }) {
+function Article({
+  tag,
+  title,
+  text,
+  cta,
+  tone,
+}: {
+  tag: string;
+  title: string;
+  text: string;
+  cta: { to?: string; href?: string; label: string };
+  tone: "petal" | "cream" | "dark";
+}) {
+  const bg =
+    tone === "petal" ? "bg-petal/60 text-ink" : tone === "cream" ? "bg-blossom text-ink" : "bg-ink text-cream";
+  const border = tone === "dark" ? "border-ink" : "border-ink/10";
+  const ctaClass =
+    tone === "dark"
+      ? "bg-cherry text-cream hover:bg-cream hover:text-ink"
+      : "bg-ink text-cream hover:bg-cherry";
   return (
-    <div className="rounded-3xl border border-border/60 bg-card p-6 shadow-sm">
-      <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-cherry/10 text-cherry">
-        {icon}
+    <motion.article
+      whileHover={{ y: -6 }}
+      transition={{ type: "spring", stiffness: 220, damping: 20 }}
+      className={`relative flex flex-col overflow-hidden rounded-3xl border ${border} ${bg} p-7`}
+    >
+      <p className="text-[0.7rem] uppercase tracking-[0.3em] opacity-70">{tag}</p>
+      <h3 className="mt-4 font-display text-3xl leading-tight text-balance">{title}</h3>
+      <p className="mt-3 text-sm opacity-80">{text}</p>
+      <div className="mt-6">
+        {cta.to ? (
+          <Link
+            to={cta.to}
+            className={`inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition ${ctaClass}`}
+          >
+            {cta.label} <ArrowUpRight className="h-3.5 w-3.5" />
+          </Link>
+        ) : (
+          <a
+            href={cta.href}
+            target="_blank"
+            rel="noreferrer noopener"
+            className={`inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.15em] transition ${ctaClass}`}
+          >
+            {cta.label}
+          </a>
+        )}
       </div>
-      <p className="font-display text-xl">{title}</p>
-      <p className="mt-2 text-sm text-muted-foreground">{text}</p>
-    </div>
+    </motion.article>
   );
 }
