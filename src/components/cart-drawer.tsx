@@ -24,7 +24,7 @@ export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => vo
             onClick={onClose}
           />
           <motion.aside
-            className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-cream text-ink shadow-2xl"
+            className="fixed right-0 top-0 z-50 flex h-full w-full max-w-md flex-col bg-gradient-to-b from-blossom via-cream to-petal text-ink shadow-2xl"
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
@@ -32,8 +32,8 @@ export function CartDrawer({ open, onClose }: { open: boolean; onClose: () => vo
           >
             <div className="flex items-center justify-between border-b border-border/60 px-6 py-5">
               <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Your basket</p>
-                <h2 className="text-2xl font-display">Panda Bites</h2>
+                <p className="text-xs uppercase tracking-[0.3em] text-cherry">Your basket</p>
+                <h2 className="mt-1 font-display text-3xl">Panda Bites</h2>
               </div>
               <button
                 onClick={onClose}

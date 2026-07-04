@@ -36,12 +36,21 @@ function MenuPage() {
     <div className="min-h-screen bg-cream">
       <SiteHeader />
       <main className="mx-auto max-w-7xl px-6 py-12">
-        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="mb-4 flex items-center justify-between border-b border-ink/10 pb-3 text-[0.7rem] uppercase tracking-[0.35em] text-ink/60">
+          <span>Vol. 01 · The Menu</span>
+          <span className="hidden md:inline">Pg. 02 — Non-seasonal shelf</span>
+        </div>
+        <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.3em] text-cherry">The Menu</p>
-            <h1 className="mt-2 font-display text-5xl md:text-6xl">Pick your bites</h1>
+            <p className="text-xs uppercase tracking-[0.3em] text-cherry">Today's shelf</p>
+            <h1 className="mt-2 font-display text-6xl leading-[0.95] text-balance md:text-7xl">
+              Pick your <span className="italic text-cherry">bites</span>.
+            </h1>
+            <p className="mt-3 max-w-md text-sm text-ink/60">
+              Stock updates the second an order clears. Add what you love — pay in B$ at checkout.
+            </p>
           </div>
-          <div className="inline-flex rounded-full border border-ink/15 bg-white p-1 shadow-sm">
+          <div className="inline-flex rounded-full border border-ink/15 bg-blossom p-1 shadow-sm">
             <TabButton active={tab === "non_seasonal"} onClick={() => setTab("non_seasonal")}>Non-Seasonals</TabButton>
             <TabButton
               active={tab === "seasonal"}
