@@ -101,11 +101,15 @@ export const getMyRoles = createServerFn({ method: "GET" })
 export const listAllMenu = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertStaff(context);
-    const { data, error } = await context.supabase
+    const { isAdmin } = await assertStaff(context);
+    let query = context.supabase
       .from("menu_items" as any)
       .select("*")
       .order("created_at", { ascending: false });
+    if (!isAdmin) {
+      query = query.eq("owner_id", context.userId);
+    }
+    const { data, error } = await query;
     if (error) throw new Error(error.message);
     return data as unknown as Array<{
       id: string;
@@ -116,6 +120,7 @@ export const listAllMenu = createServerFn({ method: "GET" })
       image_url: string | null;
       category: string;
       is_active: boolean;
+      owner_id: string | null;
     }>;
   });
 
@@ -133,14 +138,23 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => menuUpsert.parse(d))
   .handler(async ({ context, data }) => {
-    const { isAdmin } = await assertStaff(context);
-    if (!isAdmin) throw new Error("Admin only");
-    const payload = { ...data, category: "non_seasonal" as const };
+    const { isAdmin, isChef } = await assertStaff(context);
+    if (!isAdmin && !isChef) throw new Error("Forbidden");
     if (data.id) {
-      const { error } = await context.supabase.from("menu_items" as any).update(payload).eq("id", data.id);
+      // Ownership enforced by RLS for chefs; admins can update anything.
+      const { error } = await context.supabase
+        .from("menu_items" as any)
+        .update({ ...data, category: "non_seasonal" as const })
+        .eq("id", data.id);
       if (error) throw new Error(error.message);
       return { id: data.id };
     }
+    // Chefs own the items they create; admins may leave owner_id null (shared).
+    const payload = {
+      ...data,
+      category: "non_seasonal" as const,
+      owner_id: isChef && !isAdmin ? context.userId : context.userId,
+    };
     const { data: row, error } = await context.supabase
       .from("menu_items" as any)
       .insert(payload)
@@ -154,8 +168,9 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { isAdmin } = await assertStaff(context);
-    if (!isAdmin) throw new Error("Admin only");
+    const { isAdmin, isChef } = await assertStaff(context);
+    if (!isAdmin && !isChef) throw new Error("Forbidden");
+    // RLS enforces chefs may only delete rows they own.
     const { error } = await context.supabase.from("menu_items" as any).delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
