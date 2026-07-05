@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import { listAllMenu, upsertMenuItem, deleteMenuItem } from "@/lib/menu.functions";
+import { listAllMenu, upsertMenuItem, deleteMenuItem, getMyRoles } from "@/lib/menu.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,14 +17,16 @@ export const Route = createFileRoute("/staff/menu")({
   component: MenuEditor,
 });
 
-type Item = { id: string; name: string; description: string; price_bs: number; stock: number; image_url: string | null; category: string; is_active: boolean };
+type Item = { id: string; name: string; description: string; price_bs: number; stock: number; image_url: string | null; category: string; is_active: boolean; owner_id?: string | null };
 
 function MenuEditor() {
   const listFn = useServerFn(listAllMenu);
   const upsertFn = useServerFn(upsertMenuItem);
   const delFn = useServerFn(deleteMenuItem);
+  const rolesFn = useServerFn(getMyRoles);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["staff-menu"], queryFn: () => listFn() });
+  const { data: roles } = useQuery({ queryKey: ["my-roles"], queryFn: () => rolesFn() });
   const [editing, setEditing] = useState<Partial<Item> | null>(null);
 
   const save = useMutation({
@@ -42,13 +44,23 @@ function MenuEditor() {
   });
 
   const items = (data ?? []).filter((i) => i.category === "non_seasonal");
+  const isAdmin = roles?.isAdmin ?? false;
 
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-cherry">Menu editor</p>
-          <h1 className="mt-1 font-display text-4xl">Non-seasonal items</h1>
+          <p className="text-xs uppercase tracking-[0.3em] text-cherry">
+            {isAdmin ? "Menu editor · admin" : "Chef menu editor"}
+          </p>
+          <h1 className="mt-1 font-display text-4xl">
+            {isAdmin ? "All non-seasonal items" : "My non-seasonal items"}
+          </h1>
+          <p className="mt-1 text-sm text-ink/60">
+            {isAdmin
+              ? "Admins see and can edit every chef's items."
+              : "You only see items you own. Anything you create belongs to you."}
+          </p>
         </div>
         <Button onClick={() => setEditing({ name: "", description: "", price_bs: 0, stock: 0, image_url: "", is_active: true })}
           className="rounded-full bg-ink text-cream hover:bg-cherry">
