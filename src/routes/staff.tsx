@@ -8,7 +8,7 @@ import { getMyRoles } from "@/lib/menu.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, ShoppingBag, Menu as MenuIcon, Users } from "lucide-react";
+import { LogOut, ShoppingBag, Menu as MenuIcon, Users, Sparkles } from "lucide-react";
 
 export const Route = createFileRoute("/staff")({
   ssr: false,
@@ -82,11 +82,18 @@ function StaffLayout() {
             <Link to="/staff/orders" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
               <span className="inline-flex items-center gap-1.5"><ShoppingBag className="h-4 w-4" /> Orders</span>
             </Link>
-            {isAdmin && (
+            {(isAdmin || isChef) && (
               <>
                 <Link to="/staff/menu" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
                   <span className="inline-flex items-center gap-1.5"><MenuIcon className="h-4 w-4" /> Menu</span>
                 </Link>
+                <Link to="/staff/panda" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
+                  <span className="inline-flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> Panda</span>
+                </Link>
+              </>
+            )}
+            {isAdmin && (
+              <>
                 <Link to="/staff/users" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
                   <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" /> Users</span>
                 </Link>

@@ -17,6 +17,7 @@ import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StaffIndexRouteImport } from './routes/staff.index'
 import { Route as StaffUsersRouteImport } from './routes/staff.users'
+import { Route as StaffPandaRouteImport } from './routes/staff.panda'
 import { Route as StaffOrdersRouteImport } from './routes/staff.orders'
 import { Route as StaffMenuRouteImport } from './routes/staff.menu'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
@@ -65,6 +66,11 @@ const StaffUsersRoute = StaffUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => StaffRoute,
 } as any)
+const StaffPandaRoute = StaffPandaRouteImport.update({
+  id: '/panda',
+  path: '/panda',
+  getParentRoute: () => StaffRoute,
+} as any)
 const StaffOrdersRoute = StaffOrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/order/$id': typeof OrderIdRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
+  '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByTo {
   '/order/$id': typeof OrderIdRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
+  '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
@@ -145,6 +153,7 @@ export interface FileRoutesById {
   '/order/$id': typeof OrderIdRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
+  '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/order/$id'
     | '/staff/menu'
     | '/staff/orders'
+    | '/staff/panda'
     | '/staff/users'
     | '/staff/'
     | '/api/public/bootstrap'
@@ -180,6 +190,7 @@ export interface FileRouteTypes {
     | '/order/$id'
     | '/staff/menu'
     | '/staff/orders'
+    | '/staff/panda'
     | '/staff/users'
     | '/staff'
     | '/api/public/bootstrap'
@@ -197,6 +208,7 @@ export interface FileRouteTypes {
     | '/order/$id'
     | '/staff/menu'
     | '/staff/orders'
+    | '/staff/panda'
     | '/staff/users'
     | '/staff/'
     | '/api/public/bootstrap'
@@ -277,6 +289,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StaffUsersRouteImport
       parentRoute: typeof StaffRoute
     }
+    '/staff/panda': {
+      id: '/staff/panda'
+      path: '/panda'
+      fullPath: '/staff/panda'
+      preLoaderRoute: typeof StaffPandaRouteImport
+      parentRoute: typeof StaffRoute
+    }
     '/staff/orders': {
       id: '/staff/orders'
       path: '/orders'
@@ -332,6 +351,7 @@ declare module '@tanstack/react-router' {
 interface StaffRouteChildren {
   StaffMenuRoute: typeof StaffMenuRoute
   StaffOrdersRoute: typeof StaffOrdersRoute
+  StaffPandaRoute: typeof StaffPandaRoute
   StaffUsersRoute: typeof StaffUsersRoute
   StaffIndexRoute: typeof StaffIndexRoute
 }
@@ -339,6 +359,7 @@ interface StaffRouteChildren {
 const StaffRouteChildren: StaffRouteChildren = {
   StaffMenuRoute: StaffMenuRoute,
   StaffOrdersRoute: StaffOrdersRoute,
+  StaffPandaRoute: StaffPandaRoute,
   StaffUsersRoute: StaffUsersRoute,
   StaffIndexRoute: StaffIndexRoute,
 }
