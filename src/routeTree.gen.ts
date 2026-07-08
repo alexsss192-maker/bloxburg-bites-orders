@@ -20,6 +20,7 @@ import { Route as StaffMenuRouteImport } from './routes/staff.menu'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
 import { Route as ApiPublicBootstrapRouteImport } from './routes/api/public/bootstrap'
 import { Route as ApiPublicVerifyRequestRouteImport } from './routes/api/public/verify.request'
+import { Route as ApiPublicVerifyLogoutRouteImport } from './routes/api/public/verify.logout'
 import { Route as ApiPublicVerifyConfirmRouteImport } from './routes/api/public/verify.confirm'
 
 const StaffRoute = StaffRouteImport.update({
@@ -77,6 +78,11 @@ const ApiPublicVerifyRequestRoute = ApiPublicVerifyRequestRouteImport.update({
   path: '/api/public/verify/request',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicVerifyLogoutRoute = ApiPublicVerifyLogoutRouteImport.update({
+  id: '/api/public/verify/logout',
+  path: '/api/public/verify/logout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicVerifyConfirmRoute = ApiPublicVerifyConfirmRouteImport.update({
   id: '/api/public/verify/confirm',
   path: '/api/public/verify/confirm',
@@ -95,6 +101,7 @@ export interface FileRoutesByFullPath {
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
   '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
+  '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRoutesByTo {
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/staff': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
   '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
+  '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRoutesById {
@@ -123,6 +131,7 @@ export interface FileRoutesById {
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
   '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
+  '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRouteTypes {
@@ -139,6 +148,7 @@ export interface FileRouteTypes {
     | '/staff/'
     | '/api/public/bootstrap'
     | '/api/public/verify/confirm'
+    | '/api/public/verify/logout'
     | '/api/public/verify/request'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -152,6 +162,7 @@ export interface FileRouteTypes {
     | '/staff'
     | '/api/public/bootstrap'
     | '/api/public/verify/confirm'
+    | '/api/public/verify/logout'
     | '/api/public/verify/request'
   id:
     | '__root__'
@@ -166,6 +177,7 @@ export interface FileRouteTypes {
     | '/staff/'
     | '/api/public/bootstrap'
     | '/api/public/verify/confirm'
+    | '/api/public/verify/logout'
     | '/api/public/verify/request'
   fileRoutesById: FileRoutesById
 }
@@ -177,6 +189,7 @@ export interface RootRouteChildren {
   OrderIdRoute: typeof OrderIdRoute
   ApiPublicBootstrapRoute: typeof ApiPublicBootstrapRoute
   ApiPublicVerifyConfirmRoute: typeof ApiPublicVerifyConfirmRoute
+  ApiPublicVerifyLogoutRoute: typeof ApiPublicVerifyLogoutRoute
   ApiPublicVerifyRequestRoute: typeof ApiPublicVerifyRequestRoute
 }
 
@@ -259,6 +272,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicVerifyRequestRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/verify/logout': {
+      id: '/api/public/verify/logout'
+      path: '/api/public/verify/logout'
+      fullPath: '/api/public/verify/logout'
+      preLoaderRoute: typeof ApiPublicVerifyLogoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/verify/confirm': {
       id: '/api/public/verify/confirm'
       path: '/api/public/verify/confirm'
@@ -293,6 +313,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrderIdRoute: OrderIdRoute,
   ApiPublicBootstrapRoute: ApiPublicBootstrapRoute,
   ApiPublicVerifyConfirmRoute: ApiPublicVerifyConfirmRoute,
+  ApiPublicVerifyLogoutRoute: ApiPublicVerifyLogoutRoute,
   ApiPublicVerifyRequestRoute: ApiPublicVerifyRequestRoute,
 }
 export const routeTree = rootRouteImport
