@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { placeOrder } from "@/lib/menu.functions";
+import { placeVerifiedOrder } from "@/lib/verify.functions";
+import { useVerifiedSession } from "@/components/verify-gate";
 import { useCart } from "@/lib/cart-store";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -26,11 +27,16 @@ function CheckoutPage() {
   const items = useCart((s) => s.items);
   const total = useCart((s) => s.total());
   const clear = useCart((s) => s.clear);
+  const session = useVerifiedSession();
   const [discord, setDiscord] = useState("");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
-  const placeOrderFn = useServerFn(placeOrder);
+  const placeOrderFn = useServerFn(placeVerifiedOrder);
+
+  useEffect(() => {
+    if (session?.username) setDiscord(session.username);
+  }, [session?.username]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,10 +77,25 @@ function CheckoutPage() {
               className="space-y-5 rounded-3xl border border-border/60 bg-card p-6 shadow-sm">
               <div>
                 <Label htmlFor="discord">Discord username</Label>
-                <Input id="discord" value={discord} onChange={(e) => setDiscord(e.target.value)}
-                  placeholder="e.g. Hellosavagesavage79" maxLength={64} required className="mt-2 h-12 rounded-xl" />
+                <div className="mt-2 flex items-center gap-3 rounded-2xl border border-ink/10 bg-blossom/70 p-2 pr-4">
+                  {session?.avatar_url ? (
+                    <img src={session.avatar_url} alt="" className="h-10 w-10 rounded-xl ring-2 ring-cherry/40" />
+                  ) : (
+                    <span className="grid h-10 w-10 place-items-center rounded-xl bg-cherry text-cream">🐼</span>
+                  )}
+                  <Input
+                    id="discord"
+                    value={discord}
+                    onChange={(e) => setDiscord(e.target.value)}
+                    readOnly={!!session}
+                    maxLength={64}
+                    required
+                    className="h-10 flex-1 rounded-xl border-none bg-transparent shadow-none focus-visible:ring-0"
+                  />
+                  <span className="text-[0.65rem] uppercase tracking-[0.3em] text-cherry">Verified</span>
+                </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Our chefs will DM you in the Panda Bites Discord to arrange B$ payment & delivery.
+                  A chef will DM you in the Panda Bites Discord to arrange B$ payment & delivery.
                 </p>
               </div>
               <div>
