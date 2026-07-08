@@ -19,6 +19,7 @@ import { Route as StaffOrdersRouteImport } from './routes/staff.orders'
 import { Route as StaffMenuRouteImport } from './routes/staff.menu'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
 import { Route as ApiPublicBootstrapRouteImport } from './routes/api/public/bootstrap'
+import { Route as ApiPublicVerifyRequestRouteImport } from './routes/api/public/verify.request'
 
 const StaffRoute = StaffRouteImport.update({
   id: '/staff',
@@ -70,6 +71,11 @@ const ApiPublicBootstrapRoute = ApiPublicBootstrapRouteImport.update({
   path: '/api/public/bootstrap',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicVerifyRequestRoute = ApiPublicVerifyRequestRouteImport.update({
+  id: '/api/public/verify/request',
+  path: '/api/public/verify/request',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
+  '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -93,6 +100,7 @@ export interface FileRoutesByTo {
   '/staff/users': typeof StaffUsersRoute
   '/staff': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
+  '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
+  '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
     | '/staff/users'
     | '/staff/'
     | '/api/public/bootstrap'
+    | '/api/public/verify/request'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
     | '/staff/users'
     | '/staff'
     | '/api/public/bootstrap'
+    | '/api/public/verify/request'
   id:
     | '__root__'
     | '/'
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '/staff/users'
     | '/staff/'
     | '/api/public/bootstrap'
+    | '/api/public/verify/request'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -152,6 +164,7 @@ export interface RootRouteChildren {
   StaffRoute: typeof StaffRouteWithChildren
   OrderIdRoute: typeof OrderIdRoute
   ApiPublicBootstrapRoute: typeof ApiPublicBootstrapRoute
+  ApiPublicVerifyRequestRoute: typeof ApiPublicVerifyRequestRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -226,6 +239,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicBootstrapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/verify/request': {
+      id: '/api/public/verify/request'
+      path: '/api/public/verify/request'
+      fullPath: '/api/public/verify/request'
+      preLoaderRoute: typeof ApiPublicVerifyRequestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -252,6 +272,7 @@ const rootRouteChildren: RootRouteChildren = {
   StaffRoute: StaffRouteWithChildren,
   OrderIdRoute: OrderIdRoute,
   ApiPublicBootstrapRoute: ApiPublicBootstrapRoute,
+  ApiPublicVerifyRequestRoute: ApiPublicVerifyRequestRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
