@@ -72,6 +72,23 @@ export const getOrder = createServerFn({ method: "GET" })
     };
   });
 
+export const getStockByNames = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ names: z.array(z.string()).min(1).max(50) }).parse(d))
+  .handler(async ({ data }) => {
+    const supabase = serverPublicClient();
+    const { data: rows, error } = await supabase
+      .from("menu_items" as any)
+      .select("name,stock,is_active")
+      .in("name", data.names)
+      .eq("category", "non_seasonal");
+    if (error) throw new Error(error.message);
+    const map: Record<string, { stock: number; is_active: boolean }> = {};
+    for (const r of (rows ?? []) as Array<{ name: string; stock: number; is_active: boolean }>) {
+      map[r.name] = { stock: r.stock, is_active: r.is_active };
+    }
+    return map;
+  });
+
 // -------- staff functions --------
 
 async function assertStaff(context: { supabase: ReturnType<typeof createClient<Database>>; userId: string }) {
