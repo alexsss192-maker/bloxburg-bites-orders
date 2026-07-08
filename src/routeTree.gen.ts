@@ -20,6 +20,7 @@ import { Route as StaffMenuRouteImport } from './routes/staff.menu'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
 import { Route as ApiPublicBootstrapRouteImport } from './routes/api/public/bootstrap'
 import { Route as ApiPublicVerifyRequestRouteImport } from './routes/api/public/verify.request'
+import { Route as ApiPublicVerifyConfirmRouteImport } from './routes/api/public/verify.confirm'
 
 const StaffRoute = StaffRouteImport.update({
   id: '/staff',
@@ -76,6 +77,11 @@ const ApiPublicVerifyRequestRoute = ApiPublicVerifyRequestRouteImport.update({
   path: '/api/public/verify/request',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicVerifyConfirmRoute = ApiPublicVerifyConfirmRouteImport.update({
+  id: '/api/public/verify/confirm',
+  path: '/api/public/verify/confirm',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
+  '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRoutesByTo {
@@ -100,6 +107,7 @@ export interface FileRoutesByTo {
   '/staff/users': typeof StaffUsersRoute
   '/staff': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
+  '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRoutesById {
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
   '/api/public/bootstrap': typeof ApiPublicBootstrapRoute
+  '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
 }
 export interface FileRouteTypes {
@@ -129,6 +138,7 @@ export interface FileRouteTypes {
     | '/staff/users'
     | '/staff/'
     | '/api/public/bootstrap'
+    | '/api/public/verify/confirm'
     | '/api/public/verify/request'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -141,6 +151,7 @@ export interface FileRouteTypes {
     | '/staff/users'
     | '/staff'
     | '/api/public/bootstrap'
+    | '/api/public/verify/confirm'
     | '/api/public/verify/request'
   id:
     | '__root__'
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '/staff/users'
     | '/staff/'
     | '/api/public/bootstrap'
+    | '/api/public/verify/confirm'
     | '/api/public/verify/request'
   fileRoutesById: FileRoutesById
 }
@@ -164,6 +176,7 @@ export interface RootRouteChildren {
   StaffRoute: typeof StaffRouteWithChildren
   OrderIdRoute: typeof OrderIdRoute
   ApiPublicBootstrapRoute: typeof ApiPublicBootstrapRoute
+  ApiPublicVerifyConfirmRoute: typeof ApiPublicVerifyConfirmRoute
   ApiPublicVerifyRequestRoute: typeof ApiPublicVerifyRequestRoute
 }
 
@@ -246,6 +259,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicVerifyRequestRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/verify/confirm': {
+      id: '/api/public/verify/confirm'
+      path: '/api/public/verify/confirm'
+      fullPath: '/api/public/verify/confirm'
+      preLoaderRoute: typeof ApiPublicVerifyConfirmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -272,6 +292,7 @@ const rootRouteChildren: RootRouteChildren = {
   StaffRoute: StaffRouteWithChildren,
   OrderIdRoute: OrderIdRoute,
   ApiPublicBootstrapRoute: ApiPublicBootstrapRoute,
+  ApiPublicVerifyConfirmRoute: ApiPublicVerifyConfirmRoute,
   ApiPublicVerifyRequestRoute: ApiPublicVerifyRequestRoute,
 }
 export const routeTree = rootRouteImport
