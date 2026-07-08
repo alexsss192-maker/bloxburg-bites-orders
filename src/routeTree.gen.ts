@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as StaffRouteImport } from './routes/staff'
 import { Route as MenuRouteImport } from './routes/menu'
 import { Route as CheckoutRouteImport } from './routes/checkout'
@@ -23,6 +24,11 @@ import { Route as ApiPublicVerifyRequestRouteImport } from './routes/api/public/
 import { Route as ApiPublicVerifyLogoutRouteImport } from './routes/api/public/verify.logout'
 import { Route as ApiPublicVerifyConfirmRouteImport } from './routes/api/public/verify.confirm'
 
+const VerifyRoute = VerifyRouteImport.update({
+  id: '/verify',
+  path: '/verify',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StaffRoute = StaffRouteImport.update({
   id: '/staff',
   path: '/staff',
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/checkout': typeof CheckoutRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
+  '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
   '/menu': typeof MenuRoute
+  '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/checkout': typeof CheckoutRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
+  '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/menu'
     | '/staff'
+    | '/verify'
     | '/order/$id'
     | '/staff/menu'
     | '/staff/orders'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/'
     | '/checkout'
     | '/menu'
+    | '/verify'
     | '/order/$id'
     | '/staff/menu'
     | '/staff/orders'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/checkout'
     | '/menu'
     | '/staff'
+    | '/verify'
     | '/order/$id'
     | '/staff/menu'
     | '/staff/orders'
@@ -186,6 +198,7 @@ export interface RootRouteChildren {
   CheckoutRoute: typeof CheckoutRoute
   MenuRoute: typeof MenuRoute
   StaffRoute: typeof StaffRouteWithChildren
+  VerifyRoute: typeof VerifyRoute
   OrderIdRoute: typeof OrderIdRoute
   ApiPublicBootstrapRoute: typeof ApiPublicBootstrapRoute
   ApiPublicVerifyConfirmRoute: typeof ApiPublicVerifyConfirmRoute
@@ -195,6 +208,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/verify': {
+      id: '/verify'
+      path: '/verify'
+      fullPath: '/verify'
+      preLoaderRoute: typeof VerifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/staff': {
       id: '/staff'
       path: '/staff'
@@ -310,6 +330,7 @@ const rootRouteChildren: RootRouteChildren = {
   CheckoutRoute: CheckoutRoute,
   MenuRoute: MenuRoute,
   StaffRoute: StaffRouteWithChildren,
+  VerifyRoute: VerifyRoute,
   OrderIdRoute: OrderIdRoute,
   ApiPublicBootstrapRoute: ApiPublicBootstrapRoute,
   ApiPublicVerifyConfirmRoute: ApiPublicVerifyConfirmRoute,
