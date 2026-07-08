@@ -83,7 +83,7 @@ export const getStockByNames = createServerFn({ method: "POST" })
       .eq("category", "non_seasonal");
     if (error) throw new Error(error.message);
     const map: Record<string, { stock: number; is_active: boolean }> = {};
-    for (const r of (rows ?? []) as Array<{ name: string; stock: number; is_active: boolean }>) {
+    for (const r of (rows ?? []) as unknown as Array<{ name: string; stock: number; is_active: boolean }>) {
       map[r.name] = { stock: r.stock, is_active: r.is_active };
     }
     return map;
