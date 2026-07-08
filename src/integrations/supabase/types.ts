@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      discord_verifications: {
+        Row: {
+          attempts: number
+          code_hash: string
+          created_at: string
+          discord_id: string
+          expires_at: string
+          id: string
+          ip: string | null
+        }
+        Insert: {
+          attempts?: number
+          code_hash: string
+          created_at?: string
+          discord_id: string
+          expires_at: string
+          id?: string
+          ip?: string | null
+        }
+        Update: {
+          attempts?: number
+          code_hash?: string
+          created_at?: string
+          discord_id?: string
+          expires_at?: string
+          id?: string
+          ip?: string | null
+        }
+        Relationships: []
+      }
       menu_items: {
         Row: {
           category: Database["public"]["Enums"]["food_category"]
@@ -107,6 +137,7 @@ export type Database = {
           status: Database["public"]["Enums"]["order_status"]
           total_bs: number
           updated_at: string
+          verified_discord_id: string | null
         }
         Insert: {
           created_at?: string
@@ -116,6 +147,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["order_status"]
           total_bs?: number
           updated_at?: string
+          verified_discord_id?: string | null
         }
         Update: {
           created_at?: string
@@ -125,6 +157,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["order_status"]
           total_bs?: number
           updated_at?: string
+          verified_discord_id?: string | null
         }
         Relationships: []
       }
@@ -149,6 +182,30 @@ export type Database = {
         }
         Relationships: []
       }
+      verified_users: {
+        Row: {
+          avatar_url: string | null
+          discord_id: string
+          first_verified_at: string
+          last_seen_at: string
+          username: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          discord_id: string
+          first_verified_at?: string
+          last_seen_at?: string
+          username: string
+        }
+        Update: {
+          avatar_url?: string | null
+          discord_id?: string
+          first_verified_at?: string
+          last_seen_at?: string
+          username?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -166,6 +223,17 @@ export type Database = {
           total_bs: number
         }[]
       }
+      get_orders_for_discord: {
+        Args: { _discord_id: string }
+        Returns: {
+          created_at: string
+          discord_username: string
+          id: string
+          item_count: number
+          status: Database["public"]["Enums"]["order_status"]
+          total_bs: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -174,10 +242,20 @@ export type Database = {
         Returns: boolean
       }
       is_staff: { Args: { _user_id: string }; Returns: boolean }
-      place_order: {
-        Args: { _discord_username: string; _items: Json; _note: string }
-        Returns: string
-      }
+      place_order:
+        | {
+            Args: { _discord_username: string; _items: Json; _note: string }
+            Returns: string
+          }
+        | {
+            Args: {
+              _discord_username: string
+              _items: Json
+              _note: string
+              _verified_discord_id?: string
+            }
+            Returns: string
+          }
     }
     Enums: {
       app_role: "admin" | "chef"
