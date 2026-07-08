@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as StaffRouteImport } from './routes/staff'
 import { Route as MenuRouteImport } from './routes/menu'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StaffIndexRouteImport } from './routes/staff.index'
@@ -37,6 +38,11 @@ const StaffRoute = StaffRouteImport.update({
 const MenuRoute = MenuRouteImport.update({
   id: '/menu',
   path: '/menu',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutRoute = CheckoutRouteImport.update({
@@ -98,6 +104,7 @@ const ApiPublicVerifyConfirmRoute = ApiPublicVerifyConfirmRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
+  '/history': typeof HistoryRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
   '/verify': typeof VerifyRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
+  '/history': typeof HistoryRoute
   '/menu': typeof MenuRoute
   '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
+  '/history': typeof HistoryRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
   '/verify': typeof VerifyRoute
@@ -148,6 +157,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/checkout'
+    | '/history'
     | '/menu'
     | '/staff'
     | '/verify'
@@ -164,6 +174,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/checkout'
+    | '/history'
     | '/menu'
     | '/verify'
     | '/order/$id'
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/checkout'
+    | '/history'
     | '/menu'
     | '/staff'
     | '/verify'
@@ -196,6 +208,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CheckoutRoute: typeof CheckoutRoute
+  HistoryRoute: typeof HistoryRoute
   MenuRoute: typeof MenuRoute
   StaffRoute: typeof StaffRouteWithChildren
   VerifyRoute: typeof VerifyRoute
@@ -227,6 +240,13 @@ declare module '@tanstack/react-router' {
       path: '/menu'
       fullPath: '/menu'
       preLoaderRoute: typeof MenuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/checkout': {
@@ -328,6 +348,7 @@ const StaffRouteWithChildren = StaffRoute._addFileChildren(StaffRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CheckoutRoute: CheckoutRoute,
+  HistoryRoute: HistoryRoute,
   MenuRoute: MenuRoute,
   StaffRoute: StaffRouteWithChildren,
   VerifyRoute: VerifyRoute,
