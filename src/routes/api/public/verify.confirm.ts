@@ -30,17 +30,30 @@ export const Route = createFileRoute("/api/public/verify/confirm")({
           .order("created_at", { ascending: false })
           .limit(1);
 
-        const row = Array.isArray(rows) ? (rows[0] as { id: string; code_hash: string; attempts: number } | undefined) : undefined;
-        if (!row) return Response.json({ ok: false, error: "Code expired. Request a new one." }, { status: 400 });
+        const row = Array.isArray(rows)
+          ? (rows[0] as { id: string; code_hash: string; attempts: number } | undefined)
+          : undefined;
+        if (!row)
+          return Response.json(
+            { ok: false, error: "Code expired or not found. Tap Resend to get a new one.", expired: true },
+            { status: 400 },
+          );
         if (row.attempts >= 5) {
-          return Response.json({ ok: false, error: "Too many attempts. Request a new code." }, { status: 429 });
+          return Response.json(
+            { ok: false, error: "Too many attempts. Tap Resend to get a new code." },
+            { status: 429 },
+          );
         }
         if (row.code_hash !== codeHash) {
           await supabaseAdmin
             .from("discord_verifications" as never)
             .update({ attempts: row.attempts + 1 } as never)
             .eq("id", row.id);
-          return Response.json({ ok: false, error: "Incorrect code" }, { status: 400 });
+          const left = Math.max(0, 5 - (row.attempts + 1));
+          return Response.json(
+            { ok: false, error: `Incorrect code. ${left} attempt${left === 1 ? "" : "s"} left.`, attempts_left: left },
+            { status: 400 },
+          );
         }
 
         // Delete all outstanding codes for this user
