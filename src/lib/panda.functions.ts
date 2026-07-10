@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { logPandaAction } from "@/lib/audit.server";
 
 const imageSchema = z.object({
   data_url: z.string().max(6_500_000), // ~5MB base64
@@ -154,6 +155,8 @@ export const pandaChat = createServerFn({ method: "POST" })
     const roles = ((roleRows as unknown as Array<{ role: string }> | null) ?? []).map((r) => r.role);
     if (!roles.includes("chef") && !roles.includes("admin")) throw new Error("Chef or admin only");
 
+    const actorEmail = (context.claims as { email?: string } | undefined)?.email ?? null;
+
     const menu = await loadChefMenu(context);
     const systemPrompt = buildSystemPrompt(menu);
 
@@ -202,6 +205,14 @@ export const pandaChat = createServerFn({ method: "POST" })
             .eq("id", existing.id);
           if (error) throw new Error(error.message);
           applied.push({ type: "update_stock", name: existing.name, stock, itemId: existing.id, ok: true });
+          await logPandaAction({
+            actorUserId: context.userId,
+            actorEmail,
+            action: "update_stock",
+            targetType: "menu_item",
+            targetId: existing.id,
+            payload: { name: existing.name, previous_stock: existing.stock, new_stock: stock },
+          });
         } else {
           // add_item — zero price, inactive
           const { data: row, error } = await context.supabase
@@ -218,18 +229,77 @@ export const pandaChat = createServerFn({ method: "POST" })
             .select("id")
             .single();
           if (error) throw new Error(error.message);
+          const newId = (row as unknown as { id: string }).id;
           applied.push({
             type: "add_item",
             name,
             stock,
-            itemId: (row as unknown as { id: string }).id,
+            itemId: newId,
             ok: true,
+          });
+          await logPandaAction({
+            actorUserId: context.userId,
+            actorEmail,
+            action: "add_item",
+            targetType: "menu_item",
+            targetId: newId,
+            payload: { name, stock, price_bs: 0 },
           });
         }
       } catch (err) {
-        applied.push({ type: action.type, name, stock, ok: false, error: err instanceof Error ? err.message : "Failed" });
+        const errMsg = err instanceof Error ? err.message : "Failed";
+        applied.push({ type: action.type, name, stock, ok: false, error: errMsg });
+        await logPandaAction({
+          actorUserId: context.userId,
+          actorEmail,
+          action: `${action.type}_failed`,
+          targetType: "menu_item",
+          payload: { name, stock, error: errMsg },
+        });
       }
     }
 
     return { reply: parsed.reply, applied };
+  });
+
+// List Panda audit entries for staff review.
+const auditFilter = z.object({
+  limit: z.number().int().min(1).max(200).default(50),
+  action: z.string().max(64).optional().nullable(),
+  actor: z.string().max(64).optional().nullable(),
+});
+
+export const listPandaAudit = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => auditFilter.parse(d ?? {}))
+  .handler(async ({ context, data }) => {
+    const { data: roleRows } = await context.supabase
+      .from("user_roles" as never)
+      .select("role")
+      .eq("user_id", context.userId);
+    const roles = ((roleRows as unknown as Array<{ role: string }> | null) ?? []).map((r) => r.role);
+    if (!roles.includes("chef") && !roles.includes("admin")) throw new Error("Chef or admin only");
+
+    let q = context.supabase
+      .from("panda_audit_log" as never)
+      .select("id, actor_user_id, actor_email, action, target_type, target_id, payload, created_at")
+      .order("created_at", { ascending: false })
+      .limit(data.limit);
+    if (data.action) q = q.eq("action", data.action);
+    if (data.actor) q = q.ilike("actor_email", `%${data.actor}%`);
+
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+    return {
+      entries: (rows ?? []) as unknown as Array<{
+        id: string;
+        actor_user_id: string | null;
+        actor_email: string | null;
+        action: string;
+        target_type: string | null;
+        target_id: string | null;
+        payload: Record<string, unknown>;
+        created_at: string;
+      }>,
+    };
   });
