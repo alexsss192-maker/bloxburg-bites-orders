@@ -52,6 +52,7 @@ export const Route = createFileRoute("/api/public/verify/request")({
           discord_id: found.user.id,
           code_hash: codeHash,
           expires_at: expiresAt,
+          last_sent_at: new Date().toISOString(),
           ip,
         } as never);
         if (insErr) return Response.json({ ok: false, error: insErr.message }, { status: 500 });

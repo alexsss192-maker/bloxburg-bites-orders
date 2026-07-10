@@ -23,6 +23,7 @@ export type Database = {
           expires_at: string
           id: string
           ip: string | null
+          last_sent_at: string
         }
         Insert: {
           attempts?: number
@@ -32,6 +33,7 @@ export type Database = {
           expires_at: string
           id?: string
           ip?: string | null
+          last_sent_at?: string
         }
         Update: {
           attempts?: number
@@ -41,6 +43,7 @@ export type Database = {
           expires_at?: string
           id?: string
           ip?: string | null
+          last_sent_at?: string
         }
         Relationships: []
       }
@@ -158,6 +161,39 @@ export type Database = {
           total_bs?: number
           updated_at?: string
           verified_discord_id?: string | null
+        }
+        Relationships: []
+      }
+      panda_audit_log: {
+        Row: {
+          action: string
+          actor_email: string | null
+          actor_user_id: string | null
+          created_at: string
+          id: string
+          payload: Json
+          target_id: string | null
+          target_type: string | null
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          payload?: Json
+          target_id?: string | null
+          target_type?: string | null
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          actor_user_id?: string | null
+          created_at?: string
+          id?: string
+          payload?: Json
+          target_id?: string | null
+          target_type?: string | null
         }
         Relationships: []
       }

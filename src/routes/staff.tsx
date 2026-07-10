@@ -8,7 +8,7 @@ import { getMyRoles } from "@/lib/menu.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, ShoppingBag, Menu as MenuIcon, Users, Sparkles } from "lucide-react";
+import { LogOut, ShoppingBag, Menu as MenuIcon, Users, Sparkles, ScrollText } from "lucide-react";
 
 export const Route = createFileRoute("/staff")({
   ssr: false,
@@ -64,7 +64,9 @@ function StaffLayout() {
       <div className="grid min-h-screen place-items-center bg-cream p-6 text-center">
         <div>
           <p className="font-display text-3xl">No staff access</p>
-          <p className="mt-2 text-muted-foreground">Ask an admin to grant you a role.</p>
+          <p className="mt-2 text-muted-foreground">
+            You're signed in, but your account doesn't have a staff role yet. Ask an admin to grant you one.
+          </p>
           <button onClick={signOut} className="mt-4 rounded-full bg-ink px-5 py-2 text-cream">Sign out</button>
         </div>
       </div>
@@ -90,6 +92,9 @@ function StaffLayout() {
                 <Link to="/staff/panda" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
                   <span className="inline-flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> Panda</span>
                 </Link>
+                <Link to="/staff/audit" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
+                  <span className="inline-flex items-center gap-1.5"><ScrollText className="h-4 w-4" /> Audit</span>
+                </Link>
               </>
             )}
             {isAdmin && (
@@ -100,9 +105,14 @@ function StaffLayout() {
               </>
             )}
           </nav>
-          <button onClick={signOut} className="inline-flex items-center gap-2 rounded-full bg-cream/10 px-4 py-2 text-sm text-cream hover:bg-cream/20">
-            <LogOut className="h-4 w-4" /> Sign out
-          </button>
+          <div className="flex items-center gap-3">
+            <span className="hidden rounded-full bg-cherry/20 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-widest text-cherry sm:inline">
+              {isAdmin ? "Admin" : "Chef"}
+            </span>
+            <button onClick={signOut} className="inline-flex items-center gap-2 rounded-full bg-cream/10 px-4 py-2 text-sm text-cream hover:bg-cream/20">
+              <LogOut className="h-4 w-4" /> Sign out
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-6 py-8"><Outlet /></main>
