@@ -1,12 +1,12 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ArrowRight, ExternalLink, Loader2, ShieldCheck } from "lucide-react";
+import { ArrowRight, ExternalLink, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import pandaMascot from "@/assets/panda-mascot.png";
 
 export const Route = createFileRoute("/verify")({
@@ -30,14 +30,24 @@ function VerifyPage() {
   const [resolvedName, setResolvedName] = useState("");
   const [avatar, setAvatar] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [needsJoin, setNeedsJoin] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => Math.max(0, c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   async function requestCode(e?: React.FormEvent) {
     e?.preventDefault();
     if (username.trim().length < 2) return;
     setLoading(true);
     setNeedsJoin(false);
+    setErrorMsg(null);
     try {
       const res = await fetch("/api/public/verify/request", {
         method: "POST",
@@ -60,11 +70,41 @@ function VerifyPage() {
       setResolvedName(data.username!);
       setAvatar(data.avatar_url ?? null);
       setStep("code");
+      setCooldown(60);
       toast.success("Code sent — check your Discord DMs");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong");
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setErrorMsg(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function resendCode() {
+    if (cooldown > 0 || resending || !discordId) return;
+    setResending(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/public/verify/resend", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ discord_id: discordId }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string; cooldown?: number; retry_after?: number };
+      if (!res.ok || !data.ok) {
+        if (data.retry_after) setCooldown(data.retry_after);
+        throw new Error(data.error ?? "Failed");
+      }
+      setCode("");
+      setCooldown(data.cooldown ?? 60);
+      toast.success("New code sent to your DMs");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Resend failed";
+      setErrorMsg(msg);
+      toast.error(msg);
+    } finally {
+      setResending(false);
     }
   }
 
@@ -72,18 +112,22 @@ function VerifyPage() {
     const c = (finalCode ?? code).trim();
     if (c.length !== 6) return;
     setLoading(true);
+    setErrorMsg(null);
     try {
       const res = await fetch("/api/public/verify/confirm", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ discord_id: discordId, code: c, username: resolvedName, avatar_url: avatar }),
       });
-      const data = (await res.json()) as { ok: boolean; error?: string };
+      const data = (await res.json()) as { ok: boolean; error?: string; expired?: boolean; attempts_left?: number };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Failed");
       toast.success("Verified! Welcome to Panda Bites 🐼");
       navigate({ to: "/" });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
+      const msg = err instanceof Error ? err.message : "Failed";
+      setErrorMsg(msg);
+      toast.error(msg);
+      setCode("");
     } finally {
       setLoading(false);
     }
@@ -199,6 +243,15 @@ function VerifyPage() {
                       </InputOTPGroup>
                     </InputOTP>
                   </div>
+                  {errorMsg && (
+                    <motion.p
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive"
+                    >
+                      {errorMsg}
+                    </motion.p>
+                  )}
                   <Button
                     disabled={loading || code.length !== 6}
                     onClick={() => confirmCode()}
@@ -206,12 +259,28 @@ function VerifyPage() {
                   >
                     {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : "Enter Panda Bites"}
                   </Button>
-                  <button
-                    onClick={() => { setStep("username"); setCode(""); }}
-                    className="text-xs uppercase tracking-[0.3em] text-cherry hover:text-ink"
-                  >
-                    ← Wrong account?
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => { setStep("username"); setCode(""); setErrorMsg(null); }}
+                      className="text-xs uppercase tracking-[0.3em] text-cherry hover:text-ink"
+                    >
+                      ← Wrong account?
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resendCode}
+                      disabled={cooldown > 0 || resending}
+                      className="inline-flex items-center gap-1.5 text-xs uppercase tracking-[0.3em] text-cherry hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {resending ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3" />
+                      )}
+                      {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
