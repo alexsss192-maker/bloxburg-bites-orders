@@ -298,7 +298,7 @@ export const listPandaAudit = createServerFn({ method: "POST" })
         action: string;
         target_type: string | null;
         target_id: string | null;
-        payload: Record<string, unknown>;
+        payload: unknown;
         created_at: string;
       }>,
     };
