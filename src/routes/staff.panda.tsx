@@ -185,8 +185,18 @@ function PandaPage() {
       </div>
 
       <aside className="h-[calc(100vh-9rem)] overflow-y-auto rounded-3xl border border-border/60 bg-white p-5 shadow-sm">
-        <p className="text-xs uppercase tracking-[0.3em] text-cherry">Changes this session</p>
-        <h2 className="mt-1 font-display text-2xl">What Panda touched</h2>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-cherry">Changes this session</p>
+            <h2 className="mt-1 font-display text-2xl">What Panda touched</h2>
+          </div>
+          <Link
+            to="/staff/audit"
+            className="inline-flex items-center gap-1 rounded-full border border-ink/10 bg-blossom px-3 py-1.5 text-xs font-semibold text-cherry hover:bg-cherry/10"
+          >
+            View audit log →
+          </Link>
+        </div>
         <p className="mt-2 text-xs text-ink/50">
           New items are added with price <b>B$0</b> and stay hidden until you set a price.
         </p>
