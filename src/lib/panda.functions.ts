@@ -290,16 +290,26 @@ export const listPandaAudit = createServerFn({ method: "POST" })
 
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
+    const raw = (rows ?? []) as unknown as Array<{
+      id: string;
+      actor_user_id: string | null;
+      actor_email: string | null;
+      action: string;
+      target_type: string | null;
+      target_id: string | null;
+      payload: unknown;
+      created_at: string;
+    }>;
     return {
-      entries: (rows ?? []) as unknown as Array<{
-        id: string;
-        actor_user_id: string | null;
-        actor_email: string | null;
-        action: string;
-        target_type: string | null;
-        target_id: string | null;
-        payload: unknown;
-        created_at: string;
-      }>,
+      entries: raw.map((r) => ({
+        id: r.id,
+        actor_user_id: r.actor_user_id,
+        actor_email: r.actor_email,
+        action: r.action,
+        target_type: r.target_type,
+        target_id: r.target_id,
+        payload_json: JSON.stringify(r.payload ?? {}),
+        created_at: r.created_at,
+      })),
     };
   });
