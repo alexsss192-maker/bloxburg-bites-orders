@@ -5,7 +5,7 @@ export const Route = createFileRoute("/api/public/verify/request")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const { findGuildMember, sendDm, avatarUrl } = await import("@/lib/discord.server");
+        const { findGuildMember, sendDm, avatarUrl, GuildUnavailableError } = await import("@/lib/discord.server");
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
         let body: { username?: string };
@@ -22,7 +22,15 @@ export const Route = createFileRoute("/api/public/verify/request")({
         const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
 
         // Rate limit: max 5 requests per Discord id in last 15 min (checked after resolving)
-        const found = await findGuildMember(username);
+        let found: Awaited<ReturnType<typeof findGuildMember>>;
+        try {
+          found = await findGuildMember(username);
+        } catch (e) {
+          if (e instanceof GuildUnavailableError) {
+            return Response.json({ ok: false, error: e.message }, { status: 503 });
+          }
+          throw e;
+        }
         if (!found) {
           return Response.json({ ok: false, error: "Discord user not found" }, { status: 404 });
         }
