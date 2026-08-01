@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const VERIFY_COOKIE = "pb_verified";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
+const IS_PROD = process.env.NODE_ENV === "production";
 
 export type VerifiedPayload = {
   discord_id: string;
@@ -52,10 +53,10 @@ export function verifyPayload(token: string | null | undefined): VerifiedPayload
 }
 
 export function buildSetCookie(token: string) {
-  return `${VERIFY_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}; Secure`;
+  return `${VERIFY_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${IS_PROD ? "; Secure" : ""}`;
 }
 export function buildClearCookie() {
-  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`;
+  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${IS_PROD ? "; Secure" : ""}`;
 }
 
 export function readCookie(header: string | null, name: string): string | null {

@@ -107,11 +107,11 @@ async function callPanda(args: {
     }),
   });
 
-  if (res.status === 429) throw new Error("Panda is over capacity — try again in a minute.");
+  if (res.status === 429) throw new Error("Skippe is over capacity — try again in a minute.");
   if (res.status === 402) throw new Error("AI credits exhausted. Add credits in workspace settings.");
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Panda call failed (${res.status}): ${body.slice(0, 200)}`);
+    throw new Error(`Skippe call failed (${res.status}): ${body.slice(0, 200)}`);
   }
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const text = data.choices?.[0]?.message?.content ?? "";
@@ -262,7 +262,7 @@ export const pandaChat = createServerFn({ method: "POST" })
     return { reply: parsed.reply, applied };
   });
 
-// List Panda audit entries for staff review.
+// List Skippe audit entries for staff review.
 const auditFilter = z.object({
   limit: z.number().int().min(1).max(200).default(50),
   action: z.string().max(64).optional().nullable(),

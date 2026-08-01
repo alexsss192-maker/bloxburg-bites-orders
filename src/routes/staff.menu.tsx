@@ -13,7 +13,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Switch } from "@/components/ui/switch";
 
 export const Route = createFileRoute("/staff/menu")({
-  head: () => ({ meta: [{ title: "Menu editor — Panda Bites Staff" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({
+    meta: [
+      { title: "My Chef Menu — Panda Bites" },
+      { name: "description", content: "Manage your private Panda Bites chef menu." },
+      { property: "og:title", content: "My Chef Menu — Panda Bites" },
+      { property: "og:description", content: "Manage a Panda Bites chef menu." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
   component: MenuEditor,
 });
 

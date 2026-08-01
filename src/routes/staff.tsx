@@ -47,6 +47,8 @@ function StaffLayout() {
   useEffect(() => {
     if (!session) return;
     setRolesReady(false);
+    setIsAdmin(false);
+    setIsChef(false);
     syncRoles()
       .then(() => getRoles())
       .then((r) => {
@@ -74,7 +76,7 @@ function StaffLayout() {
           <p className="mt-2 text-muted-foreground">
              Your verified Discord account does not currently have the Chef or Admin role in the server.
           </p>
-          <button onClick={signOut} className="mt-4 rounded-full bg-ink px-5 py-2 text-cream">Sign out</button>
+          <Button onClick={signOut} className="mt-4 rounded-full bg-ink px-5 py-2 text-cream">Sign out</Button>
         </div>
       </div>
     );
@@ -116,9 +118,9 @@ function StaffLayout() {
             <span className="hidden rounded-full bg-cherry/20 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-widest text-cherry sm:inline">
               {isAdmin ? "Admin" : "Chef"}
             </span>
-            <button onClick={signOut} className="inline-flex items-center gap-2 rounded-full bg-cream/10 px-4 py-2 text-sm text-cream hover:bg-cream/20">
+            <Button onClick={signOut} className="inline-flex items-center gap-2 rounded-full bg-cream/10 px-4 py-2 text-sm text-cream hover:bg-cream/20">
               <LogOut className="h-4 w-4" /> Sign out
-            </button>
+            </Button>
           </div>
         </div>
       </header>
