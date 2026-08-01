@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { getVerifiedSession } from "@/lib/verify.functions";
 import { motion } from "framer-motion";
 
 const EXEMPT_PREFIXES = ["/verify", "/staff", "/api", "/lovable"];
@@ -7,6 +9,7 @@ const EXEMPT_PREFIXES = ["/verify", "/staff", "/api", "/lovable"];
 export function VerifyGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const getSession = useServerFn(getVerifiedSession);
   const [checked, setChecked] = useState(false);
   const [session, setSession] = useState<{ discord_id: string; username: string; avatar_url: string | null } | null>(null);
 
@@ -14,24 +17,38 @@ export function VerifyGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/public/verify/session", { credentials: "same-origin", cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) throw new Error("Verification check failed");
-        return response.json() as Promise<{ discord_id: string; username: string; avatar_url: string | null } | null>;
-      })
+    
+    getSession()
       .then((s) => {
         if (cancelled) return;
         setSession(s);
         setChecked(true);
-        if (!s && !exempt) navigate({ to: "/verify", replace: true });
+        
+        if (!s && !exempt) {
+          // Not verified and trying to access a protected route
+          navigate({ to: "/verify", replace: true });
+        } else if (s && location.pathname === "/verify") {
+          // Already verified and trying to access the verify page
+          navigate({ to: "/", replace: true });
+        }
       })
-      .catch(() => setChecked(true));
+      .catch((err) => {
+        console.error("Session check failed:", err);
+        if (!cancelled) setChecked(true);
+      });
+      
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, exempt, navigate]);
+  }, [location.pathname, exempt, getSession, navigate]);
 
-  if (exempt) return <>{children}</>;
+  // If we are on an exempt route, we still want to show it immediately
+  // while the background check might redirect us away if we are already verified (for /verify)
+  if (exempt) {
+    // Special case: if we are on /verify but already confirmed we have a session, 
+    // we let the useEffect handle the navigation, but we don't need to block rendering.
+    return <>{children}</>;
+  }
 
   if (!checked) {
     return (
@@ -48,7 +65,7 @@ export function VerifyGate({ children }: { children: ReactNode }) {
   }
 
   if (!session) {
-    // navigate is happening; render nothing
+    // If not checked, we showed the loader. If checked and no session, navigate happened.
     return null;
   }
 
@@ -56,12 +73,10 @@ export function VerifyGate({ children }: { children: ReactNode }) {
 }
 
 export function useVerifiedSession() {
+  const getSession = useServerFn(getVerifiedSession);
   const [session, setSession] = useState<{ discord_id: string; username: string; avatar_url: string | null } | null>(null);
   useEffect(() => {
-    fetch("/api/public/verify/session", { credentials: "same-origin", cache: "no-store" })
-      .then((response) => response.json())
-      .then(setSession)
-      .catch(() => {});
-  }, []);
+    getSession().then(setSession).catch(() => {});
+  }, [getSession]);
   return session;
 }
