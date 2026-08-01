@@ -153,8 +153,7 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => menuUpsert.parse(d))
   .handler(async ({ context, data }) => {
-    const { isAdmin, isChef } = await assertStaff(context);
-    if (!isAdmin && !isChef) throw new Error("Forbidden");
+    await assertStaff(context);
     if (data.id) {
       // Ownership enforced by RLS for chefs; admins can update anything.
       const { error } = await context.supabase
@@ -184,8 +183,7 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
-    const { isAdmin, isChef } = await assertStaff(context);
-    if (!isAdmin && !isChef) throw new Error("Forbidden");
+    await assertStaff(context);
     // RLS enforces chefs may only delete rows they own.
     const { error } = await context.supabase
       .from("menu_items" as any)

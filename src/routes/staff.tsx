@@ -72,7 +72,7 @@ function StaffLayout() {
         <div>
           <p className="font-display text-3xl">No staff access</p>
           <p className="mt-2 text-muted-foreground">
-            You're signed in, but your account doesn't have a staff role yet. Ask an admin to grant you one.
+             Your verified Discord account does not currently have the Chef or Admin role in the server.
           </p>
           <button onClick={signOut} className="mt-4 rounded-full bg-ink px-5 py-2 text-cream">Sign out</button>
         </div>

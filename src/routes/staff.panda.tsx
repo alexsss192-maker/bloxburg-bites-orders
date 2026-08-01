@@ -9,7 +9,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { ImagePlus, Loader2, Send, Sparkles, X } from "lucide-react";
 
 export const Route = createFileRoute("/staff/panda")({
-  head: () => ({ meta: [{ title: "Panda AI — Panda Bites Staff" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({
+    meta: [
+      { title: "Skippe AI — Panda Bites Staff" },
+      { name: "description", content: "Scan and update your own Panda Bites chef menu with Skippe." },
+      { property: "og:title", content: "Skippe AI — Panda Bites Staff" },
+      { property: "og:description", content: "AI menu scanning for Panda Bites chefs." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
   component: PandaPage,
 });
 
@@ -53,9 +63,7 @@ function PandaPage() {
     const userMsg: Msg = { role: "user", content: input.trim() || "(scan these images)", images: [...images] };
     setMessages((m) => [...m, userMsg]);
     setLoading(true);
-    const historyForServer = messages
-      .slice(-10)
-      .map((m) => ({ role: m.role, content: m.content }));
+    const historyForServer = messages.map((m) => ({ role: m.role, content: m.content }));
     const payload = { message: input.trim(), images: images.map((d) => ({ data_url: d })), history: historyForServer };
     setInput("");
     setImages([]);

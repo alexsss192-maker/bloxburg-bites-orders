@@ -122,13 +122,13 @@ async function callPanda(args: {
 
 function buildSystemPrompt(menu: MenuItem[]) {
   return [
-    "You are Panda 🐼 — a friendly assistant for chefs on Panda Bites (a Bloxburg food shop).",
+    "You are Skippe — a friendly AI menu assistant for chefs on Panda Bites (a Bloxburg food shop).",
     "You help chefs manage stock by looking at fridge photos and answering pricing/menu questions.",
     "",
     "HARD RULES you MUST follow:",
     "- You NEVER set, invent, change, or suggest a specific numeric price. Chefs set all prices.",
     "- When you 'add_item', the price is always 0 and the item will be hidden until the chef sets a price.",
-    "- If asked what to price something, share ranges from the provided web search snippets only, and remind the chef to set the price themselves.",
+    "- Never provide, look up, estimate, or recommend prices or price ranges. Tell the chef that only they can set prices in the menu editor.",
     "- If images clearly show an item already on the menu, use update_stock (do NOT create a duplicate).",
     "- Item names should match the chef's existing naming style (short, capitalized).",
     "",
@@ -139,7 +139,7 @@ function buildSystemPrompt(menu: MenuItem[]) {
     '{"reply": string, "actions": [ {"type":"add_item","name":string,"stock":number} | {"type":"update_stock","name":string,"stock":number} ], "needs_web_search": string | null }',
     "- 'reply' is the chatty message the chef sees (markdown ok, short).",
     "- 'actions' is what you want the app to change (add_item creates a hidden zero-price item; update_stock only works on the chef's own items).",
-    "- If you need current web info to answer (e.g. 'what's a good valentines cake price'), set 'needs_web_search' to your search query and leave actions empty. The app will re-ask you with results.",
+     "- Use web search only for non-price menu facts. Never request a price search.",
   ].join("\n");
 }
 
@@ -179,7 +179,7 @@ export const pandaChat = createServerFn({ method: "POST" })
       parsed = await callPanda({
         systemPrompt,
         history: followupHistory,
-        userText: `Web search results for "${parsed.needs_web_search}":\n${results || "(no results)"}\n\nUse these to answer the chef's original question. Do not suggest a specific price yourself; share the range and remind the chef to decide.`,
+         userText: `Web search results for "${parsed.needs_web_search}":\n${results || "(no results)"}\n\nUse these to answer the chef's original non-price question. Never provide or recommend prices.`,
         images: [], // no images on retry
       });
       parsed.needs_web_search = null;
