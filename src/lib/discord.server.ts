@@ -9,6 +9,8 @@ function botHeaders() {
 
 export type DiscordUser = { id: string; username: string; global_name: string | null; avatar: string | null };
 
+type DiscordGuildMember = { user: DiscordUser; roles: string[] };
+
 /** Thrown when the configured guild is not visible to the bot (bad ID or bot not invited). */
 export class GuildUnavailableError extends Error {
   constructor() {
@@ -57,6 +59,26 @@ export async function findGuildMember(usernameOrId: string): Promise<{ user: Dis
     arr[0];
   if (!match) return null;
   return { user: match.user, inGuild: true };
+}
+
+/** Read the configured Panda Bites staff roles for a verified guild member. */
+export async function getGuildStaffRoles(discordId: string): Promise<Array<"admin" | "chef">> {
+  const guildId = process.env.DISCORD_GUILD_ID;
+  const chefRoleId = process.env.DISCORD_CHEF_ROLE_ID;
+  const adminRoleId = process.env.DISCORD_ADMIN_ROLE_ID;
+  if (!guildId) throw new Error("DISCORD_GUILD_ID missing");
+  if (!chefRoleId || !adminRoleId) throw new Error("Discord staff role IDs are not configured");
+
+  await assertGuildReachable(guildId);
+  const response = await fetch(`${API}/guilds/${guildId}/members/${discordId}`, { headers: botHeaders() });
+  if (response.status === 404) return [];
+  if (!response.ok) throw new Error(`Discord role check failed (${response.status})`);
+
+  const member = (await response.json()) as DiscordGuildMember;
+  const roles: Array<"admin" | "chef"> = [];
+  if (member.roles.includes(adminRoleId)) roles.push("admin");
+  if (member.roles.includes(chefRoleId)) roles.push("chef");
+  return roles;
 }
 
 export async function sendDm(discordId: string, content: string): Promise<{ ok: boolean; error?: string }> {

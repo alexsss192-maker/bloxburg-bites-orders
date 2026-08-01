@@ -17,20 +17,38 @@ export function VerifyGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    
     getSession()
       .then((s) => {
         if (cancelled) return;
         setSession(s);
         setChecked(true);
-        if (!s && !exempt) navigate({ to: "/verify", replace: true });
+        
+        if (!s && !exempt) {
+          // Not verified and trying to access a protected route
+          navigate({ to: "/verify", replace: true });
+        } else if (s && location.pathname === "/verify") {
+          // Already verified and trying to access the verify page
+          navigate({ to: "/", replace: true });
+        }
       })
-      .catch(() => setChecked(true));
+      .catch((err) => {
+        console.error("Session check failed:", err);
+        if (!cancelled) setChecked(true);
+      });
+      
     return () => {
       cancelled = true;
     };
   }, [location.pathname, exempt, getSession, navigate]);
 
-  if (exempt) return <>{children}</>;
+  // If we are on an exempt route, we still want to show it immediately
+  // while the background check might redirect us away if we are already verified (for /verify)
+  if (exempt) {
+    // Special case: if we are on /verify but already confirmed we have a session, 
+    // we let the useEffect handle the navigation, but we don't need to block rendering.
+    return <>{children}</>;
+  }
 
   if (!checked) {
     return (
@@ -47,7 +65,7 @@ export function VerifyGate({ children }: { children: ReactNode }) {
   }
 
   if (!session) {
-    // navigate is happening; render nothing
+    // If not checked, we showed the loader. If checked and no session, navigate happened.
     return null;
   }
 

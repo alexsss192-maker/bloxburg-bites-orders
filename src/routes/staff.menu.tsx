@@ -13,7 +13,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Switch } from "@/components/ui/switch";
 
 export const Route = createFileRoute("/staff/menu")({
-  head: () => ({ meta: [{ title: "Menu editor — Panda Bites Staff" }, { name: "robots", content: "noindex" }] }),
+  head: () => ({
+    meta: [
+      { title: "My Chef Menu — Panda Bites" },
+      { name: "description", content: "Manage your private Panda Bites chef menu." },
+      { property: "og:title", content: "My Chef Menu — Panda Bites" },
+      { property: "og:description", content: "Manage a Panda Bites chef menu." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+      { name: "robots", content: "noindex" },
+    ],
+  }),
   component: MenuEditor,
 });
 
@@ -51,15 +61,13 @@ function MenuEditor() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-cherry">
-            {isAdmin ? "Menu editor · admin" : "Chef menu editor"}
+            {isAdmin ? "Admin menu editor" : "Chef menu editor"}
           </p>
           <h1 className="mt-1 font-display text-4xl">
-            {isAdmin ? "All non-seasonal items" : "My non-seasonal items"}
+            My non-seasonal items
           </h1>
           <p className="mt-1 text-sm text-ink/60">
-            {isAdmin
-              ? "Admins see and can edit every chef's items."
-              : "You only see items you own. Anything you create belongs to you."}
+            You only see and edit items you own. Anything you create belongs to your chef menu.
           </p>
         </div>
         <Button onClick={() => setEditing({ name: "", description: "", price_bs: 0, stock: 0, image_url: "", is_active: true })}

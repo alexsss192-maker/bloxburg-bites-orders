@@ -23,6 +23,7 @@ import { Route as StaffMenuRouteImport } from './routes/staff.menu'
 import { Route as StaffAuditRouteImport } from './routes/staff.audit'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
 import { Route as ApiPublicBootstrapRouteImport } from './routes/api/public/bootstrap'
+import { Route as ApiPublicVerifySessionRouteImport } from './routes/api/public/verify.session'
 import { Route as ApiPublicVerifyResendRouteImport } from './routes/api/public/verify.resend'
 import { Route as ApiPublicVerifyRequestRouteImport } from './routes/api/public/verify.request'
 import { Route as ApiPublicVerifyLogoutRouteImport } from './routes/api/public/verify.logout'
@@ -98,6 +99,11 @@ const ApiPublicBootstrapRoute = ApiPublicBootstrapRouteImport.update({
   path: '/api/public/bootstrap',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicVerifySessionRoute = ApiPublicVerifySessionRouteImport.update({
+  id: '/api/public/verify/session',
+  path: '/api/public/verify/session',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicVerifyResendRoute = ApiPublicVerifyResendRouteImport.update({
   id: '/api/public/verify/resend',
   path: '/api/public/verify/resend',
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
   '/api/public/verify/resend': typeof ApiPublicVerifyResendRoute
+  '/api/public/verify/session': typeof ApiPublicVerifySessionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -157,6 +164,7 @@ export interface FileRoutesByTo {
   '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
   '/api/public/verify/resend': typeof ApiPublicVerifyResendRoute
+  '/api/public/verify/session': typeof ApiPublicVerifySessionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -178,6 +186,7 @@ export interface FileRoutesById {
   '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
   '/api/public/verify/resend': typeof ApiPublicVerifyResendRoute
+  '/api/public/verify/session': typeof ApiPublicVerifySessionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -200,6 +209,7 @@ export interface FileRouteTypes {
     | '/api/public/verify/logout'
     | '/api/public/verify/request'
     | '/api/public/verify/resend'
+    | '/api/public/verify/session'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/api/public/verify/logout'
     | '/api/public/verify/request'
     | '/api/public/verify/resend'
+    | '/api/public/verify/session'
   id:
     | '__root__'
     | '/'
@@ -239,6 +250,7 @@ export interface FileRouteTypes {
     | '/api/public/verify/logout'
     | '/api/public/verify/request'
     | '/api/public/verify/resend'
+    | '/api/public/verify/session'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -254,6 +266,7 @@ export interface RootRouteChildren {
   ApiPublicVerifyLogoutRoute: typeof ApiPublicVerifyLogoutRoute
   ApiPublicVerifyRequestRoute: typeof ApiPublicVerifyRequestRoute
   ApiPublicVerifyResendRoute: typeof ApiPublicVerifyResendRoute
+  ApiPublicVerifySessionRoute: typeof ApiPublicVerifySessionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -356,6 +369,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicBootstrapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/verify/session': {
+      id: '/api/public/verify/session'
+      path: '/api/public/verify/session'
+      fullPath: '/api/public/verify/session'
+      preLoaderRoute: typeof ApiPublicVerifySessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/verify/resend': {
       id: '/api/public/verify/resend'
       path: '/api/public/verify/resend'
@@ -420,17 +440,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicVerifyLogoutRoute: ApiPublicVerifyLogoutRoute,
   ApiPublicVerifyRequestRoute: ApiPublicVerifyRequestRoute,
   ApiPublicVerifyResendRoute: ApiPublicVerifyResendRoute,
+  ApiPublicVerifySessionRoute: ApiPublicVerifySessionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
