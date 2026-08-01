@@ -118,14 +118,12 @@ export const getMyRoles = createServerFn({ method: "GET" })
 export const listAllMenu = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdmin } = await assertStaff(context);
-    let query = context.supabase
+    await assertStaff(context);
+    const query = context.supabase
       .from("menu_items" as any)
       .select("*")
+      .eq("owner_id", context.userId)
       .order("created_at", { ascending: false });
-    if (!isAdmin) {
-      query = query.eq("owner_id", context.userId);
-    }
     const { data, error } = await query;
     if (error) throw new Error(error.message);
     return data as unknown as Array<{
@@ -162,7 +160,8 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
       const { error } = await context.supabase
         .from("menu_items" as any)
         .update({ ...data, category: "non_seasonal" as const })
-        .eq("id", data.id);
+        .eq("id", data.id)
+        .eq("owner_id", context.userId);
       if (error) throw new Error(error.message);
       return { id: data.id };
     }
@@ -170,7 +169,7 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
     const payload = {
       ...data,
       category: "non_seasonal" as const,
-      owner_id: isChef && !isAdmin ? context.userId : context.userId,
+      owner_id: context.userId,
     };
     const { data: row, error } = await context.supabase
       .from("menu_items" as any)
@@ -188,7 +187,11 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
     const { isAdmin, isChef } = await assertStaff(context);
     if (!isAdmin && !isChef) throw new Error("Forbidden");
     // RLS enforces chefs may only delete rows they own.
-    const { error } = await context.supabase.from("menu_items" as any).delete().eq("id", data.id);
+    const { error } = await context.supabase
+      .from("menu_items" as any)
+      .delete()
+      .eq("id", data.id)
+      .eq("owner_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

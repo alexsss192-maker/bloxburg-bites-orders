@@ -51,15 +51,13 @@ function MenuEditor() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-cherry">
-            {isAdmin ? "Menu editor · admin" : "Chef menu editor"}
+            {isAdmin ? "Admin menu editor" : "Chef menu editor"}
           </p>
           <h1 className="mt-1 font-display text-4xl">
-            {isAdmin ? "All non-seasonal items" : "My non-seasonal items"}
+            My non-seasonal items
           </h1>
           <p className="mt-1 text-sm text-ink/60">
-            {isAdmin
-              ? "Admins see and can edit every chef's items."
-              : "You only see items you own. Anything you create belongs to you."}
+            You only see and edit items you own. Anything you create belongs to your chef menu.
           </p>
         </div>
         <Button onClick={() => setEditing({ name: "", description: "", price_bs: 0, stock: 0, image_url: "", is_active: true })}

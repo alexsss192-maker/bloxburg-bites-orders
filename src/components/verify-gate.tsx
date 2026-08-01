@@ -1,7 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
-import { getVerifiedSession } from "@/lib/verify.functions";
 import { motion } from "framer-motion";
 
 const EXEMPT_PREFIXES = ["/verify", "/staff", "/api", "/lovable"];
@@ -9,7 +7,6 @@ const EXEMPT_PREFIXES = ["/verify", "/staff", "/api", "/lovable"];
 export function VerifyGate({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const getSession = useServerFn(getVerifiedSession);
   const [checked, setChecked] = useState(false);
   const [session, setSession] = useState<{ discord_id: string; username: string; avatar_url: string | null } | null>(null);
 
@@ -17,7 +14,11 @@ export function VerifyGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    getSession()
+    fetch("/api/public/verify/session", { credentials: "same-origin", cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Verification check failed");
+        return response.json() as Promise<{ discord_id: string; username: string; avatar_url: string | null } | null>;
+      })
       .then((s) => {
         if (cancelled) return;
         setSession(s);
@@ -28,7 +29,7 @@ export function VerifyGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, exempt, getSession, navigate]);
+  }, [location.pathname, exempt, navigate]);
 
   if (exempt) return <>{children}</>;
 
@@ -55,10 +56,12 @@ export function VerifyGate({ children }: { children: ReactNode }) {
 }
 
 export function useVerifiedSession() {
-  const getSession = useServerFn(getVerifiedSession);
   const [session, setSession] = useState<{ discord_id: string; username: string; avatar_url: string | null } | null>(null);
   useEffect(() => {
-    getSession().then(setSession).catch(() => {});
-  }, [getSession]);
+    fetch("/api/public/verify/session", { credentials: "same-origin", cache: "no-store" })
+      .then((response) => response.json())
+      .then(setSession)
+      .catch(() => {});
+  }, []);
   return session;
 }

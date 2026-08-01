@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyRoles } from "@/lib/menu.functions";
+import { syncDiscordStaffRoles } from "@/lib/staff-role-sync.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,7 +28,9 @@ function StaffLayout() {
   const [ready, setReady] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isChef, setIsChef] = useState(false);
+  const [rolesReady, setRolesReady] = useState(false);
   const getRoles = useServerFn(getMyRoles);
+  const syncRoles = useServerFn(syncDiscordStaffRoles);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,13 +46,16 @@ function StaffLayout() {
 
   useEffect(() => {
     if (!session) return;
-    getRoles()
+    setRolesReady(false);
+    syncRoles()
+      .then(() => getRoles())
       .then((r) => {
         setIsAdmin(r.isAdmin);
         setIsChef(r.isChef);
       })
-      .catch(() => {});
-  }, [session, getRoles]);
+      .catch((error) => toast.error(error instanceof Error ? error.message : "Discord role check failed"))
+      .finally(() => setRolesReady(true));
+  }, [session, getRoles, syncRoles]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -59,6 +65,7 @@ function StaffLayout() {
 
   if (!ready) return <div className="grid min-h-screen place-items-center bg-cream text-ink/60">Loading...</div>;
   if (!session) return <StaffLogin />;
+  if (!rolesReady) return <div className="grid min-h-screen place-items-center bg-cream text-ink/60">Checking Discord roles...</div>;
   if (!isAdmin && !isChef)
     return (
       <div className="grid min-h-screen place-items-center bg-cream p-6 text-center">
@@ -90,7 +97,7 @@ function StaffLayout() {
                   <span className="inline-flex items-center gap-1.5"><MenuIcon className="h-4 w-4" /> Menu</span>
                 </Link>
                 <Link to="/staff/panda" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
-                  <span className="inline-flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> Panda</span>
+                  <span className="inline-flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> Skippe</span>
                 </Link>
                 <Link to="/staff/audit" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
                   <span className="inline-flex items-center gap-1.5"><ScrollText className="h-4 w-4" /> Audit</span>

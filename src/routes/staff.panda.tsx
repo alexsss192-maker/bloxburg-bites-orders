@@ -21,7 +21,7 @@ function PandaPage() {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "assistant",
-      content: "Hi chef 🐼 — snap your fridge (up to 9 pics), tell me what you've got, and I'll update your stock. I can also look up market prices if you ask.",
+      content: "Hi chef — I’m Skippe. Snap your menu or fridge (up to 9 pics), and I’ll help add item names and update stock. You always set every price yourself.",
     },
   ]);
   const [applied, setApplied] = useState<Applied[]>([]);
@@ -65,10 +65,10 @@ function PandaPage() {
       if (res.applied?.length) {
         setApplied((a) => [...res.applied, ...a].slice(0, 30));
         const okCount = res.applied.filter((x) => x.ok).length;
-        if (okCount > 0) toast.success(`Panda updated ${okCount} item${okCount === 1 ? "" : "s"}`);
+        if (okCount > 0) toast.success(`Skippe updated ${okCount} item${okCount === 1 ? "" : "s"}`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Panda failed");
+      toast.error(err instanceof Error ? err.message : "Skippe failed");
       setMessages((m) => [...m, { role: "assistant", content: "Sorry — I hit an error. Try again?" }]);
     } finally {
       setLoading(false);
@@ -81,7 +81,7 @@ function PandaPage() {
         <div className="flex items-center justify-between border-b border-border/60 bg-gradient-to-r from-blossom to-petal px-6 py-4">
           <div>
             <p className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-cherry">
-              <Sparkles className="h-3.5 w-3.5" /> Panda · AI stock assistant
+               <Sparkles className="h-3.5 w-3.5" /> Skippe · AI menu assistant
             </p>
             <h1 className="mt-1 font-display text-2xl">Snap your fridge. I'll do the rest.</h1>
           </div>
@@ -116,7 +116,7 @@ function PandaPage() {
             ))}
             {loading && (
               <div className="flex items-center gap-2 text-sm text-ink/60">
-                <Loader2 className="h-4 w-4 animate-spin" /> Panda is thinking…
+                 <Loader2 className="h-4 w-4 animate-spin" /> Skippe is thinking…
               </div>
             )}
           </div>
@@ -168,7 +168,7 @@ function PandaPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-              placeholder="e.g. Here's my fridge, also what's a fair valentines cake price?"
+               placeholder="e.g. Scan these items and update my stock"
               maxLength={2000}
               rows={2}
               className="min-h-11 resize-none rounded-2xl border-ink/10 bg-white"
@@ -188,7 +188,7 @@ function PandaPage() {
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-cherry">Changes this session</p>
-            <h2 className="mt-1 font-display text-2xl">What Panda touched</h2>
+             <h2 className="mt-1 font-display text-2xl">What Skippe changed</h2>
           </div>
           <Link
             to="/staff/audit"
