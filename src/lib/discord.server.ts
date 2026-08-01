@@ -9,11 +9,25 @@ function botHeaders() {
 
 export type DiscordUser = { id: string; username: string; global_name: string | null; avatar: string | null };
 
+/** Thrown when the configured guild is not visible to the bot (bad ID or bot not invited). */
+export class GuildUnavailableError extends Error {
+  constructor() {
+    super("The Discord server is not reachable by our bot. Staff needs to check the server configuration.");
+    this.name = "GuildUnavailableError";
+  }
+}
+
+async function assertGuildReachable(guildId: string) {
+  const res = await fetch(`${API}/guilds/${guildId}`, { headers: botHeaders() });
+  if (res.status === 404 || res.status === 403) throw new GuildUnavailableError();
+}
+
 /** Resolve a Discord user by ID OR username lookup within our guild. */
 export async function findGuildMember(usernameOrId: string): Promise<{ user: DiscordUser; inGuild: boolean } | null> {
   const guildId = process.env.DISCORD_GUILD_ID;
   if (!guildId) throw new Error("DISCORD_GUILD_ID missing");
   const trimmed = usernameOrId.trim().replace(/^@/, "");
+  await assertGuildReachable(guildId);
 
   // If it's numeric-looking id, try direct member fetch
   if (/^\d{15,20}$/.test(trimmed)) {
