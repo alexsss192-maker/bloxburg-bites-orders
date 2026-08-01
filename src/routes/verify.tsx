@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
@@ -34,7 +34,6 @@ function VerifyPage() {
   const [cooldown, setCooldown] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [needsJoin, setNeedsJoin] = useState(false);
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -116,13 +115,14 @@ function VerifyPage() {
     try {
       const res = await fetch("/api/public/verify/confirm", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ discord_id: discordId, code: c, username: resolvedName, avatar_url: avatar }),
       });
       const data = (await res.json()) as { ok: boolean; error?: string; expired?: boolean; attempts_left?: number };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Failed");
       toast.success("Verified! Welcome to Panda Bites 🐼");
-      navigate({ to: "/" });
+      window.location.replace("/");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed";
       setErrorMsg(msg);
