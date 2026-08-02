@@ -101,7 +101,7 @@ function MenuEditor() {
         </div>
       )}
 
-      <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
+       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
         <DialogContent className="max-w-lg rounded-3xl">
           <DialogHeader><DialogTitle className="font-display text-3xl">{editing?.id ? "Edit item" : "New item"}</DialogTitle></DialogHeader>
           {editing && (
@@ -111,7 +111,7 @@ function MenuEditor() {
               <div><Label>Description</Label>
                 <Textarea value={editing.description ?? ""} onChange={(e) => setEditing({ ...editing, description: e.target.value })} maxLength={500} className="mt-2" /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div><Label>Price (B$)</Label>
+                 <div><Label>Price (B$) · manual only</Label>
                   <Input type="number" min={0} value={editing.price_bs ?? 0} onChange={(e) => setEditing({ ...editing, price_bs: Number(e.target.value) })} className="mt-2" /></div>
                 <div><Label>Stock</Label>
                   <Input type="number" min={0} value={editing.stock ?? 0} onChange={(e) => setEditing({ ...editing, stock: Number(e.target.value) })} className="mt-2" /></div>

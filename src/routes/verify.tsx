@@ -121,12 +121,6 @@ function VerifyPage() {
       });
       const data = (await res.json()) as { ok: boolean; error?: string; expired?: boolean; attempts_left?: number };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Failed");
-      const sessionResponse = await fetch("/api/public/verify/session", {
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      const session = await sessionResponse.json();
-      if (!sessionResponse.ok || !session) throw new Error("Verification was saved, but the session cookie could not be read.");
       toast.success("Verified! Welcome to Panda Bites 🐼");
       window.location.replace("/");
     } catch (err) {

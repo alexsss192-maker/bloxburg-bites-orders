@@ -18,7 +18,11 @@ export function VerifyGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     
-    getSession()
+    fetch("/api/public/verify/session", { credentials: "same-origin", cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Verification session check failed");
+        return (await response.json()) as { discord_id: string; username: string; avatar_url: string | null } | null;
+      })
       .then((s) => {
         if (cancelled) return;
         setSession(s);
@@ -40,7 +44,7 @@ export function VerifyGate({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, exempt, getSession, navigate]);
+  }, [location.pathname, exempt, navigate]);
 
   // If we are on an exempt route, we still want to show it immediately
   // while the background check might redirect us away if we are already verified (for /verify)

@@ -53,10 +53,12 @@ export function verifyPayload(token: string | null | undefined): VerifiedPayload
 }
 
 export function buildSetCookie(token: string) {
-  return `${VERIFY_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${MAX_AGE}${IS_PROD ? "; Secure" : ""}`;
+  const productionAttributes = IS_PROD ? "; Secure; SameSite=None; Partitioned; Priority=High" : "; SameSite=Lax";
+  return `${VERIFY_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Max-Age=${MAX_AGE}${productionAttributes}`;
 }
 export function buildClearCookie() {
-  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${IS_PROD ? "; Secure" : ""}`;
+  const productionAttributes = IS_PROD ? "; Secure; SameSite=None; Partitioned; Priority=High" : "; SameSite=Lax";
+  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; Max-Age=0${productionAttributes}`;
 }
 
 export function readCookie(header: string | null, name: string): string | null {

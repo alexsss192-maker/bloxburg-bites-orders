@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { placeVerifiedOrder } from "@/lib/verify.functions";
+import { placeVerifiedOrder, previewVerifiedOrder } from "@/lib/verify.functions";
 import { useVerifiedSession } from "@/components/verify-gate";
 import { useCart } from "@/lib/cart-store";
 import { SiteHeader } from "@/components/site-header";
@@ -39,10 +39,14 @@ function CheckoutPage() {
   const [step, setStep] = useState<Step>("review");
   const [discord, setDiscord] = useState("");
   const [note, setNote] = useState("");
+  const [promoCode, setPromoCode] = useState("");
+  const [pricing, setPricing] = useState<{ subtotal_bs: number; discount_bs: number; total_bs: number; discounts: Array<{ name: string; savings_bs: number }> } | null>(null);
+  const [pricingLoading, setPricingLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const navigate = useNavigate();
   const placeOrderFn = useServerFn(placeVerifiedOrder);
+  const previewOrderFn = useServerFn(previewVerifiedOrder);
 
   useEffect(() => {
     if (session?.username) setDiscord(session.username);
@@ -51,6 +55,19 @@ function CheckoutPage() {
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const canProceedReview = items.length > 0;
   const canProceedDetails = discord.trim().length >= 2;
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      setPricingLoading(true);
+      previewOrderFn({ data: { items: items.map((i) => ({ menu_item_id: i.menu_item_id, quantity: i.quantity })), promo_code: promoCode.trim() || null } })
+        .then((result) => { if (!cancelled) setPricing(result); })
+        .catch(() => { if (!cancelled) setPricing(null); })
+        .finally(() => { if (!cancelled) setPricingLoading(false); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [items, promoCode, previewOrderFn]);
 
   async function submit() {
     if (items.length === 0) return;
@@ -65,6 +82,7 @@ function CheckoutPage() {
           discord_username: discord.trim(),
           note: note.trim() || null,
           items: items.map((i) => ({ menu_item_id: i.menu_item_id, quantity: i.quantity })),
+           promo_code: promoCode.trim() || null,
         },
       });
       setOrderId(res.order_id);
@@ -96,7 +114,7 @@ function CheckoutPage() {
                 <AnimatePresence mode="wait">
                   {step === "review" && (
                     <StepPanel key="review">
-                      <ReviewStep />
+                      <ReviewStep promoCode={promoCode} setPromoCode={setPromoCode} pricing={pricing} pricingLoading={pricingLoading} />
                       <StepFooter
                         primaryLabel="Continue"
                         onPrimary={() => setStep("details")}
@@ -124,9 +142,9 @@ function CheckoutPage() {
                   )}
                   {step === "confirm" && (
                     <StepPanel key="confirm">
-                      <ConfirmStep discord={discord} note={note} total={total} />
+                      <ConfirmStep discord={discord} note={note} total={pricing?.total_bs ?? total} discount={pricing?.discount_bs ?? 0} />
                       <StepFooter
-                        primaryLabel={submitting ? "Placing order…" : `Place order · B$${total.toLocaleString()}`}
+                        primaryLabel={submitting ? "Placing order…" : `Place order · B$${(pricing?.total_bs ?? total).toLocaleString()}`}
                         onPrimary={submit}
                         primaryDisabled={submitting}
                         loading={submitting}
@@ -136,7 +154,7 @@ function CheckoutPage() {
                   )}
                 </AnimatePresence>
               </div>
-              <BasketSummary />
+              <BasketSummary pricing={pricing} />
             </div>
           </>
         )}
@@ -266,7 +284,7 @@ function StepFooter({
   );
 }
 
-function ReviewStep() {
+function ReviewStep({ promoCode, setPromoCode, pricing, pricingLoading }: { promoCode: string; setPromoCode: (value: string) => void; pricing: { subtotal_bs: number; discount_bs: number; total_bs: number; discounts: Array<{ name: string; savings_bs: number }> } | null; pricingLoading: boolean }) {
   const items = useCart((s) => s.items);
   const total = useCart((s) => s.total());
   return (
@@ -287,9 +305,14 @@ function ReviewStep() {
           </li>
         ))}
       </ul>
+      <div className="mt-4">
+        <Label htmlFor="promo">Promo code</Label>
+        <Input id="promo" value={promoCode} onChange={(event) => setPromoCode(event.target.value.toUpperCase())} maxLength={32} placeholder="Optional" className="mt-2 uppercase" />
+        {pricing?.discounts?.length ? <p className="mt-2 text-sm text-bamboo">{pricing.discounts.map((discount) => `${discount.name}: −B$${discount.savings_bs.toLocaleString()}`).join(" · ")}</p> : null}
+      </div>
       <div className="mt-4 flex items-baseline justify-between rounded-2xl bg-blossom/60 px-4 py-3">
         <span className="text-xs uppercase tracking-widest text-ink/60">Estimated total</span>
-        <span className="font-display text-2xl">B${total.toLocaleString()}</span>
+        <span className="font-display text-2xl">{pricingLoading ? "…" : `B$${(pricing?.total_bs ?? total).toLocaleString()}`}</span>
       </div>
     </div>
   );
@@ -357,7 +380,7 @@ function DetailsStep({
   );
 }
 
-function ConfirmStep({ discord, note, total }: { discord: string; note: string; total: number }) {
+function ConfirmStep({ discord, note, total, discount }: { discord: string; note: string; total: number; discount: number }) {
   const items = useCart((s) => s.items);
   return (
     <div className="flex-1 space-y-5">
@@ -374,6 +397,7 @@ function ConfirmStep({ discord, note, total }: { discord: string; note: string; 
           <span className="text-ink/60">Items</span>
           <span className="font-medium">{items.length}</span>
         </div>
+        {discount > 0 && <div className="mt-2 flex justify-between text-bamboo"><span>Savings</span><span>−B${discount.toLocaleString()}</span></div>}
         <div className="mt-2 flex justify-between">
           <span className="text-ink/60">Total</span>
           <span className="font-display text-lg">B${total.toLocaleString()}</span>
@@ -392,7 +416,7 @@ function ConfirmStep({ discord, note, total }: { discord: string; note: string; 
   );
 }
 
-function BasketSummary() {
+function BasketSummary({ pricing }: { pricing: { subtotal_bs: number; discount_bs: number; total_bs: number } | null }) {
   const items = useCart((s) => s.items);
   const total = useCart((s) => s.total());
   return (
@@ -411,8 +435,9 @@ function BasketSummary() {
       </ul>
       <div className="mt-6 flex items-baseline justify-between border-t border-border/60 pt-4">
         <span className="text-sm uppercase tracking-widest text-muted-foreground">Total</span>
-        <span className="font-display text-3xl">B${total.toLocaleString()}</span>
+        <span className="font-display text-3xl">B${(pricing?.total_bs ?? total).toLocaleString()}</span>
       </div>
+      {(pricing?.discount_bs ?? 0) > 0 && <p className="mt-2 text-right text-sm text-bamboo">You save B${pricing?.discount_bs.toLocaleString()}</p>}
     </aside>
   );
 }

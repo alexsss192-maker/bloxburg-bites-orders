@@ -16,7 +16,7 @@ const pandaInput = z.object({
     .default([]),
 });
 
-type MenuItem = { id: string; name: string; stock: number; price_bs: number; is_active: boolean };
+type MenuItem = { id: string; name: string; stock: number; is_active: boolean };
 
 async function loadChefMenu(context: {
   supabase: { from: (t: string) => any };
@@ -24,7 +24,7 @@ async function loadChefMenu(context: {
 }): Promise<MenuItem[]> {
   const { data, error } = await context.supabase
     .from("menu_items")
-    .select("id,name,stock,price_bs,is_active")
+    .select("id,name,stock,is_active")
     .eq("owner_id", context.userId)
     .eq("category", "non_seasonal");
   if (error) throw new Error(error.message);
@@ -123,7 +123,7 @@ async function callPanda(args: {
 function buildSystemPrompt(menu: MenuItem[]) {
   return [
     "You are Skippe — a friendly AI menu assistant for chefs on Panda Bites (a Bloxburg food shop).",
-    "You help chefs manage stock by looking at fridge photos and answering pricing/menu questions.",
+    "You help chefs manage names and stock by looking at menu or fridge photos.",
     "",
     "HARD RULES you MUST follow:",
     "- You NEVER set, invent, change, or suggest a specific numeric price. Chefs set all prices.",
@@ -133,7 +133,7 @@ function buildSystemPrompt(menu: MenuItem[]) {
     "- Item names should match the chef's existing naming style (short, capitalized).",
     "",
     "Current chef menu (JSON):",
-    JSON.stringify(menu.map((m) => ({ name: m.name, stock: m.stock, price_bs: m.price_bs, active: m.is_active }))),
+    JSON.stringify(menu.map((m) => ({ name: m.name, stock: m.stock, active: m.is_active }))),
     "",
     "OUTPUT: Reply ONLY with a JSON object of this exact shape:",
     '{"reply": string, "actions": [ {"type":"add_item","name":string,"stock":number} | {"type":"update_stock","name":string,"stock":number} ], "needs_web_search": string | null }',
