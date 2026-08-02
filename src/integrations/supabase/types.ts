@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      chef_discounts: {
+        Row: {
+          code: string | null
+          created_at: string
+          discount_type: string
+          ends_at: string | null
+          id: string
+          is_active: boolean
+          is_automatic: boolean
+          name: string
+          owner_id: string
+          starts_at: string | null
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          code?: string | null
+          created_at?: string
+          discount_type: string
+          ends_at?: string | null
+          id?: string
+          is_active?: boolean
+          is_automatic?: boolean
+          name: string
+          owner_id: string
+          starts_at?: string | null
+          updated_at?: string
+          value: number
+        }
+        Update: {
+          code?: string | null
+          created_at?: string
+          discount_type?: string
+          ends_at?: string | null
+          id?: string
+          is_active?: boolean
+          is_automatic?: boolean
+          name?: string
+          owner_id?: string
+          starts_at?: string | null
+          updated_at?: string
+          value?: number
+        }
+        Relationships: []
+      }
       discord_verifications: {
         Row: {
           attempts: number
@@ -89,32 +134,98 @@ export type Database = {
         }
         Relationships: []
       }
+      order_fulfillments: {
+        Row: {
+          chef_id: string | null
+          created_at: string
+          discount_bs: number
+          id: string
+          order_id: string
+          status: Database["public"]["Enums"]["order_status"]
+          subtotal_bs: number
+          total_bs: number
+          updated_at: string
+        }
+        Insert: {
+          chef_id?: string | null
+          created_at?: string
+          discount_bs?: number
+          id?: string
+          order_id: string
+          status?: Database["public"]["Enums"]["order_status"]
+          subtotal_bs?: number
+          total_bs?: number
+          updated_at?: string
+        }
+        Update: {
+          chef_id?: string | null
+          created_at?: string
+          discount_bs?: number
+          id?: string
+          order_id?: string
+          status?: Database["public"]["Enums"]["order_status"]
+          subtotal_bs?: number
+          total_bs?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_fulfillments_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       order_items: {
         Row: {
+          discount_bs: number
+          discount_id: string | null
+          discount_name: string | null
           id: string
           item_name: string
           menu_item_id: string
           order_id: string
+          owner_id: string | null
           quantity: number
+          subtotal_bs: number
           unit_price_bs: number
         }
         Insert: {
+          discount_bs?: number
+          discount_id?: string | null
+          discount_name?: string | null
           id?: string
           item_name: string
           menu_item_id: string
           order_id: string
+          owner_id?: string | null
           quantity: number
+          subtotal_bs?: number
           unit_price_bs: number
         }
         Update: {
+          discount_bs?: number
+          discount_id?: string | null
+          discount_name?: string | null
           id?: string
           item_name?: string
           menu_item_id?: string
           order_id?: string
+          owner_id?: string | null
           quantity?: number
+          subtotal_bs?: number
           unit_price_bs?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "order_items_discount_id_fkey"
+            columns: ["discount_id"]
+            isOneToOne: false
+            referencedRelation: "chef_discounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "order_items_menu_item_id_fkey"
             columns: ["menu_item_id"]
@@ -135,9 +246,11 @@ export type Database = {
         Row: {
           created_at: string
           discord_username: string
+          discount_bs: number
           id: string
           note: string | null
           status: Database["public"]["Enums"]["order_status"]
+          subtotal_bs: number
           total_bs: number
           updated_at: string
           verified_discord_id: string | null
@@ -145,9 +258,11 @@ export type Database = {
         Insert: {
           created_at?: string
           discord_username: string
+          discount_bs?: number
           id?: string
           note?: string | null
           status?: Database["public"]["Enums"]["order_status"]
+          subtotal_bs?: number
           total_bs?: number
           updated_at?: string
           verified_discord_id?: string | null
@@ -155,9 +270,11 @@ export type Database = {
         Update: {
           created_at?: string
           discord_username?: string
+          discount_bs?: number
           id?: string
           note?: string | null
           status?: Database["public"]["Enums"]["order_status"]
+          subtotal_bs?: number
           total_bs?: number
           updated_at?: string
           verified_discord_id?: string | null
@@ -252,10 +369,13 @@ export type Database = {
         Returns: {
           created_at: string
           discord_username: string
+          discount_bs: number
+          fulfillments: Json
           id: string
           items: Json
           note: string
           status: Database["public"]["Enums"]["order_status"]
+          subtotal_bs: number
           total_bs: number
         }[]
       }
@@ -264,9 +384,12 @@ export type Database = {
         Returns: {
           created_at: string
           discord_username: string
+          discount_bs: number
+          fulfillments: Json
           id: string
           item_count: number
           status: Database["public"]["Enums"]["order_status"]
+          subtotal_bs: number
           total_bs: number
         }[]
       }
@@ -278,20 +401,25 @@ export type Database = {
         Returns: boolean
       }
       is_staff: { Args: { _user_id: string }; Returns: boolean }
-      place_order:
-        | {
-            Args: { _discord_username: string; _items: Json; _note: string }
-            Returns: string
-          }
-        | {
-            Args: {
-              _discord_username: string
-              _items: Json
-              _note: string
-              _verified_discord_id?: string
-            }
-            Returns: string
-          }
+      place_order: {
+        Args: {
+          _discord_username: string
+          _items: Json
+          _note: string
+          _promo_code?: string
+          _verified_discord_id?: string
+        }
+        Returns: string
+      }
+      preview_order_total: {
+        Args: { _items: Json; _promo_code?: string }
+        Returns: {
+          discount_bs: number
+          discounts: Json
+          subtotal_bs: number
+          total_bs: number
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "chef"
