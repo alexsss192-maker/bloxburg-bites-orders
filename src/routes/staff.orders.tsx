@@ -28,6 +28,7 @@ function OrdersPage() {
   if (isLoading) return <p className="text-muted-foreground">Loading orders...</p>;
   const orders = data?.orders ?? [];
   const items = data?.items ?? [];
+  const fulfillments = data?.fulfillments ?? [];
 
   return (
     <div>
@@ -41,7 +42,8 @@ function OrdersPage() {
         <ul className="space-y-3">
           <AnimatePresence>
             {orders.map((o) => {
-              const its = items.filter((i) => i.order_id === o.id);
+               const its = items.filter((i) => i.order_id === o.id);
+               const portions = fulfillments.filter((f) => f.order_id === o.id);
               return (
                 <motion.li key={o.id} layout initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
                   className="rounded-3xl border border-border/60 bg-white p-5 shadow-sm">
@@ -50,13 +52,7 @@ function OrdersPage() {
                       <p className="font-display text-xl">@{o.discord_username}</p>
                       <p className="text-xs text-muted-foreground">#{o.id.slice(0, 8)} · {new Date(o.created_at).toLocaleString()}</p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-cherry/10 text-cherry border-transparent">B${o.total_bs.toLocaleString()}</Badge>
-                      <select value={o.status} onChange={(e) => mut.mutate({ id: o.id, status: e.target.value as Status })}
-                        className="rounded-full border border-border bg-white px-3 py-1.5 text-sm font-medium">
-                        {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
+                     <Badge className="border-transparent bg-cherry/10 text-cherry">Order · {o.status}</Badge>
                   </div>
                   <ul className="mt-3 space-y-1 text-sm">
                     {its.map((i, idx) => (
@@ -66,6 +62,17 @@ function OrdersPage() {
                       </li>
                     ))}
                   </ul>
+                   <div className="mt-4 space-y-2 border-t border-border/60 pt-3">
+                     {portions.map((portion) => (
+                       <div key={portion.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-secondary p-3">
+                         <span className="text-sm font-medium">Your portion · B${portion.total_bs.toLocaleString()}</span>
+                         <select value={portion.status} onChange={(e) => mut.mutate({ id: portion.id, status: e.target.value as Status })}
+                           className="rounded-full border border-border bg-white px-3 py-1.5 text-sm font-medium">
+                           {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                         </select>
+                       </div>
+                     ))}
+                   </div>
                   {o.note && <p className="mt-2 rounded-xl bg-secondary p-2 text-xs">Note: {o.note}</p>}
                 </motion.li>
               );

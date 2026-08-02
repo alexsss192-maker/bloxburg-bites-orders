@@ -208,12 +208,17 @@ export const listOrders = createServerFn({ method: "GET" })
     const { data: items } = ids.length
       ? await context.supabase.from("order_items" as any).select("*").in("order_id", ids)
       : { data: [] as unknown as Array<Record<string, unknown>> };
+    const { data: fulfillments } = ids.length
+      ? await context.supabase.from("order_fulfillments" as any).select("*").in("order_id", ids)
+      : { data: [] as unknown as Array<Record<string, unknown>> };
     return {
       orders: (orders ?? []) as unknown as Array<{
         id: string;
         discord_username: string;
         note: string | null;
         total_bs: number;
+        subtotal_bs: number;
+        discount_bs: number;
         status: string;
         created_at: string;
       }>,
@@ -222,6 +227,11 @@ export const listOrders = createServerFn({ method: "GET" })
         item_name: string;
         quantity: number;
         unit_price_bs: number;
+        subtotal_bs: number;
+        discount_bs: number;
+      }>,
+      fulfillments: (fulfillments ?? []) as unknown as Array<{
+        id: string; order_id: string; chef_id: string | null; status: string; subtotal_bs: number; discount_bs: number; total_bs: number;
       }>,
     };
   });
@@ -239,9 +249,57 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertStaff(context);
     const { error } = await context.supabase
-      .from("orders" as any)
+      .from("order_fulfillments" as any)
       .update({ status: data.status })
       .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+const discountInput = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().trim().min(1).max(100),
+  code: z.string().trim().min(2).max(32).optional().nullable(),
+  discount_type: z.enum(["percentage", "fixed"]),
+  value: z.number().int().positive().max(100000000),
+  is_automatic: z.boolean(),
+  is_active: z.boolean(),
+  starts_at: z.string().datetime().optional().nullable(),
+  ends_at: z.string().datetime().optional().nullable(),
+});
+
+export const listDiscounts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertStaff(context);
+    const { data, error } = await context.supabase.from("chef_discounts" as any).select("*").order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []) as unknown as Array<{ id: string; name: string; code: string | null; discount_type: "percentage" | "fixed"; value: number; is_automatic: boolean; is_active: boolean; starts_at: string | null; ends_at: string | null }>;
+  });
+
+export const upsertDiscount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => discountInput.parse(d))
+  .handler(async ({ context, data }) => {
+    await assertStaff(context);
+    if (data.discount_type === "percentage" && data.value > 100) throw new Error("Percentage cannot exceed 100");
+    const payload = { ...data, code: data.is_automatic ? null : data.code?.toUpperCase(), owner_id: context.userId };
+    if (data.id) {
+      const { error } = await context.supabase.from("chef_discounts" as any).update(payload).eq("id", data.id).eq("owner_id", context.userId);
+      if (error) throw new Error(error.message);
+      return { id: data.id };
+    }
+    const { data: row, error } = await context.supabase.from("chef_discounts" as any).insert(payload).select("id").single();
+    if (error) throw new Error(error.message);
+    return { id: (row as unknown as { id: string }).id };
+  });
+
+export const deleteDiscount = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    await assertStaff(context);
+    const { error } = await context.supabase.from("chef_discounts" as any).delete().eq("id", data.id).eq("owner_id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

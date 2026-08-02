@@ -9,7 +9,7 @@ import { syncDiscordStaffRoles } from "@/lib/staff-role-sync.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LogOut, ShoppingBag, Menu as MenuIcon, Users, Sparkles, ScrollText } from "lucide-react";
+import { BadgePercent, LogOut, ShoppingBag, Menu as MenuIcon, Users, Sparkles, ScrollText } from "lucide-react";
 
 export const Route = createFileRoute("/staff")({
   ssr: false,
@@ -97,6 +97,9 @@ function StaffLayout() {
               <>
                 <Link to="/staff/menu" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
                   <span className="inline-flex items-center gap-1.5"><MenuIcon className="h-4 w-4" /> Menu</span>
+                </Link>
+                <Link to="/staff/discounts" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
+                  <span className="inline-flex items-center gap-1.5"><BadgePercent className="h-4 w-4" /> Discounts</span>
                 </Link>
                 <Link to="/staff/panda" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
                   <span className="inline-flex items-center gap-1.5"><Sparkles className="h-4 w-4" /> Skippe</span>
