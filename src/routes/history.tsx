@@ -53,11 +53,7 @@ function HistoryPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.03 }}
               >
-                 <div
-                  to="/order/$id"
-                  params={{ id: o.id }}
-                   className="group rounded-2xl border border-border/60 bg-white p-5 shadow-sm transition hover:border-cherry/40 hover:shadow-md"
-                >
+                 <div className="group rounded-2xl border border-border/60 bg-white p-5 shadow-sm transition hover:border-cherry/40 hover:shadow-md">
                    <Link to="/order/$id" params={{ id: o.id }} className="flex items-center justify-between gap-4"><div>
                     <p className="text-[0.65rem] uppercase tracking-[0.3em] text-cherry">
                       {formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}
