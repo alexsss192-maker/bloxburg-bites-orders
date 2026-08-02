@@ -8,6 +8,8 @@ import { SiteHeader } from "@/components/site-header";
 import { useVerifiedSession } from "@/components/verify-gate";
 import { ArrowRight, Receipt } from "lucide-react";
 
+const ORDER_STEPS = ["pending", "preparing", "ready", "delivered"];
+
 export const Route = createFileRoute("/history")({
   head: () => ({
     meta: [
@@ -22,16 +24,16 @@ export const Route = createFileRoute("/history")({
 function HistoryPage() {
   const session = useVerifiedSession();
   const listFn = useServerFn(listMyOrders);
-  const { data, isLoading } = useQuery({ queryKey: ["my-orders"], queryFn: () => listFn() });
+  const { data, isLoading, refetch, isFetching } = useQuery({ queryKey: ["my-orders"], queryFn: () => listFn(), refetchInterval: 30_000 });
 
   return (
     <div className="min-h-screen bg-cream">
       <SiteHeader />
       <main className="mx-auto max-w-4xl px-6 py-12">
         <p className="text-xs uppercase tracking-[0.3em] text-cherry">Vol. 01 · Your history</p>
-        <h1 className="mt-2 font-display text-5xl">
+        <div className="flex flex-wrap items-end justify-between gap-4"><h1 className="mt-2 font-display text-5xl">
           {session ? <>Every bite,<br /><span className="italic text-cherry">@{session.username}</span></> : "Your orders"}
-        </h1>
+        </h1><button onClick={() => refetch()} disabled={isFetching} className="rounded-full border border-ink/15 px-4 py-2 text-sm text-ink hover:border-cherry hover:text-cherry disabled:opacity-50">{isFetching ? "Refreshing…" : "Refresh status"}</button></div>
 
         {isLoading ? (
           <p className="mt-10 text-muted-foreground">Loading…</p>
@@ -51,12 +53,12 @@ function HistoryPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.03 }}
               >
-                <Link
+                 <div
                   to="/order/$id"
                   params={{ id: o.id }}
-                  className="group flex items-center justify-between gap-4 rounded-2xl border border-border/60 bg-white p-5 shadow-sm transition hover:border-cherry/40 hover:shadow-md"
+                   className="group rounded-2xl border border-border/60 bg-white p-5 shadow-sm transition hover:border-cherry/40 hover:shadow-md"
                 >
-                  <div>
+                   <Link to="/order/$id" params={{ id: o.id }} className="flex items-center justify-between gap-4"><div>
                     <p className="text-[0.65rem] uppercase tracking-[0.3em] text-cherry">
                       {formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}
                     </p>
@@ -66,12 +68,15 @@ function HistoryPage() {
                         {o.item_count} item{o.item_count === 1 ? "" : "s"} · {o.status}
                       </span>
                     </p>
-                  </div>
+                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-display text-2xl tabular-nums">B${o.total_bs.toLocaleString()}</span>
+                     <div className="text-right">{o.discount_bs > 0 && <p className="text-xs text-bamboo">Saved B${o.discount_bs.toLocaleString()}</p>}<span className="font-display text-2xl tabular-nums">B${o.total_bs.toLocaleString()}</span></div>
                     <ArrowRight className="h-5 w-5 text-ink/40 transition group-hover:translate-x-1 group-hover:text-cherry" />
                   </div>
-                </Link>
+                   </Link>
+                   <div className="mt-4 grid grid-cols-4 gap-2 border-t border-border/60 pt-4">{ORDER_STEPS.map((step, stepIndex) => { const current = Math.max(0, ORDER_STEPS.indexOf(o.status)); const done = stepIndex <= current && o.status !== "cancelled"; return <div key={step}><div className={`h-1.5 rounded-full ${done ? "bg-cherry" : "bg-ink/10"}`} /><p className={`mt-1 text-[0.6rem] uppercase ${done ? "text-cherry" : "text-ink/40"}`}>{step}</p></div>; })}</div>
+                   {(o.fulfillments?.length ?? 0) > 1 && <p className="mt-3 text-xs text-ink/55">{o.fulfillments.length} chef portions · {o.fulfillments.filter((portion) => portion.status === "ready" || portion.status === "delivered").length} ready</p>}
+                 </div>
               </motion.li>
             ))}
           </ul>

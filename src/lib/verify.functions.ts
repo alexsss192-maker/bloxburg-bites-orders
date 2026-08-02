@@ -30,9 +30,12 @@ export const listMyOrders = createServerFn({ method: "GET" }).handler(async () =
     id: string;
     discord_username: string;
     total_bs: number;
+    subtotal_bs: number;
+    discount_bs: number;
     status: string;
     created_at: string;
     item_count: number;
+    fulfillments: Array<{ status: string }>;
   }>;
 });
 

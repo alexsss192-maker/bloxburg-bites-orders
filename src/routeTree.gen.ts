@@ -20,6 +20,7 @@ import { Route as StaffUsersRouteImport } from './routes/staff.users'
 import { Route as StaffPandaRouteImport } from './routes/staff.panda'
 import { Route as StaffOrdersRouteImport } from './routes/staff.orders'
 import { Route as StaffMenuRouteImport } from './routes/staff.menu'
+import { Route as StaffDiscountsRouteImport } from './routes/staff.discounts'
 import { Route as StaffAuditRouteImport } from './routes/staff.audit'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
 import { Route as ApiPublicBootstrapRouteImport } from './routes/api/public/bootstrap'
@@ -84,6 +85,11 @@ const StaffMenuRoute = StaffMenuRouteImport.update({
   path: '/menu',
   getParentRoute: () => StaffRoute,
 } as any)
+const StaffDiscountsRoute = StaffDiscountsRouteImport.update({
+  id: '/discounts',
+  path: '/discounts',
+  getParentRoute: () => StaffRoute,
+} as any)
 const StaffAuditRoute = StaffAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
+  '/staff/discounts': typeof StaffDiscountsRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
   '/staff/panda': typeof StaffPandaRoute
@@ -154,6 +161,7 @@ export interface FileRoutesByTo {
   '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
+  '/staff/discounts': typeof StaffDiscountsRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
   '/staff/panda': typeof StaffPandaRoute
@@ -176,6 +184,7 @@ export interface FileRoutesById {
   '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
+  '/staff/discounts': typeof StaffDiscountsRoute
   '/staff/menu': typeof StaffMenuRoute
   '/staff/orders': typeof StaffOrdersRoute
   '/staff/panda': typeof StaffPandaRoute
@@ -199,6 +208,7 @@ export interface FileRouteTypes {
     | '/verify'
     | '/order/$id'
     | '/staff/audit'
+    | '/staff/discounts'
     | '/staff/menu'
     | '/staff/orders'
     | '/staff/panda'
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/verify'
     | '/order/$id'
     | '/staff/audit'
+    | '/staff/discounts'
     | '/staff/menu'
     | '/staff/orders'
     | '/staff/panda'
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/verify'
     | '/order/$id'
     | '/staff/audit'
+    | '/staff/discounts'
     | '/staff/menu'
     | '/staff/orders'
     | '/staff/panda'
@@ -348,6 +360,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StaffMenuRouteImport
       parentRoute: typeof StaffRoute
     }
+    '/staff/discounts': {
+      id: '/staff/discounts'
+      path: '/discounts'
+      fullPath: '/staff/discounts'
+      preLoaderRoute: typeof StaffDiscountsRouteImport
+      parentRoute: typeof StaffRoute
+    }
     '/staff/audit': {
       id: '/staff/audit'
       path: '/audit'
@@ -409,6 +428,7 @@ declare module '@tanstack/react-router' {
 
 interface StaffRouteChildren {
   StaffAuditRoute: typeof StaffAuditRoute
+  StaffDiscountsRoute: typeof StaffDiscountsRoute
   StaffMenuRoute: typeof StaffMenuRoute
   StaffOrdersRoute: typeof StaffOrdersRoute
   StaffPandaRoute: typeof StaffPandaRoute
@@ -418,6 +438,7 @@ interface StaffRouteChildren {
 
 const StaffRouteChildren: StaffRouteChildren = {
   StaffAuditRoute: StaffAuditRoute,
+  StaffDiscountsRoute: StaffDiscountsRoute,
   StaffMenuRoute: StaffMenuRoute,
   StaffOrdersRoute: StaffOrdersRoute,
   StaffPandaRoute: StaffPandaRoute,
