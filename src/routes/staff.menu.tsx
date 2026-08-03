@@ -147,7 +147,7 @@ function MenuEditor() {
                   </div>
                   <div className="flex gap-1">
                     <button
-                      onClick={() => setEditing(item)}
+                      onClick={() => setEditing(item as Partial<Item>)}
                       className="rounded-full p-2 text-ink hover:bg-ink/5"
                       aria-label="Edit item"
                     >
