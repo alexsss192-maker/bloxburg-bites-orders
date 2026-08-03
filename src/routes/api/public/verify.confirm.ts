@@ -72,7 +72,7 @@ export const Route = createFileRoute("/api/public/verify/confirm")({
         const token = signVerifiedPayload({ discord_id: discordId, username, avatar_url: avatarUrl });
         return new Response(JSON.stringify({ ok: true, username, avatar_url: avatarUrl, discord_id: discordId }), {
           status: 200,
-          headers: { "content-type": "application/json", "set-cookie": buildSetCookie(token) },
+          headers: { "content-type": "application/json", "set-cookie": buildSetCookie(token, request) },
         });
       },
     },
