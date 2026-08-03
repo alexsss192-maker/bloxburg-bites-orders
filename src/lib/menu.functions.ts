@@ -147,6 +147,7 @@ const menuUpsert = z.object({
   price_bs: z.number().int().min(0).max(100000000),
   stock: z.number().int().min(0).max(1000000),
   image_url: z.string().url().max(2000).optional().nullable(),
+  category: z.enum(["non_seasonal", "seasonal"]).default("non_seasonal"),
   is_active: z.boolean().default(true),
 });
 
@@ -156,19 +157,17 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertStaff(context);
     if (data.id) {
-      // Ownership enforced by RLS for chefs; admins can update anything.
+      // Ownership is enforced by RLS; chefs may only edit their own items.
       const { error } = await context.supabase
         .from("menu_items" as any)
-        .update({ ...data, category: "non_seasonal" as const })
-        .eq("id", data.id)
-        .eq("owner_id", context.userId);
+        .update({ ...data, category: data.category })
+        .eq("id", data.id);
       if (error) throw new Error(error.message);
       return { id: data.id };
     }
     // Chefs own the items they create; admins may leave owner_id null (shared).
     const payload = {
       ...data,
-      category: "non_seasonal" as const,
       owner_id: context.userId,
     };
     const { data: row, error } = await context.supabase
@@ -185,12 +184,11 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     await assertStaff(context);
-    // RLS enforces chefs may only delete rows they own.
+    // Ownership is enforced by RLS; chefs may only delete their own items.
     const { error } = await context.supabase
       .from("menu_items" as any)
       .delete()
-      .eq("id", data.id)
-      .eq("owner_id", context.userId);
+      .eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
