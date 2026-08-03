@@ -7,55 +7,19 @@ import pandaMascot from "@/assets/panda-mascot.png";
 
 export const Route = createFileRoute("/")({ component: Landing });
 
-function Petal({ className = "", style }: { className?: string; style?: React.CSSProperties }) {
-  return (
-    <svg viewBox="0 0 40 40" className={className} style={style} aria-hidden>
-      <path
-        d="M20 3c6 7 12 11 12 18s-6 12-12 12S8 28 8 21 14 10 20 3z"
-        fill="currentColor"
-        opacity="0.85"
-      />
-      <circle cx="20" cy="21" r="3" fill="oklch(0.98 0.03 350)" opacity="0.6" />
-    </svg>
-  );
-}
-
 function Landing() {
   return (
     <div className="min-h-screen bg-cream text-ink">
       <SiteHeader />
 
       <main>
-        {/* Magazine hero */}
         <section className="relative overflow-hidden">
           <div className="blossom-grain pointer-events-none absolute inset-0 opacity-60" />
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute -left-10 top-24 text-petal"
-            initial={{ y: -30, opacity: 0, rotate: -30 }}
-            animate={{ y: 0, opacity: 1, rotate: 0 }}
-            transition={{ duration: 1.2, ease: "easeOut" }}
-          >
-            <Petal className="h-20 w-20" />
-          </motion.div>
-          <motion.div
-            aria-hidden
-            className="pointer-events-none absolute right-12 top-56 text-sakura"
-            initial={{ y: -20, opacity: 0, rotate: 20 }}
-            animate={{ y: 0, opacity: 1, rotate: 15 }}
-            transition={{ delay: 0.3, duration: 1.4, ease: "easeOut" }}
-          >
-            <Petal className="h-14 w-14" />
-          </motion.div>
-
           <div className="relative mx-auto max-w-7xl px-6 pt-10 md:pt-16">
-            {/* Masthead strip */}
             <div className="flex flex-wrap items-center justify-between gap-4 border-b border-ink/10 pb-4 text-[0.7rem] uppercase tracking-[0.35em] text-ink/60">
               <span>Vol. 01 · The Blossom Issue</span>
               <span className="hidden md:inline">Panda Bites Magazine · Bloxburg Kitchen Quarterly</span>
-              <span>
-                {new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-              </span>
+              <span>{new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" })}</span>
             </div>
 
             <div className="grid gap-12 pb-24 pt-12 md:grid-cols-[1.35fr_1fr] md:pt-16">
@@ -108,7 +72,7 @@ function Landing() {
                     rel="noreferrer noopener"
                     className="inline-flex items-center gap-2 rounded-full border border-ink/25 bg-blossom px-7 py-3.5 text-sm font-semibold uppercase tracking-[0.15em] text-ink transition hover:border-cherry hover:text-cherry"
                   >
-                    Seasonal shop
+                    Seasonal Foods
                   </a>
                 </motion.div>
 
@@ -119,7 +83,6 @@ function Landing() {
                 </div>
               </div>
 
-              {/* Magazine cover card */}
               <motion.aside
                 initial={{ opacity: 0, y: 30, rotate: -2 }}
                 animate={{ opacity: 1, y: 0, rotate: 2 }}
@@ -136,21 +99,15 @@ function Landing() {
                   <p className="mt-1 text-xs uppercase tracking-[0.3em] text-cherry">The Blossom Issue</p>
 
                   <div className="relative mt-6 aspect-square overflow-hidden rounded-3xl bg-gradient-to-b from-petal/60 to-blossom">
-                    <motion.div
-                      animate={{ y: [0, -8, 0] }}
-                      transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-                      className="absolute inset-0 grid place-items-center"
-                    >
+                    <div className="absolute inset-0 grid place-items-center">
                       <img src={pandaMascot} alt="Panda Bites mascot" width={512} height={512} className="h-4/5 w-4/5 object-contain" />
-                    </motion.div>
-                    <Petal className="absolute -left-2 top-6 h-10 w-10 rotate-12 text-sakura/80" />
-                    <Petal className="absolute right-4 bottom-8 h-8 w-8 -rotate-12 text-cherry/70" />
+                    </div>
                   </div>
 
                   <ul className="mt-6 space-y-2 border-t border-ink/10 pt-4 text-xs uppercase tracking-[0.22em] text-ink/70">
                     <li className="flex justify-between"><span>01 · Non-seasonal menu</span><span className="text-cherry">pg. 02</span></li>
-                    <li className="flex justify-between"><span>02 · Basket & checkout</span><span className="text-cherry">pg. 05</span></li>
-                    <li className="flex justify-between"><span>03 · Seasonal drops</span><span className="text-cherry">pg. 08</span></li>
+                    <li className="flex justify-between"><span>02 · Seasonal menu</span><span className="text-cherry">pg. 05</span></li>
+                    <li className="flex justify-between"><span>03 · Basket & checkout</span><span className="text-cherry">pg. 08</span></li>
                   </ul>
                 </div>
               </motion.aside>
@@ -158,7 +115,6 @@ function Landing() {
           </div>
         </section>
 
-        {/* Editorial trio */}
         <section className="mx-auto max-w-7xl px-6 pb-24">
           <div className="mb-10 flex items-end justify-between gap-6 border-b border-ink/10 pb-4">
             <h2 className="font-display text-4xl md:text-5xl">Editor's picks</h2>
@@ -167,23 +123,23 @@ function Landing() {
           <div className="grid gap-6 md:grid-cols-3">
             <Article
               tag="01 · The menu"
-              title="Cakes, pastas & bento — always in stock."
-              text="Our non-seasonal shelf runs year-round. Stock updates the instant an order clears."
+              title="Non-seasonal classics, always in stock."
+              text="Cakes, pastas, and bento boxes that run year-round. Stock updates the instant an order clears."
               cta={{ to: "/menu", label: "Browse menu" }}
               tone="petal"
             />
             <Article
-              tag="02 · The basket"
-              title="A checkout softer than a blossom."
-              text="Add a bite, we save it. Pay in B$ and a chef DMs you in Discord to deliver."
-              cta={{ to: "/checkout", label: "Open basket" }}
+              tag="02 · Seasonal"
+              title="Limited drops from our chefs."
+              text="Valentine's, Halloween, Winter — now sold right here by Panda Bites chefs with their own seasonal menus."
+              cta={{ to: "/menu", label: "Shop seasonals" }}
               tone="cream"
             />
             <Article
-              tag="03 · Seasonal"
-              title="Valentine's, Halloween, Winter — elsewhere."
-              text="Seasonal drops live on a sister site & Discord. Members-only, blossom-approved."
-              cta={{ href: "https://seasonalfoods.lovable.app/", label: "Seasonal shop ↗" }}
+              tag="03 · Trusted partner"
+              title="Seasonal Foods, the sister shop."
+              text="Looking for a dedicated seasonal-only experience? Visit our trusted partner for members-only drops."
+              cta={{ href: "https://seasonalfoods.lovable.app/", label: "Seasonal Foods ↗" }}
               tone="dark"
             />
           </div>

@@ -15,9 +15,10 @@ export function SiteHeader() {
     await fetch("/api/public/verify/logout", { method: "POST" });
     window.location.href = "/verify";
   }
+
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-cream/85 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-border bg-cream/85 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-ink text-cream text-lg">🐼</span>
@@ -31,7 +32,7 @@ export function SiteHeader() {
           </nav>
           <div className="flex items-center gap-2">
             {session && (
-              <div className="hidden items-center gap-2 rounded-full border border-ink/10 bg-blossom px-2 py-1 pr-3 text-xs font-medium text-ink sm:flex">
+              <div className="hidden items-center gap-2 rounded-full border border-border bg-blossom px-2 py-1 pr-3 text-xs font-medium text-ink sm:flex">
                 {session.avatar_url ? (
                   <img src={session.avatar_url} alt="" className="h-6 w-6 rounded-full" />
                 ) : (
@@ -43,7 +44,7 @@ export function SiteHeader() {
                 </button>
               </div>
             )}
-            <Link to="/history" className="grid h-10 w-10 place-items-center rounded-full border border-ink/10 bg-blossom text-ink hover:bg-cherry hover:text-cream md:hidden" aria-label="Orders">
+            <Link to="/history" className="grid h-10 w-10 place-items-center rounded-full border border-border bg-blossom text-ink hover:bg-cherry hover:text-cream md:hidden" aria-label="Orders">
               <History className="h-4 w-4" />
             </Link>
             <button

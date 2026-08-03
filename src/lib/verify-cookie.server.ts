@@ -3,7 +3,6 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const VERIFY_COOKIE = "pb_verified";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
-const IS_PROD = process.env.NODE_ENV === "production";
 
 export type VerifiedPayload = {
   discord_id: string;
@@ -52,13 +51,29 @@ export function verifyPayload(token: string | null | undefined): VerifiedPayload
   }
 }
 
-export function buildSetCookie(token: string) {
-  const productionAttributes = IS_PROD ? "; Secure; SameSite=None; Partitioned; Priority=High" : "; SameSite=Lax";
-  return `${VERIFY_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Max-Age=${MAX_AGE}${productionAttributes}`;
+export function isCookieSecure(request: Request): boolean {
+  const forwarded = request.headers.get("x-forwarded-proto")?.toLowerCase();
+  if (forwarded) return forwarded === "https";
+  try {
+    return new URL(request.url).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
-export function buildClearCookie() {
-  const productionAttributes = IS_PROD ? "; Secure; SameSite=None; Partitioned; Priority=High" : "; SameSite=Lax";
-  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; Max-Age=0${productionAttributes}`;
+
+export function buildSetCookie(token: string, request: Request) {
+  const secure = isCookieSecure(request);
+  const attributes = secure
+    ? "; Secure; SameSite=None; Partitioned; Priority=High"
+    : "; SameSite=Lax";
+  return `${VERIFY_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Max-Age=${MAX_AGE}${attributes}`;
+}
+export function buildClearCookie(request: Request) {
+  const secure = isCookieSecure(request);
+  const attributes = secure
+    ? "; Secure; SameSite=None; Partitioned; Priority=High"
+    : "; SameSite=Lax";
+  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; Max-Age=0${attributes}`;
 }
 
 export function readCookie(header: string | null, name: string): string | null {

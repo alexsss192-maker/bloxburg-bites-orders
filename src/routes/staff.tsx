@@ -1,6 +1,5 @@
 import { createFileRoute, Outlet, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
@@ -83,7 +82,7 @@ function StaffLayout() {
 
   return (
     <div className="min-h-screen bg-cream">
-      <header className="border-b border-border/60 bg-ink text-cream">
+      <header className="border-b border-border bg-ink text-cream">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <Link to="/" className="flex items-center gap-2">
             <span className="grid h-9 w-9 place-items-center rounded-full bg-cherry text-cream">🐼</span>
@@ -110,11 +109,9 @@ function StaffLayout() {
               </>
             )}
             {isAdmin && (
-              <>
-                <Link to="/staff/users" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
-                  <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" /> Users</span>
-                </Link>
-              </>
+              <Link to="/staff/users" className="text-cream/80 hover:text-cream [&.active]:text-cherry">
+                <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" /> Users</span>
+              </Link>
             )}
           </nav>
           <div className="flex items-center gap-3">
@@ -153,14 +150,15 @@ function StaffLogin() {
 
   return (
     <div className="grid min-h-screen place-items-center bg-cream p-6">
-      <motion.form
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
+      <form
         onSubmit={onSubmit}
-        className="w-full max-w-md space-y-4 rounded-3xl border border-border/60 bg-white p-8 shadow-xl"
+        className="w-full max-w-md space-y-4 rounded-3xl border border-border bg-white p-8 shadow-sm"
       >
         <p className="text-xs uppercase tracking-[0.3em] text-cherry">Staff portal</p>
         <h1 className="font-display text-4xl">Welcome back, chef.</h1>
+        <div className="rounded-2xl border border-cherry/20 bg-cherry/10 p-3 text-xs text-ink/80">
+          <span className="font-semibold">Note:</span> the "Melvin" account uses a username-only login mapped internally. Change its password after first sign-in if you use it regularly.
+        </div>
         <div>
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="mt-2 h-12 rounded-xl" />
@@ -175,7 +173,7 @@ function StaffLogin() {
         <p className="text-xs text-muted-foreground">
           Staff-only. If you need access, ask an admin in the Panda Bites Discord.
         </p>
-      </motion.form>
+      </form>
     </div>
   );
 }

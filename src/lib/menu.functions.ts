@@ -16,7 +16,7 @@ export const getPublicMenu = createServerFn({ method: "GET" }).handler(async () 
     .from("menu_items" as any)
     .select("id,name,description,price_bs,stock,image_url,category,is_active")
     .eq("is_active", true)
-    .eq("category", "non_seasonal")
+    .order("category", { ascending: true })
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as Array<{
@@ -79,8 +79,7 @@ export const getStockByNames = createServerFn({ method: "POST" })
     const { data: rows, error } = await supabase
       .from("menu_items" as any)
       .select("name,stock,is_active")
-      .in("name", data.names)
-      .eq("category", "non_seasonal");
+      .in("name", data.names);
     if (error) throw new Error(error.message);
     const map: Record<string, { stock: number; is_active: boolean }> = {};
     for (const r of (rows ?? []) as unknown as Array<{ name: string; stock: number; is_active: boolean }>) {
@@ -118,12 +117,14 @@ export const getMyRoles = createServerFn({ method: "GET" })
 export const listAllMenu = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertStaff(context);
-    const query = context.supabase
+    const { isAdmin } = await assertStaff(context);
+    let query = context.supabase
       .from("menu_items" as any)
       .select("*")
-      .eq("owner_id", context.userId)
       .order("created_at", { ascending: false });
+    if (!isAdmin) {
+      query = query.eq("owner_id", context.userId);
+    }
     const { data, error } = await query;
     if (error) throw new Error(error.message);
     return data as unknown as Array<{
@@ -146,6 +147,7 @@ const menuUpsert = z.object({
   price_bs: z.number().int().min(0).max(100000000),
   stock: z.number().int().min(0).max(1000000),
   image_url: z.string().url().max(2000).optional().nullable(),
+  category: z.enum(["non_seasonal", "seasonal"]).default("non_seasonal"),
   is_active: z.boolean().default(true),
 });
 
@@ -155,19 +157,17 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
   .handler(async ({ context, data }) => {
     await assertStaff(context);
     if (data.id) {
-      // Ownership enforced by RLS for chefs; admins can update anything.
+      // Ownership is enforced by RLS; chefs may only edit their own items.
       const { error } = await context.supabase
         .from("menu_items" as any)
-        .update({ ...data, category: "non_seasonal" as const })
-        .eq("id", data.id)
-        .eq("owner_id", context.userId);
+        .update({ ...data, category: data.category })
+        .eq("id", data.id);
       if (error) throw new Error(error.message);
       return { id: data.id };
     }
     // Chefs own the items they create; admins may leave owner_id null (shared).
     const payload = {
       ...data,
-      category: "non_seasonal" as const,
       owner_id: context.userId,
     };
     const { data: row, error } = await context.supabase
@@ -184,12 +184,11 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ context, data }) => {
     await assertStaff(context);
-    // RLS enforces chefs may only delete rows they own.
+    // Ownership is enforced by RLS; chefs may only delete their own items.
     const { error } = await context.supabase
       .from("menu_items" as any)
       .delete()
-      .eq("id", data.id)
-      .eq("owner_id", context.userId);
+      .eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
