@@ -1,46 +1,67 @@
-# Discord verification, seasonal menus, and Melvin admin
+# Panda Bites UI redesign
 
 ## Goal
 
-Stop verified customers from being sent back to Discord verification, let chefs sell seasonal items inside Panda Bites while retaining Seasonal Foods as the trusted partner, and provision a username-based admin account for Melvin.
+Redesign the Panda Bites customer and staff interfaces to feel like a polished, food-forward magazine: bold typographic hierarchy, breathable layouts, thin-bordered editorial panels, and the existing cute cherry/cream color palette kept intact.
+
+## Design decisions
+
+- **Typography**: Syne for display headings, Plus Jakarta Sans for body and UI text.
+- **Layout structure**: Magazine-style — a strong featured section with a supporting grid of cards.
+- **Page density**: Breathable — large images, generous whitespace, fewer items per row.
+- **Surface style**: Borders & outline — thin, structured borders around cards and panels instead of heavy shadows or soft blobs.
+- **Color**: Keep the current cream/ink/cherry palette (it is already "cute"); do not change the palette.
+- **Motion**: Subtle, purposeful micro-interactions only — hover lifts, focus rings, smooth height transitions, and staggered list reveals. No heavy parallax or continuous looping animations.
 
 ## Plan
 
-### 1. Fix Discord verification end to end
+### 1. Design system update
 
-- Reproduce the full code confirmation flow from a clean browser state in the actual preview: request code, confirm it, inspect `Set-Cookie`, load the session endpoint, navigate home, and verify the gate remains unlocked after reload and route changes.
-- Add focused server diagnostics around cookie presence and validation outcome without logging the cookie value or other credentials.
-- Make verification-cookie attributes depend on the real request/host context rather than only the build environment, so embedded preview and published top-level browsing each receive a compatible secure cookie.
-- Use one consistent session-check path for confirmation and the global gate, prevent stale unverified state from winning after successful confirmation, and redirect an already-verified visitor away from `/verify` only after the session read succeeds.
-- Keep cookie clearing aligned with the exact attributes used when setting it.
-- Validate both preview and published-style behavior, including a hard refresh. If a real clean Discord confirmation cannot be completed, report the authenticated confirmation path as unverified rather than claiming it is fixed.
+- Load Syne and Plus Jakarta Sans via Google Fonts in `src/routes/__root.tsx`.
+- Add `--font-display` (Syne) and `--font-sans` (Plus Jakarta Sans) tokens in `src/styles.css`.
+- Tighten the existing token system into a clean hierarchy: cream background, ink foreground, cherry primary, and a neutral border scale.
+- Introduce border-radius scale: `2xl` for cards, `full` for pills and buttons, keep the current corner language.
+- Add a thin `border-border` style to cards and panels.
 
-### 2. Allow chefs to sell seasonal food
+### 2. Customer-facing pages
 
-- Update the backend menu rules so active `seasonal` and `non_seasonal` items can be publicly listed and ordered; continue deriving prices, stock, ownership, and discounts on the server.
-- Add a category selector to the chef menu editor. Chefs remain limited to their own items, including seasonal items and chef-specific discounts.
-- Replace the seasonal placeholder with a real seasonal product grid using the same cart, stock, pricing, and checkout behavior as the existing menu.
-- Keep separate Seasonal and Non-seasonal tabs, and add a clear “Trusted partner: Seasonal Foods” link to `https://seasonalfoods.lovable.app/` without blocking Panda Bites seasonal purchases.
-- Update menu wording and metadata so it no longer says Panda Bites only sells non-seasonal food.
+- **Home page (`src/routes/index.tsx`)**: Magazine hero — large headline, short tagline, a featured dish/seasonal highlight card, then a supporting grid of categories or call-to-action cards. Use the new border style, generous spacing, and a clear primary action.
+- **Menu page (`src/routes/menu.tsx`)**: Convert to a magazine layout with a featured seasonal item at top, then two clearly separated tabs/blocks (Non-Seasonal and Seasonal) rendered as breathable grids. Replace the current seasonal placeholder dialog with a direct in-page grid of purchasable seasonal items. Keep the trusted partner link visible as a small editorial aside.
+- **Verification page (`src/routes/verify.tsx`)**: Center the form in a thin-bordered panel with a clear step-by-step flow, larger inputs, and friendlier error states. Keep the panda emoji but make it part of a composed lockup, not a floating giant element.
+- **Checkout (`src/routes/checkout.tsx`)**: Clean two-column magazine layout — order summary in one bordered panel, checkout details in another. Improve typography hierarchy and spacing.
+- **Order history (`src/routes/history.tsx`)**: Timeline-style list with thin horizontal cards, status badges, and clear order numbers. No dense table feel.
+- **Order detail (`src/routes/order.$id.tsx`)**: Magazine-style order receipt with item cards, fulfillment status, and totals.
+- **Cart drawer (`src/components/cart-drawer.tsx`)**: Slide-out with bordered item cards, clear quantity steppers, and a sticky summary footer.
+- **Site header/footer (`src/components/site-header.tsx`, `src/components/site-footer.tsx`)**: Sharper header with a thinner border, more generous spacing, and a clear cart button. Simpler footer with clean links.
 
-### 3. Provision the Melvin admin safely
+### 3. Staff pages
 
-- Treat `Melvin` as a username and map it internally to a deterministic synthetic email used only by authentication; the staff form will accept `Melvin` rather than exposing that internal address.
-- Provision the account through the privileged backend auth API with password `Seasonal`, mark it confirmed, and assign the `admin` role in the separate roles table.
-- Ensure Discord role synchronization does not silently remove the explicitly provisioned admin role during login. Discord verification remains required for staff access, and chef role synchronization stays server-validated.
-- Remove the existing unauthenticated public bootstrap endpoint, which currently contains hardcoded staff credentials and can grant an admin role to anyone who calls it.
-- Do not store the Melvin password in source code, browser storage, logs, or a public endpoint. Show a warning after first login recommending a stronger password because `Seasonal` is weak and username-only accounts cannot use email password recovery.
+- **Staff layout (`src/routes/staff.tsx`)**: Clean tab bar with thin borders, clear role badge, and a refined login panel.
+- **Orders dashboard (`src/routes/staff.orders.tsx`)**: Magazine-style order cards with status chips, buyer info, and expandable fulfillment details. Filter/sort controls in a thin toolbar.
+- **Menu editor (`src/routes/staff.menu.tsx`)**: Chef card gallery with clear ownership, seasonal badges, and a crisp edit sheet/dialog. Price field remains read-only for Skippe.
+- **Discounts (`src/routes/staff.discounts.tsx`)**: Bordered list of chef-owned discounts with clear validity and scope labels.
+- **Skippe (`src/routes/staff.panda.tsx`)**: Cleaner chat panel with message bubbles inside a bordered conversation surface and clearer action buttons.
+- **Audit (`src/routes/staff.audit.tsx`)**: Timeline-style audit log with actor, action, and target styled as editorial entries.
+- **Users (`src/routes/staff.users.tsx`)**: Refined table within a bordered panel, with clear role toggles and a structured add-user dialog.
 
-## Technical details
+### 4. Components and interactions
 
-- Database changes will use an approved migration for public menu policy/function updates and retain RLS plus explicit grants.
-- User roles remain in `user_roles`; no role is stored on a profile/user record or trusted from the client.
-- Menu/order server functions will be kept as thin `createServerFn` declarations, with runtime helpers moved to server-only modules where needed.
-- Verification will be tested from a fresh context rather than relying on the currently valid preview cookie, since current network evidence shows `/api/public/verify/session` returning the verified user successfully.
+- Standardize all cards on `border border-border bg-background rounded-2xl p-6`.
+- Standardize buttons: `rounded-full` primary, `rounded-full` outline secondary.
+- Add subtle hover states: `transition-transform duration-200 hover:-translate-y-0.5` on cards, `hover:bg-primary/90` on primary buttons.
+- Add focus-visible rings on all interactive elements.
+- Refine `Toaster`/`sonner` positioning and styling.
+- Remove any heavy or unrelated motion; keep the existing loader/emoji animation only on the verification loading state.
 
-## Acceptance checks
+### 5. Verification and auth fixes
 
-- A newly verified Discord user reaches `/`, can refresh, visit `/menu` and `/history`, and is not redirected to `/verify`.
-- A chef can create a seasonal item, set its own manual price and stock, and see it purchasable under the Seasonal tab; another chef cannot edit it or apply a discount to it.
-- Seasonal Foods is visible as the trusted partner, but its link does not replace or block the local seasonal menu.
-- `Melvin` + `Seasonal` signs into the staff portal as an admin after Discord verification, and no public route can create or elevate staff accounts.
+- Keep the underlying verification logic from the previous plan but ensure the UI reloads and gate behavior are clean after a successful Discord confirmation.
+- Ensure the staff login page is visually consistent with the new design and clearly warns that the `Melvin`/`Seasonal` username-only account should change its password.
+
+### 6. Acceptance checks
+
+- Customer pages show a consistent magazine hierarchy, no dense tables, and the seasonal tab is a real menu grid.
+- Staff pages have a unified header, clear role badge, and each page uses bordered cards with readable spacing.
+- All buttons, cards, and inputs share the same radius/border language.
+- The existing color palette is preserved; only typography, spacing, borders, and layout change.
+- No heavy continuous animations are added; motion is limited to hover/focus/loading micro-interactions.
