@@ -16,7 +16,7 @@ export const getPublicMenu = createServerFn({ method: "GET" }).handler(async () 
     .from("menu_items" as any)
     .select("id,name,description,price_bs,stock,image_url,category,is_active")
     .eq("is_active", true)
-    .eq("category", "non_seasonal")
+    .order("category", { ascending: true })
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
   return (data ?? []) as unknown as Array<{
@@ -79,8 +79,7 @@ export const getStockByNames = createServerFn({ method: "POST" })
     const { data: rows, error } = await supabase
       .from("menu_items" as any)
       .select("name,stock,is_active")
-      .in("name", data.names)
-      .eq("category", "non_seasonal");
+      .in("name", data.names);
     if (error) throw new Error(error.message);
     const map: Record<string, { stock: number; is_active: boolean }> = {};
     for (const r of (rows ?? []) as unknown as Array<{ name: string; stock: number; is_active: boolean }>) {
@@ -118,12 +117,14 @@ export const getMyRoles = createServerFn({ method: "GET" })
 export const listAllMenu = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertStaff(context);
-    const query = context.supabase
+    const { isAdmin } = await assertStaff(context);
+    let query = context.supabase
       .from("menu_items" as any)
       .select("*")
-      .eq("owner_id", context.userId)
       .order("created_at", { ascending: false });
+    if (!isAdmin) {
+      query = query.eq("owner_id", context.userId);
+    }
     const { data, error } = await query;
     if (error) throw new Error(error.message);
     return data as unknown as Array<{
