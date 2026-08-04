@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Check, Copy, Loader2, ShoppingBag } from "lucide-react";
+import { requireVerified } from "@/lib/verified-guard";
 
 export const Route = createFileRoute("/checkout")({
   head: () => ({
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/checkout")({
       { name: "robots", content: "noindex" },
     ],
   }),
+  beforeLoad: () => requireVerified(),
   component: CheckoutPage,
 });
 

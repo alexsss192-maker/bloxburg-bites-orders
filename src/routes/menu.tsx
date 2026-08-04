@@ -8,6 +8,7 @@ import { getPublicMenu } from "@/lib/menu.functions";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { useCart } from "@/lib/cart-store";
+import { requireVerified } from "@/lib/verified-guard";
 
 const menuQuery = { queryKey: ["public-menu"], queryFn: () => getPublicMenu() };
 
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/menu")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
+  beforeLoad: () => requireVerified(),
   loader: ({ context }) => context.queryClient.ensureQueryData(menuQuery),
   component: MenuPage,
 });
