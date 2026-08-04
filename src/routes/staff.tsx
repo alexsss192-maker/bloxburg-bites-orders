@@ -130,7 +130,7 @@ function StaffLayout() {
 }
 
 function StaffLogin() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -138,42 +138,86 @@ function StaffLogin() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: staffUsernameToEmail(username),
+        password,
+      });
       if (error) throw error;
       toast.success("Signed in");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sign in failed");
+      toast.error(err instanceof Error ? "Wrong username or password" : "Sign in failed");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="grid min-h-screen place-items-center bg-cream p-6">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-md space-y-4 rounded-3xl border border-border bg-white p-8 shadow-sm"
-      >
-        <p className="text-xs uppercase tracking-[0.3em] text-cherry">Staff portal</p>
-        <h1 className="font-display text-4xl">Welcome back, chef.</h1>
-        <div className="rounded-2xl border border-cherry/20 bg-cherry/10 p-3 text-xs text-ink/80">
-          <span className="font-semibold">Note:</span> the "Melvin" account uses a username-only login mapped internally. Change its password after first sign-in if you use it regularly.
+    <div className="grid min-h-screen place-items-center bg-background p-6">
+      <div className="pb-panel pb-rise grid w-full max-w-4xl overflow-hidden md:grid-cols-2">
+        <div className="pb-accent-face flex flex-col justify-between p-10 md:p-12">
+          <div aria-hidden className="pointer-events-none absolute -right-14 -top-14 h-64 w-64 rounded-full bg-cherry/40 blur-2xl" />
+          <div aria-hidden className="pointer-events-none absolute -bottom-10 -left-10 h-40 w-40 rotate-12 rounded-3xl border-4 border-blossom/25" />
+          <div className="relative z-10">
+            <p className="text-[0.68rem] font-bold uppercase tracking-[0.28em] text-blossom/80">The kitchen</p>
+            <h1 className="mt-4 font-display text-5xl leading-[1.05]">
+              Chefs
+              <br />
+              only.
+            </h1>
+            <p className="mt-4 max-w-[280px] text-sm leading-relaxed text-blossom/90">
+              Sign in to run the pass: incoming orders, your own menu, your own discounts, and Skippe.
+            </p>
+          </div>
+          <p className="relative z-10 mt-10 text-[0.68rem] font-semibold uppercase tracking-[0.28em] text-blossom/75">
+            Panda Bites · Staff portal
+          </p>
         </div>
-        <div>
-          <Label htmlFor="email">Email</Label>
-          <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="mt-2 h-12 rounded-xl" />
-        </div>
-        <div>
-          <Label htmlFor="password">Password</Label>
-          <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required className="mt-2 h-12 rounded-xl" />
-        </div>
-        <Button disabled={loading} type="submit" className="w-full rounded-full bg-ink py-6 text-cream hover:bg-cherry">
-          {loading ? "Signing in..." : "Sign in"}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          Staff-only. If you need access, ask an admin in the Panda Bites Discord.
-        </p>
-      </form>
+
+        <form onSubmit={onSubmit} className="flex flex-col justify-center p-10 md:p-14">
+          <h2 className="font-display text-3xl">Welcome back, chef.</h2>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            Use the username and password an admin gave you.
+          </p>
+
+          <div className="mt-8 space-y-5">
+            <div>
+              <Label htmlFor="staff-username" className="pb-eyebrow">Username</Label>
+              <Input
+                id="staff-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                required
+                placeholder="e.g. Alex"
+                className="mt-3 h-13 rounded-2xl border-border bg-background px-5 py-4"
+              />
+            </div>
+            <div>
+              <Label htmlFor="staff-password" className="pb-eyebrow">Password</Label>
+              <Input
+                id="staff-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+                className="mt-3 h-13 rounded-2xl border-border bg-background px-5 py-4"
+              />
+            </div>
+          </div>
+
+          <Button
+            disabled={loading}
+            type="submit"
+            className="pb-press mt-8 w-full rounded-2xl bg-accent py-6 text-base font-bold text-accent-foreground hover:bg-sakura"
+          >
+            {loading ? "Signing in..." : "Sign in"}
+          </Button>
+          <p className="mt-6 text-xs text-muted-foreground">
+            Staff-only. If you need access, ask an admin in the Panda Bites Discord.
+          </p>
+        </form>
+      </div>
     </div>
   );
 }
