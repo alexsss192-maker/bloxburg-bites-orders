@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useCart } from "@/lib/cart-store";
 import { CartDrawer } from "@/components/cart-drawer";
 import { motion } from "framer-motion";
-import { useVerifiedSession } from "@/components/verify-gate";
+import { useVerifiedSession } from "@/lib/use-verified-session";
 
 export function SiteHeader() {
   const count = useCart((s) => s.count());

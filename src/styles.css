@@ -123,3 +123,85 @@
 @utility text-balance {
   text-wrap: balance;
 }
+
+/* ── Architectural Soft-Pop design system ───────────────────────────────── */
+
+/* Floating pill navigation bar */
+@utility pb-pill-nav {
+  border-radius: 9999px;
+  border: 1px solid color-mix(in oklab, var(--cherry) 14%, transparent);
+  background-color: color-mix(in oklab, var(--blossom) 82%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 30px -18px color-mix(in oklab, var(--cherry) 40%, transparent);
+}
+
+/* Primary white surface panel */
+@utility pb-panel {
+  border-radius: 2.5rem;
+  border: 1px solid color-mix(in oklab, var(--cherry) 14%, transparent);
+  background-color: var(--blossom);
+  box-shadow: 0 40px 90px -50px color-mix(in oklab, var(--cherry) 55%, transparent);
+}
+
+/* Softer inner card, used for grids and row lists */
+@utility pb-card {
+  border-radius: 1.5rem;
+  border: 1px solid color-mix(in oklab, var(--cherry) 12%, transparent);
+  background-color: var(--blossom);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms ease, border-color 220ms ease;
+}
+@utility pb-card-hover {
+  &:hover {
+    transform: translateY(-4px);
+    border-color: color-mix(in oklab, var(--cherry) 32%, transparent);
+    box-shadow: 0 26px 50px -32px color-mix(in oklab, var(--cherry) 60%, transparent);
+  }
+}
+
+/* Accent brand face of a split panel */
+@utility pb-accent-face {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--sakura);
+  color: var(--blossom);
+}
+
+/* Eyebrow label */
+@utility pb-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--cherry);
+}
+
+/* Tactile button press */
+@utility pb-press {
+  transition: transform 140ms ease, background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  &:active {
+    transform: scale(0.98);
+  }
+}
+
+/* Hairline row list for dense staff data */
+@utility pb-rows {
+  & > * + * {
+    border-top: 1px solid color-mix(in oklab, var(--cherry) 12%, transparent);
+  }
+}
+
+/* Section entry animation */
+@utility pb-rise {
+  animation: pb-rise-in 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes pb-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

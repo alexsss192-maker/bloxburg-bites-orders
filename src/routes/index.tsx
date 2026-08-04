@@ -3,9 +3,27 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, Sparkles } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import { requireVerified } from "@/lib/verified-guard";
 import pandaMascot from "@/assets/panda-mascot.png";
 
-export const Route = createFileRoute("/")({ component: Landing });
+export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: "Panda Bites — Bloxburg kitchen for Discord members" },
+      {
+        name: "description",
+        content:
+          "Order seasonal and non-seasonal Bloxburg foods from the Panda Bites chef team. Pay in B$, delivered in-game.",
+      },
+      { property: "og:title", content: "Panda Bites — Bloxburg kitchen for Discord members" },
+      { property: "og:description", content: "Seasonal and non-seasonal Bloxburg bites, cooked by our chefs and paid in B$." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
+  beforeLoad: () => requireVerified(),
+  component: Landing,
+});
 
 function Landing() {
   return (

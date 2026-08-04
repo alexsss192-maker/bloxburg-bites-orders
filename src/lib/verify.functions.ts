@@ -3,10 +3,8 @@ import { getRequestHeader } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 export const getVerifiedSession = createServerFn({ method: "GET" }).handler(async () => {
-  const { readCookie, verifyPayload, VERIFY_COOKIE } = await import("@/lib/verify-cookie.server");
-  const cookies = getRequestHeader("cookie");
-  const token = readCookie(cookies ?? null, VERIFY_COOKIE);
-  const payload = verifyPayload(token);
+  const { readVerifiedSession } = await import("@/lib/verify-cookie.server");
+  const payload = readVerifiedSession(getRequestHeader("cookie") ?? null);
   if (!payload) return null;
   return {
     discord_id: payload.discord_id,
@@ -16,10 +14,8 @@ export const getVerifiedSession = createServerFn({ method: "GET" }).handler(asyn
 });
 
 export const listMyOrders = createServerFn({ method: "GET" }).handler(async () => {
-  const { readCookie, verifyPayload, VERIFY_COOKIE } = await import("@/lib/verify-cookie.server");
-  const cookies = getRequestHeader("cookie");
-  const token = readCookie(cookies ?? null, VERIFY_COOKIE);
-  const payload = verifyPayload(token);
+  const { readVerifiedSession } = await import("@/lib/verify-cookie.server");
+  const payload = readVerifiedSession(getRequestHeader("cookie") ?? null);
   if (!payload) return [];
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data, error } = await supabaseAdmin.rpc("get_orders_for_discord" as never, {
@@ -53,11 +49,9 @@ const orderInput = z.object({
 export const placeVerifiedOrder = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => orderInput.parse(d))
   .handler(async ({ data }) => {
-    const { readCookie, verifyPayload, VERIFY_COOKIE } = await import("@/lib/verify-cookie.server");
+    const { readVerifiedSession } = await import("@/lib/verify-cookie.server");
     const { createClient } = await import("@supabase/supabase-js");
-    const cookies = getRequestHeader("cookie");
-    const token = readCookie(cookies ?? null, VERIFY_COOKIE);
-    const payload = verifyPayload(token);
+    const payload = readVerifiedSession(getRequestHeader("cookie") ?? null);
     const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_PUBLISHABLE_KEY!, {
       auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
     });

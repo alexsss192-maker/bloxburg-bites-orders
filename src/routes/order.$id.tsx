@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import pandaMascot from "@/assets/panda-mascot.png";
+import { requireVerified } from "@/lib/verified-guard";
 
 export const Route = createFileRoute("/order/$id")({
   head: () => ({
@@ -18,6 +19,7 @@ export const Route = createFileRoute("/order/$id")({
       { name: "robots", content: "noindex" },
     ],
   }),
+  beforeLoad: () => requireVerified(),
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData({
       queryKey: ["order", params.id],
