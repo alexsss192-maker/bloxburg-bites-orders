@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, Link, useNavigate } from "@tanstack/react-rout
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { staffUsernameToEmail } from "@/lib/staff-username";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyRoles } from "@/lib/menu.functions";
 import { syncDiscordStaffRoles } from "@/lib/staff-role-sync.functions";
