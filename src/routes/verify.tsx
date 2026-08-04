@@ -123,8 +123,23 @@ function VerifyPage() {
       });
       const data = (await res.json()) as { ok: boolean; error?: string; expired?: boolean; attempts_left?: number };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "Failed");
+
+      // Confirm the browser actually stored the session cookie before handing
+      // off, so a dropped cookie surfaces here instead of as a redirect loop.
+      const check = await fetch("/api/public/verify/session", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const session = check.ok ? await check.json() : null;
+      if (!session) {
+        throw new Error(
+          "Verified, but your browser blocked our session cookie. Allow cookies for this site (or open it in a new tab) and try again.",
+        );
+      }
+
       toast.success("Verified! Welcome to Panda Bites 🐼");
       window.location.replace("/");
+      return;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed";
       setErrorMsg(msg);
