@@ -5,7 +5,7 @@ export const Route = createFileRoute("/api/public/verify/confirm")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const { signVerifiedPayload, buildSetCookie } = await import("@/lib/verify-cookie.server");
+        const { signVerifiedPayload, buildSetCookies, appendCookies } = await import("@/lib/verify-cookie.server");
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
         let body: { discord_id?: string; code?: string; username?: string; avatar_url?: string | null };
@@ -70,9 +70,11 @@ export const Route = createFileRoute("/api/public/verify/confirm")({
           );
 
         const token = signVerifiedPayload({ discord_id: discordId, username, avatar_url: avatarUrl });
+        const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store, private" });
+        appendCookies(headers, buildSetCookies(token, request));
         return new Response(JSON.stringify({ ok: true, username, avatar_url: avatarUrl, discord_id: discordId }), {
           status: 200,
-          headers: { "content-type": "application/json", "set-cookie": buildSetCookie(token, request) },
+          headers,
         });
       },
     },
