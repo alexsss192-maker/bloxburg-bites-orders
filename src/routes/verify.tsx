@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ArrowRight, ExternalLink, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
+import { redirectVerifiedHome } from "@/lib/verified-guard";
 import pandaMascot from "@/assets/panda-mascot.png";
 
 export const Route = createFileRoute("/verify")({
@@ -17,6 +18,7 @@ export const Route = createFileRoute("/verify")({
       { name: "robots", content: "noindex" },
     ],
   }),
+  beforeLoad: () => redirectVerifiedHome(),
   component: VerifyPage,
 });
 
