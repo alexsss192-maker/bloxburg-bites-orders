@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { placeVerifiedOrder, previewVerifiedOrder } from "@/lib/verify.functions";
-import { useVerifiedSession } from "@/components/verify-gate";
+import { useVerifiedSession } from "@/lib/use-verified-session";
 import { useCart } from "@/lib/cart-store";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";

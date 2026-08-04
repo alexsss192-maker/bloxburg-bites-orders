@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { formatDistanceToNow } from "date-fns";
 import { listMyOrders } from "@/lib/verify.functions";
 import { SiteHeader } from "@/components/site-header";
-import { useVerifiedSession } from "@/components/verify-gate";
+import { useVerifiedSession } from "@/lib/use-verified-session";
 import { ArrowRight, Receipt } from "lucide-react";
 
 const ORDER_STEPS = ["pending", "preparing", "ready", "delivered"];
