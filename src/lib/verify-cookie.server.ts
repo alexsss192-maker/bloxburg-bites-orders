@@ -2,6 +2,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const VERIFY_COOKIE = "pb_verified";
+// Companion cookie for embedded (cross-site iframe) contexts such as the editor
+// preview, where a SameSite=Lax cookie is never sent back to us.
+export const VERIFY_COOKIE_EMBED = "pb_verified_x";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 export type VerifiedPayload = {
@@ -61,19 +64,39 @@ export function isCookieSecure(request: Request): boolean {
   }
 }
 
-export function buildSetCookie(token: string, request: Request) {
-  const secure = isCookieSecure(request);
-  const attributes = secure
-    ? "; Secure; SameSite=None; Partitioned; Priority=High"
-    : "; SameSite=Lax";
-  return `${VERIFY_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; Max-Age=${MAX_AGE}${attributes}`;
+// Two cookies are always issued together:
+//   pb_verified    — SameSite=Lax: the reliable first-party cookie on the
+//                    published site (a Partitioned/None cookie can be dropped
+//                    or partitioned away there, which caused the redirect loop).
+//   pb_verified_x  — SameSite=None; Secure; Partitioned: only settable over
+//                    HTTPS, and the one that survives the editor preview iframe.
+// Reads accept whichever one the browser sends back.
+export function buildSetCookies(token: string, request: Request): string[] {
+  const value = encodeURIComponent(token);
+  const cookies = [
+    `${VERIFY_COOKIE}=${value}; Path=/; HttpOnly; Max-Age=${MAX_AGE}; SameSite=Lax${
+      isCookieSecure(request) ? "; Secure" : ""
+    }`,
+  ];
+  if (isCookieSecure(request)) {
+    cookies.push(
+      `${VERIFY_COOKIE_EMBED}=${value}; Path=/; HttpOnly; Max-Age=${MAX_AGE}; Secure; SameSite=None; Partitioned; Priority=High`,
+    );
+  }
+  return cookies;
 }
-export function buildClearCookie(request: Request) {
+
+export function buildClearCookies(request: Request): string[] {
   const secure = isCookieSecure(request);
-  const attributes = secure
-    ? "; Secure; SameSite=None; Partitioned; Priority=High"
-    : "; SameSite=Lax";
-  return `${VERIFY_COOKIE}=; Path=/; HttpOnly; Max-Age=0${attributes}`;
+  return [
+    `${VERIFY_COOKIE}=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax${secure ? "; Secure" : ""}`,
+    `${VERIFY_COOKIE_EMBED}=; Path=/; HttpOnly; Max-Age=0; Secure; SameSite=None; Partitioned`,
+  ];
+}
+
+export function appendCookies(headers: Headers, cookies: string[]) {
+  for (const cookie of cookies) headers.append("set-cookie", cookie);
+  return headers;
 }
 
 export function readCookie(header: string | null, name: string): string | null {
@@ -84,4 +107,12 @@ export function readCookie(header: string | null, name: string): string | null {
     if (idx > -1 && p.slice(0, idx) === name) return decodeURIComponent(p.slice(idx + 1));
   }
   return null;
+}
+
+/** Resolve the verified visitor from either cookie variant. */
+export function readVerifiedSession(cookieHeader: string | null): VerifiedPayload | null {
+  return (
+    verifyPayload(readCookie(cookieHeader, VERIFY_COOKIE)) ??
+    verifyPayload(readCookie(cookieHeader, VERIFY_COOKIE_EMBED))
+  );
 }
