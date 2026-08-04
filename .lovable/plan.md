@@ -48,14 +48,35 @@ Make Discord verification reliable on the published site, ensure protected pages
 - Update Discord role sync to replace only Discord-sourced rows and leave manually granted roles such as Alex's admin role intact.
 - Keep role checks server-side and keep chefs limited to their own menus, discounts, and fulfillment records.
 
-### 5. Modern-minimalist UI system
+### 5. Modern-minimalist UI system, applied to every page
 
-- Use the selected sign-in direction as the structural reference: focused branded header, one clear form surface, balanced viewport spacing, restrained blush background, strong ink text, and purposeful pink accent.
+Build one shared design system from the approved sign-in direction, then remodel every page — customer and staff — against it.
+
+**Design system foundation**
+
+- Structural reference: focused branded header, one clear primary surface, balanced viewport spacing, restrained blush background, strong ink text, purposeful pink accent, soft shadow, generous padding.
 - Keep **Syne** headings and **Plus Jakarta Sans** body text.
-- Remove continuous decorative animation and ornamental blobs; retain only short hover, focus, loading, and state transitions with reduced-motion support.
-- Normalize semantic color, surface, border, radius, input, button, and muted-text tokens so pages stop mixing raw white/ink opacity values with design roles.
-- Extend the same uncluttered hierarchy to verification, menu, checkout, history/order tracking, staff orders, menu editor, discounts, Skippe, audit, users/roles, loading, empty, denied, error, and not-found states.
-- Avoid card walls and nested cards. Use one dominant work surface per task, generous spacing, clear section dividers, and responsive tables/lists that become stacked rows on mobile.
+- Normalize tokens for background, surface, border, radius, input, button, badge, muted text, and status colors so pages stop mixing raw white/ink opacity values with semantic roles.
+- Encode primary/secondary/ghost/destructive button variants and one field style once, instead of repeating ad hoc classes per page.
+- Remove ornamental blobs, floating particles, confetti, and looping mascot motion. Keep only short hover, focus, loading, and state transitions with reduced-motion support.
+- No card walls or nested cards: one dominant surface per task, clear section rhythm, and lists/tables that become stacked rows on mobile.
+
+**Pages to remodel**
+
+- Customer: home, menu (including seasonal), verification, checkout, cart drawer, order history, order tracking, header, footer.
+- Staff: sign-in, portal shell and navigation, orders dashboard, menu editor, discounts, Skippe, audit log, users and roles.
+- System states: loading, empty, no-access, error boundary, and not-found.
+
+**Rendered direction previews for key screens**
+
+Before rewriting the heavier screens, generate rendered design directions for the screens where composition matters most, and let you pick each one:
+
+1. Customer menu and home
+2. Checkout and order tracking
+3. Staff orders dashboard
+4. Staff menu editor and discounts
+
+Directions will keep the approved palette, typography, and minimalist system locked, varying only composition, density, and hierarchy. Lower-risk screens (audit, users, system states) follow the chosen patterns directly without a separate pick.
 
 ## Technical details
 
