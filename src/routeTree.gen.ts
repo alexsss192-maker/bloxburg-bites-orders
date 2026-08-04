@@ -23,7 +23,6 @@ import { Route as StaffMenuRouteImport } from './routes/staff.menu'
 import { Route as StaffDiscountsRouteImport } from './routes/staff.discounts'
 import { Route as StaffAuditRouteImport } from './routes/staff.audit'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
-import { Route as ApiPublicProvisionAdminRouteImport } from './routes/api/public/provision-admin'
 import { Route as ApiPublicVerifySessionRouteImport } from './routes/api/public/verify.session'
 import { Route as ApiPublicVerifyResendRouteImport } from './routes/api/public/verify.resend'
 import { Route as ApiPublicVerifyRequestRouteImport } from './routes/api/public/verify.request'
@@ -100,11 +99,6 @@ const OrderIdRoute = OrderIdRouteImport.update({
   path: '/order/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicProvisionAdminRoute = ApiPublicProvisionAdminRouteImport.update({
-  id: '/api/public/provision-admin',
-  path: '/api/public/provision-admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiPublicVerifySessionRoute = ApiPublicVerifySessionRouteImport.update({
   id: '/api/public/verify/session',
   path: '/api/public/verify/session',
@@ -146,7 +140,6 @@ export interface FileRoutesByFullPath {
   '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
-  '/api/public/provision-admin': typeof ApiPublicProvisionAdminRoute
   '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
   '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
@@ -167,7 +160,6 @@ export interface FileRoutesByTo {
   '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff': typeof StaffIndexRoute
-  '/api/public/provision-admin': typeof ApiPublicProvisionAdminRoute
   '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
   '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
@@ -190,7 +182,6 @@ export interface FileRoutesById {
   '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
-  '/api/public/provision-admin': typeof ApiPublicProvisionAdminRoute
   '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
   '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
   '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
@@ -214,7 +205,6 @@ export interface FileRouteTypes {
     | '/staff/panda'
     | '/staff/users'
     | '/staff/'
-    | '/api/public/provision-admin'
     | '/api/public/verify/confirm'
     | '/api/public/verify/logout'
     | '/api/public/verify/request'
@@ -235,7 +225,6 @@ export interface FileRouteTypes {
     | '/staff/panda'
     | '/staff/users'
     | '/staff'
-    | '/api/public/provision-admin'
     | '/api/public/verify/confirm'
     | '/api/public/verify/logout'
     | '/api/public/verify/request'
@@ -257,7 +246,6 @@ export interface FileRouteTypes {
     | '/staff/panda'
     | '/staff/users'
     | '/staff/'
-    | '/api/public/provision-admin'
     | '/api/public/verify/confirm'
     | '/api/public/verify/logout'
     | '/api/public/verify/request'
@@ -273,7 +261,6 @@ export interface RootRouteChildren {
   StaffRoute: typeof StaffRouteWithChildren
   VerifyRoute: typeof VerifyRoute
   OrderIdRoute: typeof OrderIdRoute
-  ApiPublicProvisionAdminRoute: typeof ApiPublicProvisionAdminRoute
   ApiPublicVerifyConfirmRoute: typeof ApiPublicVerifyConfirmRoute
   ApiPublicVerifyLogoutRoute: typeof ApiPublicVerifyLogoutRoute
   ApiPublicVerifyRequestRoute: typeof ApiPublicVerifyRequestRoute
@@ -381,13 +368,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrderIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/provision-admin': {
-      id: '/api/public/provision-admin'
-      path: '/api/public/provision-admin'
-      fullPath: '/api/public/provision-admin'
-      preLoaderRoute: typeof ApiPublicProvisionAdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/public/verify/session': {
       id: '/api/public/verify/session'
       path: '/api/public/verify/session'
@@ -456,7 +436,6 @@ const rootRouteChildren: RootRouteChildren = {
   StaffRoute: StaffRouteWithChildren,
   VerifyRoute: VerifyRoute,
   OrderIdRoute: OrderIdRoute,
-  ApiPublicProvisionAdminRoute: ApiPublicProvisionAdminRoute,
   ApiPublicVerifyConfirmRoute: ApiPublicVerifyConfirmRoute,
   ApiPublicVerifyLogoutRoute: ApiPublicVerifyLogoutRoute,
   ApiPublicVerifyRequestRoute: ApiPublicVerifyRequestRoute,
@@ -466,3 +445,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
