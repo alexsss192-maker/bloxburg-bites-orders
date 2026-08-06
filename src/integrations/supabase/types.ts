@@ -242,6 +242,41 @@ export type Database = {
           },
         ]
       }
+      order_messages: {
+        Row: {
+          author_name: string
+          body: string
+          created_at: string
+          id: string
+          order_id: string
+          sender_kind: string
+        }
+        Insert: {
+          author_name: string
+          body: string
+          created_at?: string
+          id?: string
+          order_id: string
+          sender_kind: string
+        }
+        Update: {
+          author_name?: string
+          body?: string
+          created_at?: string
+          id?: string
+          order_id?: string
+          sender_kind?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_messages_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           created_at: string
@@ -367,6 +402,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_order_messages: {
+        Args: { _order_id: string }
+        Returns: {
+          author_name: string
+          body: string
+          created_at: string
+          id: string
+          sender_kind: string
+        }[]
+      }
       get_order_public: {
         Args: { _order_id: string }
         Returns: {
@@ -396,6 +441,20 @@ export type Database = {
           total_bs: number
         }[]
       }
+      get_orders_for_username: {
+        Args: { _username: string }
+        Returns: {
+          created_at: string
+          discord_username: string
+          discount_bs: number
+          fulfillments: Json
+          id: string
+          item_count: number
+          status: Database["public"]["Enums"]["order_status"]
+          subtotal_bs: number
+          total_bs: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -412,6 +471,10 @@ export type Database = {
           _promo_code?: string
           _verified_discord_id?: string
         }
+        Returns: string
+      }
+      post_order_message: {
+        Args: { _author_name: string; _body: string; _order_id: string }
         Returns: string
       }
       preview_order_total: {
