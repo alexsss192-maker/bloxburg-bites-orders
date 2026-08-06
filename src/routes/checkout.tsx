@@ -3,8 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
-import { placeVerifiedOrder, previewVerifiedOrder } from "@/lib/verify.functions";
-import { useVerifiedSession } from "@/lib/use-verified-session";
+import { placeOrder, previewOrder } from "@/lib/orders.functions";
 import { useCart } from "@/lib/cart-store";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -12,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Check, Copy, Loader2, ShoppingBag } from "lucide-react";
-import { requireVerified } from "@/lib/verified-guard";
 
 export const Route = createFileRoute("/checkout")({
   head: () => ({
@@ -22,7 +20,6 @@ export const Route = createFileRoute("/checkout")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  beforeLoad: () => requireVerified(),
   component: CheckoutPage,
 });
 
@@ -37,7 +34,6 @@ function CheckoutPage() {
   const items = useCart((s) => s.items);
   const total = useCart((s) => s.total());
   const clear = useCart((s) => s.clear);
-  const session = useVerifiedSession();
   const [step, setStep] = useState<Step>("review");
   const [discord, setDiscord] = useState("");
   const [note, setNote] = useState("");
@@ -47,12 +43,17 @@ function CheckoutPage() {
   const [submitting, setSubmitting] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const navigate = useNavigate();
-  const placeOrderFn = useServerFn(placeVerifiedOrder);
-  const previewOrderFn = useServerFn(previewVerifiedOrder);
+  const placeOrderFn = useServerFn(placeOrder);
+  const previewOrderFn = useServerFn(previewOrder);
 
   useEffect(() => {
-    if (session?.username) setDiscord(session.username);
-  }, [session?.username]);
+    try {
+      const saved = window.localStorage.getItem("pb_discord_username");
+      if (saved) setDiscord(saved);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
 
   const stepIndex = STEPS.findIndex((s) => s.id === step);
   const canProceedReview = items.length > 0;
@@ -88,8 +89,13 @@ function CheckoutPage() {
         },
       });
       setOrderId(res.order_id);
+      try {
+        window.localStorage.setItem("pb_discord_username", discord.trim());
+      } catch {
+        /* storage unavailable */
+      }
       clear();
-      toast.success("Order placed! Our chefs will DM you.");
+      toast.success("Order placed — open the chat with your chef.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -132,7 +138,6 @@ function CheckoutPage() {
                         setDiscord={setDiscord}
                         note={note}
                         setNote={setNote}
-                        session={session}
                       />
                       <StepFooter
                         primaryLabel="Review order"
