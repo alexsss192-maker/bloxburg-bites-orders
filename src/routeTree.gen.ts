@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VerifyRouteImport } from './routes/verify'
 import { Route as StaffRouteImport } from './routes/staff'
 import { Route as MenuRouteImport } from './routes/menu'
 import { Route as HistoryRouteImport } from './routes/history'
@@ -23,17 +22,7 @@ import { Route as StaffMenuRouteImport } from './routes/staff.menu'
 import { Route as StaffDiscountsRouteImport } from './routes/staff.discounts'
 import { Route as StaffAuditRouteImport } from './routes/staff.audit'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
-import { Route as ApiPublicVerifySessionRouteImport } from './routes/api/public/verify.session'
-import { Route as ApiPublicVerifyResendRouteImport } from './routes/api/public/verify.resend'
-import { Route as ApiPublicVerifyRequestRouteImport } from './routes/api/public/verify.request'
-import { Route as ApiPublicVerifyLogoutRouteImport } from './routes/api/public/verify.logout'
-import { Route as ApiPublicVerifyConfirmRouteImport } from './routes/api/public/verify.confirm'
 
-const VerifyRoute = VerifyRouteImport.update({
-  id: '/verify',
-  path: '/verify',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const StaffRoute = StaffRouteImport.update({
   id: '/staff',
   path: '/staff',
@@ -99,31 +88,6 @@ const OrderIdRoute = OrderIdRouteImport.update({
   path: '/order/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiPublicVerifySessionRoute = ApiPublicVerifySessionRouteImport.update({
-  id: '/api/public/verify/session',
-  path: '/api/public/verify/session',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicVerifyResendRoute = ApiPublicVerifyResendRouteImport.update({
-  id: '/api/public/verify/resend',
-  path: '/api/public/verify/resend',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicVerifyRequestRoute = ApiPublicVerifyRequestRouteImport.update({
-  id: '/api/public/verify/request',
-  path: '/api/public/verify/request',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicVerifyLogoutRoute = ApiPublicVerifyLogoutRouteImport.update({
-  id: '/api/public/verify/logout',
-  path: '/api/public/verify/logout',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiPublicVerifyConfirmRoute = ApiPublicVerifyConfirmRouteImport.update({
-  id: '/api/public/verify/confirm',
-  path: '/api/public/verify/confirm',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -131,7 +95,6 @@ export interface FileRoutesByFullPath {
   '/history': typeof HistoryRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
-  '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
   '/staff/discounts': typeof StaffDiscountsRoute
@@ -140,18 +103,12 @@ export interface FileRoutesByFullPath {
   '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
-  '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
-  '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
-  '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
-  '/api/public/verify/resend': typeof ApiPublicVerifyResendRoute
-  '/api/public/verify/session': typeof ApiPublicVerifySessionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
   '/history': typeof HistoryRoute
   '/menu': typeof MenuRoute
-  '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
   '/staff/discounts': typeof StaffDiscountsRoute
@@ -160,11 +117,6 @@ export interface FileRoutesByTo {
   '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff': typeof StaffIndexRoute
-  '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
-  '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
-  '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
-  '/api/public/verify/resend': typeof ApiPublicVerifyResendRoute
-  '/api/public/verify/session': typeof ApiPublicVerifySessionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -173,7 +125,6 @@ export interface FileRoutesById {
   '/history': typeof HistoryRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
-  '/verify': typeof VerifyRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
   '/staff/discounts': typeof StaffDiscountsRoute
@@ -182,11 +133,6 @@ export interface FileRoutesById {
   '/staff/panda': typeof StaffPandaRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
-  '/api/public/verify/confirm': typeof ApiPublicVerifyConfirmRoute
-  '/api/public/verify/logout': typeof ApiPublicVerifyLogoutRoute
-  '/api/public/verify/request': typeof ApiPublicVerifyRequestRoute
-  '/api/public/verify/resend': typeof ApiPublicVerifyResendRoute
-  '/api/public/verify/session': typeof ApiPublicVerifySessionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -196,7 +142,6 @@ export interface FileRouteTypes {
     | '/history'
     | '/menu'
     | '/staff'
-    | '/verify'
     | '/order/$id'
     | '/staff/audit'
     | '/staff/discounts'
@@ -205,18 +150,12 @@ export interface FileRouteTypes {
     | '/staff/panda'
     | '/staff/users'
     | '/staff/'
-    | '/api/public/verify/confirm'
-    | '/api/public/verify/logout'
-    | '/api/public/verify/request'
-    | '/api/public/verify/resend'
-    | '/api/public/verify/session'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/checkout'
     | '/history'
     | '/menu'
-    | '/verify'
     | '/order/$id'
     | '/staff/audit'
     | '/staff/discounts'
@@ -225,11 +164,6 @@ export interface FileRouteTypes {
     | '/staff/panda'
     | '/staff/users'
     | '/staff'
-    | '/api/public/verify/confirm'
-    | '/api/public/verify/logout'
-    | '/api/public/verify/request'
-    | '/api/public/verify/resend'
-    | '/api/public/verify/session'
   id:
     | '__root__'
     | '/'
@@ -237,7 +171,6 @@ export interface FileRouteTypes {
     | '/history'
     | '/menu'
     | '/staff'
-    | '/verify'
     | '/order/$id'
     | '/staff/audit'
     | '/staff/discounts'
@@ -246,11 +179,6 @@ export interface FileRouteTypes {
     | '/staff/panda'
     | '/staff/users'
     | '/staff/'
-    | '/api/public/verify/confirm'
-    | '/api/public/verify/logout'
-    | '/api/public/verify/request'
-    | '/api/public/verify/resend'
-    | '/api/public/verify/session'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -259,24 +187,11 @@ export interface RootRouteChildren {
   HistoryRoute: typeof HistoryRoute
   MenuRoute: typeof MenuRoute
   StaffRoute: typeof StaffRouteWithChildren
-  VerifyRoute: typeof VerifyRoute
   OrderIdRoute: typeof OrderIdRoute
-  ApiPublicVerifyConfirmRoute: typeof ApiPublicVerifyConfirmRoute
-  ApiPublicVerifyLogoutRoute: typeof ApiPublicVerifyLogoutRoute
-  ApiPublicVerifyRequestRoute: typeof ApiPublicVerifyRequestRoute
-  ApiPublicVerifyResendRoute: typeof ApiPublicVerifyResendRoute
-  ApiPublicVerifySessionRoute: typeof ApiPublicVerifySessionRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/verify': {
-      id: '/verify'
-      path: '/verify'
-      fullPath: '/verify'
-      preLoaderRoute: typeof VerifyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/staff': {
       id: '/staff'
       path: '/staff'
@@ -368,41 +283,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OrderIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/verify/session': {
-      id: '/api/public/verify/session'
-      path: '/api/public/verify/session'
-      fullPath: '/api/public/verify/session'
-      preLoaderRoute: typeof ApiPublicVerifySessionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/verify/resend': {
-      id: '/api/public/verify/resend'
-      path: '/api/public/verify/resend'
-      fullPath: '/api/public/verify/resend'
-      preLoaderRoute: typeof ApiPublicVerifyResendRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/verify/request': {
-      id: '/api/public/verify/request'
-      path: '/api/public/verify/request'
-      fullPath: '/api/public/verify/request'
-      preLoaderRoute: typeof ApiPublicVerifyRequestRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/verify/logout': {
-      id: '/api/public/verify/logout'
-      path: '/api/public/verify/logout'
-      fullPath: '/api/public/verify/logout'
-      preLoaderRoute: typeof ApiPublicVerifyLogoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/public/verify/confirm': {
-      id: '/api/public/verify/confirm'
-      path: '/api/public/verify/confirm'
-      fullPath: '/api/public/verify/confirm'
-      preLoaderRoute: typeof ApiPublicVerifyConfirmRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -434,24 +314,8 @@ const rootRouteChildren: RootRouteChildren = {
   HistoryRoute: HistoryRoute,
   MenuRoute: MenuRoute,
   StaffRoute: StaffRouteWithChildren,
-  VerifyRoute: VerifyRoute,
   OrderIdRoute: OrderIdRoute,
-  ApiPublicVerifyConfirmRoute: ApiPublicVerifyConfirmRoute,
-  ApiPublicVerifyLogoutRoute: ApiPublicVerifyLogoutRoute,
-  ApiPublicVerifyRequestRoute: ApiPublicVerifyRequestRoute,
-  ApiPublicVerifyResendRoute: ApiPublicVerifyResendRoute,
-  ApiPublicVerifySessionRoute: ApiPublicVerifySessionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

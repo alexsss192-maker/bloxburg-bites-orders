@@ -3,7 +3,6 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, Sparkles } from "lucide-react";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
-import { requireVerified } from "@/lib/verified-guard";
 import pandaMascot from "@/assets/panda-mascot.png";
 
 export const Route = createFileRoute("/")({
@@ -21,7 +20,6 @@ export const Route = createFileRoute("/")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  beforeLoad: () => requireVerified(),
   component: Landing,
 });
 

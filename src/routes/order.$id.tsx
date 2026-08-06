@@ -9,7 +9,8 @@ import { useEffect, useState } from "react";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import pandaMascot from "@/assets/panda-mascot.png";
-import { requireVerified } from "@/lib/verified-guard";
+import { OrderChat } from "@/components/order-chat";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/order/$id")({
   head: () => ({
@@ -19,7 +20,6 @@ export const Route = createFileRoute("/order/$id")({
       { name: "robots", content: "noindex" },
     ],
   }),
-  beforeLoad: () => requireVerified(),
   loader: ({ params, context }) =>
     context.queryClient.ensureQueryData({
       queryKey: ["order", params.id],
@@ -43,6 +43,20 @@ function OrderPage() {
   });
   const stockFn = useServerFn(getStockByNames);
   const [stock, setStock] = useState<Record<string, { stock: number; is_active: boolean }>>({});
+  const [chatOpen, setChatOpen] = useState(false);
+
+  useEffect(() => {
+    const key = `pb_chat_intro_${id}`;
+    try {
+      if (window.localStorage.getItem(key)) return;
+      window.localStorage.setItem(key, "1");
+    } catch {
+      /* storage unavailable */
+    }
+    const t = setTimeout(() => setChatOpen(true), 600);
+    return () => clearTimeout(t);
+  }, [id]);
+
   useEffect(() => {
     const names = order.items.map((i) => i.item_name);
     if (names.length === 0) return;
@@ -58,6 +72,26 @@ function OrderPage() {
     <div className="relative min-h-screen overflow-hidden bg-cream">
       <ConfettiBlossoms />
       <SiteHeader />
+      <Dialog open={chatOpen} onOpenChange={setChatOpen}>
+        <DialogContent className="pb-section max-w-md border-none p-8">
+          <DialogHeader>
+            <DialogTitle className="font-display text-3xl">You have a chat with your chef</DialogTitle>
+            <DialogDescription className="text-sm leading-relaxed">
+              Finish your order right here — agree on a delivery time and B$ payment in the order chat instead of
+              Discord DMs.
+            </DialogDescription>
+          </DialogHeader>
+          <Button
+            onClick={() => {
+              setChatOpen(false);
+              document.getElementById("order-chat")?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            className="pb-press mt-2 w-full rounded-2xl bg-accent py-6 text-base font-bold text-accent-foreground hover:bg-sakura"
+          >
+            Open the chat
+          </Button>
+        </DialogContent>
+      </Dialog>
       <main className="relative mx-auto max-w-2xl px-6 py-16">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -131,9 +165,8 @@ function OrderPage() {
               <span className="font-semibold">Your note: </span>{order.note}
             </div>
           )}
-          <div className="mt-8 rounded-2xl bg-cherry/10 p-4 text-sm text-ink/80">
-            Head to the <b>Panda Bites</b> Discord — a chef will DM you shortly to arrange your B$ payment and
-            in-game delivery.
+          <div className="mt-8 rounded-2xl bg-petal p-4 text-sm text-ink/80">
+            Use the <b>order chat</b> below to agree on your B$ payment and in-game delivery time with your chef.
           </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link to="/menu" className="inline-flex rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream hover:bg-cherry">
@@ -148,6 +181,10 @@ function OrderPage() {
             </div>
           </div>
         </motion.div>
+
+        <div id="order-chat" className="mt-8">
+          <OrderChat orderId={order.id} authorName={order.discord_username} mode="customer" />
+        </div>
       </main>
     </div>
   );

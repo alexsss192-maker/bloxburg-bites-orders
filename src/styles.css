@@ -53,14 +53,14 @@
 
 :root {
   --radius: 1rem;
-  /* Cherry Blossom palette */
-  --ink: oklch(0.22 0.05 350);            /* deep plum */
-  --blossom: oklch(0.985 0.012 350);      /* near-white blush */
-  --cream: oklch(0.965 0.025 350);        /* #fef0f5 blossom white */
-  --petal: oklch(0.905 0.055 350);        /* #f8c8d8 soft petal */
-  --sakura: oklch(0.75 0.13 355);         /* #e88aab mid pink */
-  --cherry: oklch(0.62 0.15 355);         /* #c45c7c deep rose */
-  --bamboo: oklch(0.68 0.08 155);         /* keep leaf green as small accent */
+  /* Zen Blossom palette */
+  --ink: #4a1d24;              /* deep plum ink */
+  --blossom: #ffffff;          /* white surface */
+  --cream: #fff5f7;            /* canvas */
+  --petal: #fff0f3;            /* tint */
+  --sakura: #ffd1dc;           /* hairline */
+  --cherry: #ff4d8d;           /* accent */
+  --bamboo: #4a9d7f;           /* small success accent */
 
   --background: var(--cream);
   --foreground: var(--ink);
@@ -70,24 +70,24 @@
   --popover-foreground: var(--ink);
   --primary: var(--ink);
   --primary-foreground: var(--blossom);
-  --secondary: oklch(0.94 0.03 350);
+  --secondary: var(--petal);
   --secondary-foreground: var(--ink);
-  --muted: oklch(0.94 0.025 350);
-  --muted-foreground: oklch(0.45 0.04 350);
+  --muted: var(--petal);
+  --muted-foreground: #a6888e;
   --accent: var(--cherry);
   --accent-foreground: var(--blossom);
   --destructive: oklch(0.55 0.22 27);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.88 0.035 350);
-  --input: oklch(0.9 0.03 350);
+  --border: var(--sakura);
+  --input: var(--sakura);
   --ring: var(--cherry);
-  --sidebar: var(--ink);
-  --sidebar-foreground: var(--blossom);
+  --sidebar: var(--blossom);
+  --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--cherry);
   --sidebar-primary-foreground: var(--blossom);
-  --sidebar-accent: oklch(0.28 0.05 350);
-  --sidebar-accent-foreground: var(--blossom);
-  --sidebar-border: oklch(0.32 0.05 350);
+  --sidebar-accent: var(--petal);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--sakura);
   --sidebar-ring: var(--cherry);
 }
 
@@ -204,4 +204,62 @@
     opacity: 1;
     transform: none;
   }
+}
+
+/* ── Zen Blossom app shell ──────────────────────────────────────────────── */
+
+/* The frosted outer container every page lives inside */
+@utility pb-shell {
+  border-radius: 2.5rem;
+  border: 1px solid var(--sakura);
+  background-color: color-mix(in oklab, var(--blossom) 60%, transparent);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 32px 64px -16px color-mix(in oklab, var(--sakura) 60%, transparent);
+}
+
+/* White content section inside the shell */
+@utility pb-section {
+  border-radius: 2rem;
+  border: 1px solid color-mix(in oklab, var(--sakura) 55%, transparent);
+  background-color: var(--blossom);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--ink) 5%, transparent);
+}
+
+/* Navigation rail pill, inactive + active */
+@utility pb-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 1rem;
+  padding: 0.75rem;
+  font-weight: 600;
+  color: color-mix(in oklab, var(--cherry) 60%, transparent);
+  transition: background-color 180ms ease, color 180ms ease, transform 140ms ease;
+  &:hover {
+    background-color: var(--petal);
+    color: var(--cherry);
+  }
+  &:active {
+    transform: scale(0.98);
+  }
+  &.active {
+    background-color: var(--cherry);
+    color: var(--blossom);
+    box-shadow: 0 10px 20px -10px color-mix(in oklab, var(--cherry) 60%, transparent);
+  }
+}
+
+/* Chat bubbles */
+@utility pb-bubble-them {
+  border-radius: 1rem;
+  border-top-left-radius: 0.25rem;
+  background-color: var(--petal);
+  color: var(--ink);
+}
+@utility pb-bubble-me {
+  border-radius: 1rem;
+  border-top-right-radius: 0.25rem;
+  background-color: var(--cherry);
+  color: var(--blossom);
+  box-shadow: 0 10px 20px -14px color-mix(in oklab, var(--cherry) 70%, transparent);
 }
