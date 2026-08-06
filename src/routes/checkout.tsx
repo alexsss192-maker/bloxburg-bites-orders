@@ -330,13 +330,11 @@ function DetailsStep({
   setDiscord,
   note,
   setNote,
-  session,
 }: {
   discord: string;
   setDiscord: (v: string) => void;
   note: string;
   setNote: (v: string) => void;
-  session: { username: string; avatar_url: string | null } | null;
 }) {
   return (
     <div className="flex-1 space-y-5">
@@ -346,27 +344,20 @@ function DetailsStep({
       </div>
       <div>
         <Label htmlFor="discord">Discord username</Label>
-        <div className="mt-2 flex items-center gap-3 rounded-2xl border border-ink/10 bg-blossom/70 p-2 pr-4">
-          {session?.avatar_url ? (
-            <img src={session.avatar_url} alt="" className="h-10 w-10 rounded-xl ring-2 ring-cherry/40" />
-          ) : (
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-cherry text-cream">🐼</span>
-          )}
+        <div className="mt-2 flex items-center gap-3 rounded-2xl border border-border bg-petal/70 p-2 pr-4">
+          <span className="grid h-10 w-10 place-items-center rounded-xl bg-cherry text-cream">🐼</span>
           <Input
             id="discord"
             value={discord}
             onChange={(e) => setDiscord(e.target.value)}
-            readOnly={!!session}
             maxLength={64}
             required
+            placeholder="your_discord_name"
             className="h-10 flex-1 rounded-xl border-none bg-transparent shadow-none focus-visible:ring-0"
           />
-          {session && (
-            <span className="text-[0.65rem] uppercase tracking-[0.3em] text-cherry">Verified</span>
-          )}
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          A chef will DM you in the Panda Bites Discord to arrange B$ payment & delivery.
+          Required so your chef knows who you are. You'll finish the order in the chat on your receipt page.
         </p>
       </div>
       <div>
