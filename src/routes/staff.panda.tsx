@@ -132,8 +132,6 @@ function PandaPage() {
     const userMsg: Msg = { role: "user", content: input.trim() || "(scan these images)", images: [...images] };
     setMessages((m) => [...m, userMsg]);
     setLoading(true);
-    const historyForServer = messages.map((m) => ({ role: m.role, content: m.content }));
-    void historyForServer; // conversation memory now lives server-side
     const payload = { message: input.trim(), images: images.map((d) => ({ data_url: d })), mode };
     setInput("");
     setImages([]);
@@ -306,7 +304,8 @@ function PandaPage() {
           </Link>
         </div>
         <p className="mt-2 text-xs text-ink/50">
-          New items are added with price <b>B$0</b> and stay hidden until you set a price.
+          Skippe can put items live, but new items start at <b>B$0</b> and customers can't buy them until you set a
+          price.
         </p>
         {applied.length === 0 ? (
           <p className="mt-6 text-sm text-muted-foreground">No changes yet.</p>
@@ -322,13 +321,19 @@ function PandaPage() {
                 <div className="flex items-center justify-between">
                   <span className="font-medium">{a.name}</span>
                   <span className="text-xs uppercase tracking-widest text-ink/50">
-                    {a.type === "add_item" ? "new" : "stock"}
+                    {a.type === "add_item"
+                      ? "new"
+                      : a.type === "activate"
+                        ? "live"
+                        : a.type === "deactivate"
+                          ? "hidden"
+                          : "stock"}
                   </span>
                 </div>
                 <p className="text-xs text-ink/60">
                   {a.ok ? `stock → ${a.stock}` : a.error ?? "failed"}
                 </p>
-                {a.ok && a.type === "add_item" && (
+                {a.ok && (a.type === "add_item" || a.type === "activate") && (
                   <Link
                     to="/staff/menu"
                     className="mt-1 inline-block text-xs font-semibold text-cherry underline"
