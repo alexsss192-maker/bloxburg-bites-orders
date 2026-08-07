@@ -148,7 +148,9 @@ function MenuGrid({ category }: { category: Tab }) {
             <h2 className="mt-2 font-display text-4xl leading-tight">{featured.name}</h2>
             <p className="mt-3 text-ink/70">{featured.description}</p>
             <div className="mt-6 flex items-center justify-between">
-              <span className="font-display text-3xl text-cherry">B${featured.price_bs.toLocaleString()}</span>
+              <span className="font-display text-3xl text-cherry">
+                {featured.price_bs > 0 ? `B$${featured.price_bs.toLocaleString()}` : "Price coming soon"}
+              </span>
               <span className="text-sm text-ink/60">Stock: {featured.stock}</span>
             </div>
             <button
@@ -156,11 +158,15 @@ function MenuGrid({ category }: { category: Tab }) {
                 add({ menu_item_id: featured.id, name: featured.name, price_bs: featured.price_bs, image_url: featured.image_url, max_stock: featured.stock });
                 toast.success(`${featured.name} added to basket`);
               }}
-              disabled={featured.stock <= 0}
+              disabled={featured.stock <= 0 || featured.price_bs <= 0}
               className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry disabled:cursor-not-allowed disabled:bg-ink/40"
             >
-              <Plus className="h-4 w-4" />
-              {featured.stock <= 0 ? "Unavailable" : "Add to basket"}
+              {featured.price_bs > 0 && <Plus className="h-4 w-4" />}
+              {featured.price_bs <= 0
+                ? "Chef is setting the price"
+                : featured.stock <= 0
+                  ? "Unavailable"
+                  : "Add to basket"}
             </button>
           </div>
         </section>
@@ -171,6 +177,7 @@ function MenuGrid({ category }: { category: Tab }) {
           const inCart = cartItems.find((c) => c.menu_item_id === item.id)?.quantity ?? 0;
           const remaining = item.stock - inCart;
           const soldOut = item.stock <= 0;
+          const unpriced = item.price_bs <= 0;
           return (
             <motion.article
               key={item.id}
@@ -178,19 +185,25 @@ function MenuGrid({ category }: { category: Tab }) {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
               whileHover={{ y: -4 }}
-              className="group flex flex-col overflow-hidden rounded-3xl border border-border bg-card bg-white transition-shadow hover:shadow-lg"
+              className={`group flex flex-col overflow-hidden rounded-3xl border border-border bg-card bg-white transition-shadow hover:shadow-lg ${unpriced ? "opacity-80" : ""}`}
             >
-              <div className="relative aspect-[4/3] overflow-hidden bg-muted">
+              <div className={`relative aspect-[4/3] overflow-hidden bg-muted ${unpriced ? "grayscale" : ""}`}>
                 {item.image_url ? (
                   <img src={item.image_url} alt={item.name} className="h-full w-full object-cover transition duration-500 group-hover:scale-105" />
                 ) : (
                   <div className="grid h-full w-full place-items-center text-6xl">{category === "seasonal" ? "🍁" : "🍰"}</div>
                 )}
-                {soldOut && (
+                {unpriced ? (
+                  <div className="absolute inset-0 grid place-items-center bg-ink/45 backdrop-blur-sm">
+                    <span className="rounded-full bg-cream px-4 py-1 text-xs font-semibold uppercase tracking-widest text-ink">
+                      Price coming soon
+                    </span>
+                  </div>
+                ) : soldOut ? (
                   <div className="absolute inset-0 grid place-items-center bg-ink/60 backdrop-blur-sm">
                     <span className="rounded-full bg-cherry px-4 py-1 text-xs font-semibold uppercase tracking-widest text-cream">Sold out</span>
                   </div>
-                )}
+                ) : null}
                 <div className="absolute left-3 top-3 rounded-full bg-cream/95 px-3 py-1 text-xs font-semibold text-ink">
                   Stock: {item.stock}
                 </div>
@@ -198,7 +211,9 @@ function MenuGrid({ category }: { category: Tab }) {
               <div className="flex flex-1 flex-col p-5">
                 <div className="flex items-start justify-between gap-3">
                   <h3 className="font-display text-2xl leading-tight">{item.name}</h3>
-                  <span className="whitespace-nowrap font-display text-xl text-cherry">B${item.price_bs.toLocaleString()}</span>
+                  <span className="whitespace-nowrap font-display text-xl text-cherry">
+                    {unpriced ? "—" : `B$${item.price_bs.toLocaleString()}`}
+                  </span>
                 </div>
                 {item.description && <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{item.description}</p>}
                 <button
@@ -206,11 +221,17 @@ function MenuGrid({ category }: { category: Tab }) {
                     add({ menu_item_id: item.id, name: item.name, price_bs: item.price_bs, image_url: item.image_url, max_stock: item.stock });
                     toast.success(`${item.name} added to basket`);
                   }}
-                  disabled={soldOut || remaining <= 0}
+                  disabled={unpriced || soldOut || remaining <= 0}
                   className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-cream transition hover:bg-cherry disabled:cursor-not-allowed disabled:bg-ink/40"
                 >
-                  <Plus className="h-4 w-4" />
-                  {soldOut ? "Unavailable" : remaining <= 0 ? "Max in basket" : "Add to basket"}
+                  {!unpriced && <Plus className="h-4 w-4" />}
+                  {unpriced
+                    ? "Chef is setting the price"
+                    : soldOut
+                      ? "Unavailable"
+                      : remaining <= 0
+                        ? "Max in basket"
+                        : "Add to basket"}
                 </button>
               </div>
             </motion.article>

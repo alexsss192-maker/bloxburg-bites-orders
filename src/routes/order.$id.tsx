@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { CheckCircle2, Copy, PackageCheck, PackageX, Package } from "lucide-react";
+import { CheckCircle2, Copy, MessageCircle, PackageCheck, PackageX, Package } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { getOrder, getStockByNames } from "@/lib/menu.functions";
@@ -45,6 +45,10 @@ function OrderPage() {
   const [stock, setStock] = useState<Record<string, { stock: number; is_active: boolean }>>({});
   const [chatOpen, setChatOpen] = useState(false);
 
+  function scrollToChat() {
+    document.getElementById("order-chat")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   useEffect(() => {
     const key = `pb_chat_intro_${id}`;
     try {
@@ -73,10 +77,13 @@ function OrderPage() {
       <ConfettiBlossoms />
       <SiteHeader />
       <Dialog open={chatOpen} onOpenChange={setChatOpen}>
-        <DialogContent className="pb-section max-w-md border-none p-8">
+        <DialogContent className="max-w-md rounded-[2rem] border border-border/60 bg-white p-8">
           <DialogHeader>
-            <DialogTitle className="font-display text-3xl">You have a chat with your chef</DialogTitle>
-            <DialogDescription className="text-sm leading-relaxed">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-petal text-cherry">
+              <MessageCircle className="h-7 w-7" />
+            </div>
+            <DialogTitle className="text-center font-display text-3xl">You have a chat with your chef</DialogTitle>
+            <DialogDescription className="text-center text-sm leading-relaxed">
               Finish your order right here — agree on a delivery time and B$ payment in the order chat instead of
               Discord DMs.
             </DialogDescription>
@@ -84,15 +91,41 @@ function OrderPage() {
           <Button
             onClick={() => {
               setChatOpen(false);
-              document.getElementById("order-chat")?.scrollIntoView({ behavior: "smooth", block: "center" });
+              setTimeout(scrollToChat, 150);
             }}
-            className="pb-press mt-2 w-full rounded-2xl bg-accent py-6 text-base font-bold text-accent-foreground hover:bg-sakura"
+            className="mt-2 w-full rounded-2xl bg-ink py-6 text-base font-bold text-cream hover:bg-cherry"
           >
             Open the chat
           </Button>
+          <button
+            onClick={() => setChatOpen(false)}
+            className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/40 hover:text-ink"
+          >
+            Maybe later
+          </button>
         </DialogContent>
       </Dialog>
-      <main className="relative mx-auto max-w-2xl px-6 py-16">
+      <main className="relative mx-auto grid max-w-6xl gap-8 px-6 py-16 lg:grid-cols-[minmax(0,1fr)_26rem]">
+        <div className="lg:col-span-2">
+          <button
+            onClick={scrollToChat}
+            className="flex w-full items-center gap-4 rounded-[2rem] border border-cherry/30 bg-petal px-6 py-5 text-left transition hover:border-cherry"
+          >
+            <span className="grid h-12 w-12 flex-shrink-0 place-items-center rounded-2xl bg-white text-cherry">
+              <MessageCircle className="h-6 w-6" />
+            </span>
+            <span className="flex-1">
+              <span className="block font-display text-xl leading-tight">Chat with your chef</span>
+              <span className="block text-sm text-ink/60">
+                Agree on your pickup time and B$ payment here — no Discord DMs needed.
+              </span>
+            </span>
+            <span className="hidden rounded-full bg-ink px-5 py-2 text-sm font-semibold text-cream sm:block">
+              Open chat
+            </span>
+          </button>
+        </div>
+        <div>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -166,7 +199,7 @@ function OrderPage() {
             </div>
           )}
           <div className="mt-8 rounded-2xl bg-petal p-4 text-sm text-ink/80">
-            Use the <b>order chat</b> below to agree on your B$ payment and in-game delivery time with your chef.
+            Use the <b>order chat</b> to agree on your B$ payment and in-game delivery time with your chef.
           </div>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link to="/menu" className="inline-flex rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream hover:bg-cherry">
@@ -181,11 +214,20 @@ function OrderPage() {
             </div>
           </div>
         </motion.div>
+        </div>
 
-        <div id="order-chat" className="mt-8">
+        <div id="order-chat" className="scroll-mt-24 lg:sticky lg:top-24 lg:self-start">
           <OrderChat orderId={order.id} authorName={order.discord_username} mode="customer" />
         </div>
       </main>
+
+      {/* Always-reachable chat handle on small screens. */}
+      <button
+        onClick={scrollToChat}
+        className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-bold text-cream shadow-lg transition hover:bg-cherry lg:hidden"
+      >
+        <MessageCircle className="h-4 w-4" /> Chef chat
+      </button>
     </div>
   );
 }

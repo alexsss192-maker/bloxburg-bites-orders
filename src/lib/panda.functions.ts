@@ -7,13 +7,30 @@ const imageSchema = z.object({
   data_url: z.string().max(6_500_000), // ~5MB base64
 });
 
+export const SKIPPE_MODES = ["auto", "lite_25", "lite_31"] as const;
+export type SkippeMode = (typeof SKIPPE_MODES)[number];
+
+const MODEL_BY_MODE: Record<Exclude<SkippeMode, "auto">, string> = {
+  lite_25: "google/gemini-2.5-flash-lite",
+  lite_31: "google/gemini-3.1-flash-lite",
+};
+
+export const SKIPPE_MODEL_LABELS: Record<string, string> = {
+  "google/gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
+  "google/gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
+};
+
+/** Auto picks the cheap model for light jobs and escalates on heavy scan batches. */
+function resolveModel(mode: SkippeMode, imageCount: number, message: string) {
+  if (mode !== "auto") return { model: MODEL_BY_MODE[mode], auto: false };
+  const heavy = imageCount >= 7 || message.length > 600 || /every|all of (them|these)|bulk|whole (fridge|menu)/i.test(message);
+  return { model: heavy ? MODEL_BY_MODE.lite_31 : MODEL_BY_MODE.lite_25, auto: true };
+}
+
 const pandaInput = z.object({
   message: z.string().trim().max(2000),
   images: z.array(imageSchema).max(9).default([]),
-  history: z
-    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(4000) }))
-    .max(20)
-    .default([]),
+  mode: z.enum(SKIPPE_MODES).default("auto"),
 });
 
 type MenuItem = { id: string; name: string; stock: number; is_active: boolean };
@@ -56,7 +73,8 @@ async function doWebSearch(query: string): Promise<string> {
 
 type PandaAction =
   | { type: "add_item"; name: string; stock: number }
-  | { type: "update_stock"; name: string; stock: number };
+  | { type: "update_stock"; name: string; stock: number }
+  | { type: "set_active"; name: string; stock: number; active?: boolean };
 
 type PandaResponse = { reply: string; actions: PandaAction[]; needs_web_search: string | null };
 
@@ -81,6 +99,7 @@ async function callPanda(args: {
   history: Array<{ role: "user" | "assistant"; content: string }>;
   userText: string;
   images: Array<{ data_url: string }>;
+  model: string;
 }): Promise<PandaResponse> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
@@ -97,7 +116,7 @@ async function callPanda(args: {
       "Lovable-API-Key": apiKey,
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash-lite",
+      model: args.model,
       messages: [
         { role: "system", content: args.systemPrompt },
         ...args.history.map((h) => ({ role: h.role, content: h.content })),
@@ -127,18 +146,19 @@ function buildSystemPrompt(menu: MenuItem[]) {
     "",
     "HARD RULES you MUST follow:",
     "- You NEVER set, invent, change, or suggest a specific numeric price. Chefs set all prices.",
-    "- When you 'add_item', the price is always 0 and the item will be hidden until the chef sets a price.",
+    "- When you 'add_item', the price is always 0. The item goes LIVE on the menu but customers cannot buy it until the chef sets a price.",
     "- Never provide, look up, estimate, or recommend prices or price ranges. Tell the chef that only they can set prices in the menu editor.",
     "- If images clearly show an item already on the menu, use update_stock (do NOT create a duplicate).",
+    "- Use 'set_active' to show or hide an existing item (active true/false). You may activate items freely — pricing stays with the chef.",
     "- Item names should match the chef's existing naming style (short, capitalized).",
     "",
     "Current chef menu (JSON):",
     JSON.stringify(menu.map((m) => ({ name: m.name, stock: m.stock, active: m.is_active }))),
     "",
     "OUTPUT: Reply ONLY with a JSON object of this exact shape:",
-    '{"reply": string, "actions": [ {"type":"add_item","name":string,"stock":number} | {"type":"update_stock","name":string,"stock":number} ], "needs_web_search": string | null }',
+    '{"reply": string, "actions": [ {"type":"add_item","name":string,"stock":number} | {"type":"update_stock","name":string,"stock":number} | {"type":"set_active","name":string,"stock":number,"active":boolean} ], "needs_web_search": string | null }',
     "- 'reply' is the chatty message the chef sees (markdown ok, short).",
-    "- 'actions' is what you want the app to change (add_item creates a hidden zero-price item; update_stock only works on the chef's own items).",
+    "- 'actions' is what you want the app to change. Every action only ever touches the chef's own items, and never a price.",
      "- Use web search only for non-price menu facts. Never request a price search.",
   ].join("\n");
 }
@@ -160,19 +180,34 @@ export const pandaChat = createServerFn({ method: "POST" })
     const menu = await loadChefMenu(context);
     const systemPrompt = buildSystemPrompt(menu);
 
+    // Saved conversation is the memory: last turns come from the database, not the client.
+    const { data: savedRows } = await context.supabase
+      .from("skippe_messages" as never)
+      .select("role, content")
+      .eq("owner_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    const history = ((savedRows as unknown as Array<{ role: "user" | "assistant"; content: string }> | null) ?? [])
+      .slice()
+      .reverse()
+      .map((r) => ({ role: r.role, content: r.content.slice(0, 4000) }));
+
+    const { model, auto } = resolveModel(data.mode, data.images.length, data.message);
+
     // First model call
     let parsed = await callPanda({
       systemPrompt,
-      history: data.history,
+      history,
       userText: data.message,
       images: data.images,
+      model,
     });
 
     // If model requested a web search, do it and re-ask
     if (parsed.needs_web_search) {
       const results = await doWebSearch(parsed.needs_web_search);
       const followupHistory = [
-        ...data.history,
+        ...history,
         { role: "user" as const, content: data.message || "(images)" },
         { role: "assistant" as const, content: `Let me check the web for "${parsed.needs_web_search}"...` },
       ];
@@ -181,11 +216,12 @@ export const pandaChat = createServerFn({ method: "POST" })
         history: followupHistory,
          userText: `Web search results for "${parsed.needs_web_search}":\n${results || "(no results)"}\n\nUse these to answer the chef's original non-price question. Never provide or recommend prices.`,
         images: [], // no images on retry
+        model,
       });
       parsed.needs_web_search = null;
     }
 
-    // Apply actions (create hidden 0-price item / update stock)
+    // Apply actions. Price is never part of any payload Skippe controls.
     const applied: Array<{ type: string; name: string; stock: number; itemId?: string; ok: boolean; error?: string }> = [];
     for (const action of parsed.actions.slice(0, 20)) {
       const stock = Math.max(0, Math.min(1000000, Math.floor(action.stock)));
@@ -194,7 +230,33 @@ export const pandaChat = createServerFn({ method: "POST" })
 
       const existing = menu.find((m) => m.name.toLowerCase() === name.toLowerCase());
       try {
-        if (action.type === "update_stock" || existing) {
+        if (action.type === "set_active") {
+          if (!existing) {
+            applied.push({ type: action.type, name, stock, ok: false, error: "Item not found" });
+            continue;
+          }
+          const nextActive = action.active !== false;
+          const { error } = await context.supabase
+            .from("menu_items" as never)
+            .update({ is_active: nextActive } as never)
+            .eq("id", existing.id);
+          if (error) throw new Error(error.message);
+          applied.push({
+            type: nextActive ? "activate" : "deactivate",
+            name: existing.name,
+            stock: existing.stock,
+            itemId: existing.id,
+            ok: true,
+          });
+          await logPandaAction({
+            actorUserId: context.userId,
+            actorEmail,
+            action: nextActive ? "activate_item" : "deactivate_item",
+            targetType: "menu_item",
+            targetId: existing.id,
+            payload: { name: existing.name, is_active: nextActive },
+          });
+        } else if (action.type === "update_stock" || existing) {
           if (!existing) {
             applied.push({ type: action.type, name, stock, ok: false, error: "Item not found" });
             continue;
@@ -214,7 +276,7 @@ export const pandaChat = createServerFn({ method: "POST" })
             payload: { name: existing.name, previous_stock: existing.stock, new_stock: stock },
           });
         } else {
-          // add_item — zero price, inactive
+          // add_item — live on the menu, zero price, not buyable until the chef prices it
           const { data: row, error } = await context.supabase
             .from("menu_items" as never)
             .insert({
@@ -222,7 +284,7 @@ export const pandaChat = createServerFn({ method: "POST" })
               description: "",
               price_bs: 0,
               stock,
-              is_active: false,
+              is_active: true,
               category: "non_seasonal",
               owner_id: context.userId,
             } as never)
@@ -259,7 +321,60 @@ export const pandaChat = createServerFn({ method: "POST" })
       }
     }
 
-    return { reply: parsed.reply, applied };
+    // Persist this turn so the conversation survives reloads.
+    const { error: saveError } = await context.supabase.from("skippe_messages" as never).insert([
+      {
+        owner_id: context.userId,
+        role: "user",
+        content: data.message || "(scan these images)",
+        image_count: data.images.length,
+        model: null,
+      },
+      {
+        owner_id: context.userId,
+        role: "assistant",
+        content: parsed.reply,
+        image_count: 0,
+        model,
+      },
+    ] as never);
+    if (saveError) console.error("Skippe chat save failed:", saveError.message);
+
+    return { reply: parsed.reply, applied, model, model_label: SKIPPE_MODEL_LABELS[model] ?? model, auto };
+  });
+
+export type SkippeSavedMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  image_count: number;
+  model: string | null;
+  created_at: string;
+};
+
+/** Your saved Skippe conversation, restored on every visit. */
+export const listSkippeChat = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("skippe_messages" as never)
+      .select("id, role, content, image_count, model, created_at")
+      .eq("owner_id", context.userId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as unknown as SkippeSavedMessage[];
+  });
+
+export const clearSkippeChat = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { error } = await context.supabase
+      .from("skippe_messages" as never)
+      .delete()
+      .eq("owner_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // List Skippe audit entries for staff review.
