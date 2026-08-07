@@ -146,18 +146,19 @@ function buildSystemPrompt(menu: MenuItem[]) {
     "",
     "HARD RULES you MUST follow:",
     "- You NEVER set, invent, change, or suggest a specific numeric price. Chefs set all prices.",
-    "- When you 'add_item', the price is always 0 and the item will be hidden until the chef sets a price.",
+    "- When you 'add_item', the price is always 0. The item goes LIVE on the menu but customers cannot buy it until the chef sets a price.",
     "- Never provide, look up, estimate, or recommend prices or price ranges. Tell the chef that only they can set prices in the menu editor.",
     "- If images clearly show an item already on the menu, use update_stock (do NOT create a duplicate).",
+    "- Use 'set_active' to show or hide an existing item (active true/false). You may activate items freely — pricing stays with the chef.",
     "- Item names should match the chef's existing naming style (short, capitalized).",
     "",
     "Current chef menu (JSON):",
     JSON.stringify(menu.map((m) => ({ name: m.name, stock: m.stock, active: m.is_active }))),
     "",
     "OUTPUT: Reply ONLY with a JSON object of this exact shape:",
-    '{"reply": string, "actions": [ {"type":"add_item","name":string,"stock":number} | {"type":"update_stock","name":string,"stock":number} ], "needs_web_search": string | null }',
+    '{"reply": string, "actions": [ {"type":"add_item","name":string,"stock":number} | {"type":"update_stock","name":string,"stock":number} | {"type":"set_active","name":string,"stock":number,"active":boolean} ], "needs_web_search": string | null }',
     "- 'reply' is the chatty message the chef sees (markdown ok, short).",
-    "- 'actions' is what you want the app to change (add_item creates a hidden zero-price item; update_stock only works on the chef's own items).",
+    "- 'actions' is what you want the app to change. Every action only ever touches the chef's own items, and never a price.",
      "- Use web search only for non-price menu facts. Never request a price search.",
   ].join("\n");
 }
@@ -179,19 +180,34 @@ export const pandaChat = createServerFn({ method: "POST" })
     const menu = await loadChefMenu(context);
     const systemPrompt = buildSystemPrompt(menu);
 
+    // Saved conversation is the memory: last turns come from the database, not the client.
+    const { data: savedRows } = await context.supabase
+      .from("skippe_messages" as never)
+      .select("role, content")
+      .eq("owner_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    const history = ((savedRows as unknown as Array<{ role: "user" | "assistant"; content: string }> | null) ?? [])
+      .slice()
+      .reverse()
+      .map((r) => ({ role: r.role, content: r.content.slice(0, 4000) }));
+
+    const { model, auto } = resolveModel(data.mode, data.images.length, data.message);
+
     // First model call
     let parsed = await callPanda({
       systemPrompt,
-      history: data.history,
+      history,
       userText: data.message,
       images: data.images,
+      model,
     });
 
     // If model requested a web search, do it and re-ask
     if (parsed.needs_web_search) {
       const results = await doWebSearch(parsed.needs_web_search);
       const followupHistory = [
-        ...data.history,
+        ...history,
         { role: "user" as const, content: data.message || "(images)" },
         { role: "assistant" as const, content: `Let me check the web for "${parsed.needs_web_search}"...` },
       ];
@@ -200,6 +216,7 @@ export const pandaChat = createServerFn({ method: "POST" })
         history: followupHistory,
          userText: `Web search results for "${parsed.needs_web_search}":\n${results || "(no results)"}\n\nUse these to answer the chef's original non-price question. Never provide or recommend prices.`,
         images: [], // no images on retry
+        model,
       });
       parsed.needs_web_search = null;
     }
