@@ -166,8 +166,7 @@ function MenuEditor() {
         </div>
       )}
 
-      {isLoading ? null
-      ) : items.length === 0 ? (
+      {isLoading ? null : items.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-ink/20 bg-white p-16 text-center">
           <p className="font-display text-3xl">No items yet</p>
           <p className="mt-2 text-muted-foreground">Tap "New item" to add your first dish.</p>
@@ -191,8 +190,13 @@ function MenuEditor() {
                   <div>
                     <p className="font-display text-xl">{item.name}</p>
                     <p className="text-xs text-muted-foreground">
-                      B${item.price_bs.toLocaleString()} · stock {item.stock} · {item.is_active ? "active" : "hidden"} · {item.category === "seasonal" ? "seasonal" : "non-seasonal"}
+                      {item.price_bs > 0 ? `B$${item.price_bs.toLocaleString()}` : "no price yet"} · stock {item.stock} · {item.is_active ? "active" : "hidden"} · {item.category === "seasonal" ? "seasonal" : "non-seasonal"}
                     </p>
+                    {item.price_bs <= 0 && (
+                      <span className="mt-1 inline-block rounded-full bg-cherry/10 px-2.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-[0.2em] text-cherry">
+                        Needs a price
+                      </span>
+                    )}
                   </div>
                   <div className="flex gap-1">
                     <button
