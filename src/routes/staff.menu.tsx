@@ -91,6 +91,7 @@ function MenuEditor() {
 
   const isAdmin = roles?.isAdmin ?? false;
   const items = data ?? [];
+  const needsPrice = items.filter((i) => i.price_bs <= 0);
 
   return (
     <div className="space-y-6">
@@ -118,6 +119,54 @@ function MenuEditor() {
 
       {isLoading ? (
         <p className="text-muted-foreground">Loading...</p>
+      ) : null}
+
+      {!isLoading && needsPrice.length > 0 && (
+        <div className="rounded-3xl border border-cherry/30 bg-petal p-5">
+          <p className="font-display text-xl">
+            {needsPrice.length} item{needsPrice.length === 1 ? "" : "s"} need a price
+          </p>
+          <p className="mt-1 text-sm text-ink/60">
+            These are live on the menu, but customers can't buy them until you set a price. Type it here and hit enter.
+          </p>
+          <ul className="mt-4 space-y-2">
+            {needsPrice.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-3">
+                <span className="flex-1 font-semibold">{item.name}</span>
+                <span className="rounded-full bg-cherry/10 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.2em] text-cherry">
+                  Needs a price
+                </span>
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const value = Number(new FormData(e.currentTarget).get("price"));
+                    if (!Number.isFinite(value) || value <= 0) {
+                      toast.error("Enter a price above B$0");
+                      return;
+                    }
+                    save.mutate({ ...(item as Partial<Item>), price_bs: Math.floor(value) });
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <Input
+                    name="price"
+                    type="number"
+                    min={1}
+                    placeholder="B$"
+                    className="h-10 w-28 rounded-xl"
+                    aria-label={`Price for ${item.name}`}
+                  />
+                  <Button type="submit" disabled={save.isPending} className="h-10 rounded-xl bg-ink text-cream hover:bg-cherry">
+                    Set price
+                  </Button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {isLoading ? null
       ) : items.length === 0 ? (
         <div className="rounded-3xl border border-dashed border-ink/20 bg-white p-16 text-center">
           <p className="font-display text-3xl">No items yet</p>
