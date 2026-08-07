@@ -7,13 +7,30 @@ const imageSchema = z.object({
   data_url: z.string().max(6_500_000), // ~5MB base64
 });
 
+export const SKIPPE_MODES = ["auto", "lite_25", "lite_31"] as const;
+export type SkippeMode = (typeof SKIPPE_MODES)[number];
+
+const MODEL_BY_MODE: Record<Exclude<SkippeMode, "auto">, string> = {
+  lite_25: "google/gemini-2.5-flash-lite",
+  lite_31: "google/gemini-3.1-flash-lite",
+};
+
+export const SKIPPE_MODEL_LABELS: Record<string, string> = {
+  "google/gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
+  "google/gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
+};
+
+/** Auto picks the cheap model for light jobs and escalates on heavy scan batches. */
+function resolveModel(mode: SkippeMode, imageCount: number, message: string) {
+  if (mode !== "auto") return { model: MODEL_BY_MODE[mode], auto: false };
+  const heavy = imageCount >= 7 || message.length > 600 || /every|all of (them|these)|bulk|whole (fridge|menu)/i.test(message);
+  return { model: heavy ? MODEL_BY_MODE.lite_31 : MODEL_BY_MODE.lite_25, auto: true };
+}
+
 const pandaInput = z.object({
   message: z.string().trim().max(2000),
   images: z.array(imageSchema).max(9).default([]),
-  history: z
-    .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(4000) }))
-    .max(20)
-    .default([]),
+  mode: z.enum(SKIPPE_MODES).default("auto"),
 });
 
 type MenuItem = { id: string; name: string; stock: number; is_active: boolean };
@@ -56,7 +73,8 @@ async function doWebSearch(query: string): Promise<string> {
 
 type PandaAction =
   | { type: "add_item"; name: string; stock: number }
-  | { type: "update_stock"; name: string; stock: number };
+  | { type: "update_stock"; name: string; stock: number }
+  | { type: "set_active"; name: string; stock: number; active?: boolean };
 
 type PandaResponse = { reply: string; actions: PandaAction[]; needs_web_search: string | null };
 
@@ -81,6 +99,7 @@ async function callPanda(args: {
   history: Array<{ role: "user" | "assistant"; content: string }>;
   userText: string;
   images: Array<{ data_url: string }>;
+  model: string;
 }): Promise<PandaResponse> {
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) throw new Error("LOVABLE_API_KEY missing");
@@ -97,7 +116,7 @@ async function callPanda(args: {
       "Lovable-API-Key": apiKey,
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash-lite",
+      model: args.model,
       messages: [
         { role: "system", content: args.systemPrompt },
         ...args.history.map((h) => ({ role: h.role, content: h.content })),
