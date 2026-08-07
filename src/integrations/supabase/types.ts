@@ -349,6 +349,36 @@ export type Database = {
         }
         Relationships: []
       }
+      skippe_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          image_count: number
+          model: string | null
+          owner_id: string
+          role: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          id?: string
+          image_count?: number
+          model?: string | null
+          owner_id: string
+          role: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          image_count?: number
+          model?: string | null
+          owner_id?: string
+          role?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
