@@ -221,7 +221,7 @@ export const pandaChat = createServerFn({ method: "POST" })
       parsed.needs_web_search = null;
     }
 
-    // Apply actions (create hidden 0-price item / update stock)
+    // Apply actions. Price is never part of any payload Skippe controls.
     const applied: Array<{ type: string; name: string; stock: number; itemId?: string; ok: boolean; error?: string }> = [];
     for (const action of parsed.actions.slice(0, 20)) {
       const stock = Math.max(0, Math.min(1000000, Math.floor(action.stock)));
@@ -230,7 +230,33 @@ export const pandaChat = createServerFn({ method: "POST" })
 
       const existing = menu.find((m) => m.name.toLowerCase() === name.toLowerCase());
       try {
-        if (action.type === "update_stock" || existing) {
+        if (action.type === "set_active") {
+          if (!existing) {
+            applied.push({ type: action.type, name, stock, ok: false, error: "Item not found" });
+            continue;
+          }
+          const nextActive = action.active !== false;
+          const { error } = await context.supabase
+            .from("menu_items" as never)
+            .update({ is_active: nextActive } as never)
+            .eq("id", existing.id);
+          if (error) throw new Error(error.message);
+          applied.push({
+            type: nextActive ? "activate" : "deactivate",
+            name: existing.name,
+            stock: existing.stock,
+            itemId: existing.id,
+            ok: true,
+          });
+          await logPandaAction({
+            actorUserId: context.userId,
+            actorEmail,
+            action: nextActive ? "activate_item" : "deactivate_item",
+            targetType: "menu_item",
+            targetId: existing.id,
+            payload: { name: existing.name, is_active: nextActive },
+          });
+        } else if (action.type === "update_stock" || existing) {
           if (!existing) {
             applied.push({ type: action.type, name, stock, ok: false, error: "Item not found" });
             continue;
@@ -250,7 +276,7 @@ export const pandaChat = createServerFn({ method: "POST" })
             payload: { name: existing.name, previous_stock: existing.stock, new_stock: stock },
           });
         } else {
-          // add_item — zero price, inactive
+          // add_item — live on the menu, zero price, not buyable until the chef prices it
           const { data: row, error } = await context.supabase
             .from("menu_items" as never)
             .insert({
@@ -258,7 +284,7 @@ export const pandaChat = createServerFn({ method: "POST" })
               description: "",
               price_bs: 0,
               stock,
-              is_active: false,
+              is_active: true,
               category: "non_seasonal",
               owner_id: context.userId,
             } as never)
@@ -295,7 +321,60 @@ export const pandaChat = createServerFn({ method: "POST" })
       }
     }
 
-    return { reply: parsed.reply, applied };
+    // Persist this turn so the conversation survives reloads.
+    const { error: saveError } = await context.supabase.from("skippe_messages" as never).insert([
+      {
+        owner_id: context.userId,
+        role: "user",
+        content: data.message || "(scan these images)",
+        image_count: data.images.length,
+        model: null,
+      },
+      {
+        owner_id: context.userId,
+        role: "assistant",
+        content: parsed.reply,
+        image_count: 0,
+        model,
+      },
+    ] as never);
+    if (saveError) console.error("Skippe chat save failed:", saveError.message);
+
+    return { reply: parsed.reply, applied, model, model_label: SKIPPE_MODEL_LABELS[model] ?? model, auto };
+  });
+
+export type SkippeSavedMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  image_count: number;
+  model: string | null;
+  created_at: string;
+};
+
+/** Your saved Skippe conversation, restored on every visit. */
+export const listSkippeChat = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("skippe_messages" as never)
+      .select("id, role, content, image_count, model, created_at")
+      .eq("owner_id", context.userId)
+      .order("created_at", { ascending: true })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as unknown as SkippeSavedMessage[];
+  });
+
+export const clearSkippeChat = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { error } = await context.supabase
+      .from("skippe_messages" as never)
+      .delete()
+      .eq("owner_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
   });
 
 // List Skippe audit entries for staff review.
