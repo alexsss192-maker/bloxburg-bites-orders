@@ -9,33 +9,27 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as StaffRouteImport } from './routes/staff'
-import { Route as MenuRouteImport } from './routes/menu'
-import { Route as HistoryRouteImport } from './routes/history'
-import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as StaffIndexRouteImport } from './routes/staff.index'
-import { Route as StaffUsersRouteImport } from './routes/staff.users'
-import { Route as StaffPandaRouteImport } from './routes/staff.panda'
-import { Route as StaffOrdersRouteImport } from './routes/staff.orders'
-import { Route as StaffMenuRouteImport } from './routes/staff.menu'
-import { Route as StaffDiscountsRouteImport } from './routes/staff.discounts'
-import { Route as StaffAuditRouteImport } from './routes/staff.audit'
+import { Route as CheckoutRouteImport } from './routes/checkout'
+import { Route as DealsRouteImport } from './routes/deals'
+import { Route as HistoryRouteImport } from './routes/history'
+import { Route as MeRouteImport } from './routes/me'
+import { Route as MenuRouteImport } from './routes/menu'
+import { Route as StaffRouteImport } from './routes/staff'
 import { Route as OrderIdRouteImport } from './routes/order.$id'
+import { Route as StaffIndexRouteImport } from './routes/staff.index'
+import { Route as StaffAuditRouteImport } from './routes/staff.audit'
+import { Route as StaffDiscountsRouteImport } from './routes/staff.discounts'
+import { Route as StaffMenuRouteImport } from './routes/staff.menu'
+import { Route as StaffMessagesRouteImport } from './routes/staff.messages'
+import { Route as StaffOrdersRouteImport } from './routes/staff.orders'
+import { Route as StaffPandaRouteImport } from './routes/staff.panda'
+import { Route as StaffPriorityRouteImport } from './routes/staff.priority'
+import { Route as StaffUsersRouteImport } from './routes/staff.users'
 
-const StaffRoute = StaffRouteImport.update({
-  id: '/staff',
-  path: '/staff',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MenuRoute = MenuRouteImport.update({
-  id: '/menu',
-  path: '/menu',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const HistoryRoute = HistoryRouteImport.update({
-  id: '/history',
-  path: '/history',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CheckoutRoute = CheckoutRouteImport.update({
@@ -43,9 +37,34 @@ const CheckoutRoute = CheckoutRouteImport.update({
   path: '/checkout',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const DealsRoute = DealsRouteImport.update({
+  id: '/deals',
+  path: '/deals',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MeRoute = MeRouteImport.update({
+  id: '/me',
+  path: '/me',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MenuRoute = MenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StaffRoute = StaffRouteImport.update({
+  id: '/staff',
+  path: '/staff',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrderIdRoute = OrderIdRouteImport.update({
+  id: '/order/$id',
+  path: '/order/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StaffIndexRoute = StaffIndexRouteImport.update({
@@ -53,24 +72,9 @@ const StaffIndexRoute = StaffIndexRouteImport.update({
   path: '/',
   getParentRoute: () => StaffRoute,
 } as any)
-const StaffUsersRoute = StaffUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => StaffRoute,
-} as any)
-const StaffPandaRoute = StaffPandaRouteImport.update({
-  id: '/panda',
-  path: '/panda',
-  getParentRoute: () => StaffRoute,
-} as any)
-const StaffOrdersRoute = StaffOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => StaffRoute,
-} as any)
-const StaffMenuRoute = StaffMenuRouteImport.update({
-  id: '/menu',
-  path: '/menu',
+const StaffAuditRoute = StaffAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
   getParentRoute: () => StaffRoute,
 } as any)
 const StaffDiscountsRoute = StaffDiscountsRouteImport.update({
@@ -78,43 +82,71 @@ const StaffDiscountsRoute = StaffDiscountsRouteImport.update({
   path: '/discounts',
   getParentRoute: () => StaffRoute,
 } as any)
-const StaffAuditRoute = StaffAuditRouteImport.update({
-  id: '/audit',
-  path: '/audit',
+const StaffMenuRoute = StaffMenuRouteImport.update({
+  id: '/menu',
+  path: '/menu',
   getParentRoute: () => StaffRoute,
 } as any)
-const OrderIdRoute = OrderIdRouteImport.update({
-  id: '/order/$id',
-  path: '/order/$id',
-  getParentRoute: () => rootRouteImport,
+const StaffMessagesRoute = StaffMessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => StaffRoute,
+} as any)
+const StaffOrdersRoute = StaffOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => StaffRoute,
+} as any)
+const StaffPandaRoute = StaffPandaRouteImport.update({
+  id: '/panda',
+  path: '/panda',
+  getParentRoute: () => StaffRoute,
+} as any)
+const StaffPriorityRoute = StaffPriorityRouteImport.update({
+  id: '/priority',
+  path: '/priority',
+  getParentRoute: () => StaffRoute,
+} as any)
+const StaffUsersRoute = StaffUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => StaffRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
+  '/deals': typeof DealsRoute
   '/history': typeof HistoryRoute
+  '/me': typeof MeRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
   '/staff/discounts': typeof StaffDiscountsRoute
   '/staff/menu': typeof StaffMenuRoute
+  '/staff/messages': typeof StaffMessagesRoute
   '/staff/orders': typeof StaffOrdersRoute
   '/staff/panda': typeof StaffPandaRoute
+  '/staff/priority': typeof StaffPriorityRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
+  '/deals': typeof DealsRoute
   '/history': typeof HistoryRoute
+  '/me': typeof MeRoute
   '/menu': typeof MenuRoute
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
   '/staff/discounts': typeof StaffDiscountsRoute
   '/staff/menu': typeof StaffMenuRoute
+  '/staff/messages': typeof StaffMessagesRoute
   '/staff/orders': typeof StaffOrdersRoute
   '/staff/panda': typeof StaffPandaRoute
+  '/staff/priority': typeof StaffPriorityRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff': typeof StaffIndexRoute
 }
@@ -122,15 +154,19 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/checkout': typeof CheckoutRoute
+  '/deals': typeof DealsRoute
   '/history': typeof HistoryRoute
+  '/me': typeof MeRoute
   '/menu': typeof MenuRoute
   '/staff': typeof StaffRouteWithChildren
   '/order/$id': typeof OrderIdRoute
   '/staff/audit': typeof StaffAuditRoute
   '/staff/discounts': typeof StaffDiscountsRoute
   '/staff/menu': typeof StaffMenuRoute
+  '/staff/messages': typeof StaffMessagesRoute
   '/staff/orders': typeof StaffOrdersRoute
   '/staff/panda': typeof StaffPandaRoute
+  '/staff/priority': typeof StaffPriorityRoute
   '/staff/users': typeof StaffUsersRoute
   '/staff/': typeof StaffIndexRoute
 }
@@ -139,44 +175,56 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/checkout'
+    | '/deals'
     | '/history'
+    | '/me'
     | '/menu'
     | '/staff'
     | '/order/$id'
     | '/staff/audit'
     | '/staff/discounts'
     | '/staff/menu'
+    | '/staff/messages'
     | '/staff/orders'
     | '/staff/panda'
+    | '/staff/priority'
     | '/staff/users'
     | '/staff/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/checkout'
+    | '/deals'
     | '/history'
+    | '/me'
     | '/menu'
     | '/order/$id'
     | '/staff/audit'
     | '/staff/discounts'
     | '/staff/menu'
+    | '/staff/messages'
     | '/staff/orders'
     | '/staff/panda'
+    | '/staff/priority'
     | '/staff/users'
     | '/staff'
   id:
     | '__root__'
     | '/'
     | '/checkout'
+    | '/deals'
     | '/history'
+    | '/me'
     | '/menu'
     | '/staff'
     | '/order/$id'
     | '/staff/audit'
     | '/staff/discounts'
     | '/staff/menu'
+    | '/staff/messages'
     | '/staff/orders'
     | '/staff/panda'
+    | '/staff/priority'
     | '/staff/users'
     | '/staff/'
   fileRoutesById: FileRoutesById
@@ -184,7 +232,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CheckoutRoute: typeof CheckoutRoute
+  DealsRoute: typeof DealsRoute
   HistoryRoute: typeof HistoryRoute
+  MeRoute: typeof MeRoute
   MenuRoute: typeof MenuRoute
   StaffRoute: typeof StaffRouteWithChildren
   OrderIdRoute: typeof OrderIdRoute
@@ -192,25 +242,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/staff': {
-      id: '/staff'
-      path: '/staff'
-      fullPath: '/staff'
-      preLoaderRoute: typeof StaffRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/menu': {
-      id: '/menu'
-      path: '/menu'
-      fullPath: '/menu'
-      preLoaderRoute: typeof MenuRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/history': {
-      id: '/history'
-      path: '/history'
-      fullPath: '/history'
-      preLoaderRoute: typeof HistoryRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/checkout': {
@@ -220,11 +256,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/deals': {
+      id: '/deals'
+      path: '/deals'
+      fullPath: '/deals'
+      preLoaderRoute: typeof DealsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/me': {
+      id: '/me'
+      path: '/me'
+      fullPath: '/me'
+      preLoaderRoute: typeof MeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/menu': {
+      id: '/menu'
+      path: '/menu'
+      fullPath: '/menu'
+      preLoaderRoute: typeof MenuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/staff': {
+      id: '/staff'
+      path: '/staff'
+      fullPath: '/staff'
+      preLoaderRoute: typeof StaffRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/order/$id': {
+      id: '/order/$id'
+      path: '/order/$id'
+      fullPath: '/order/$id'
+      preLoaderRoute: typeof OrderIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/staff/': {
@@ -234,32 +305,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StaffIndexRouteImport
       parentRoute: typeof StaffRoute
     }
-    '/staff/users': {
-      id: '/staff/users'
-      path: '/users'
-      fullPath: '/staff/users'
-      preLoaderRoute: typeof StaffUsersRouteImport
-      parentRoute: typeof StaffRoute
-    }
-    '/staff/panda': {
-      id: '/staff/panda'
-      path: '/panda'
-      fullPath: '/staff/panda'
-      preLoaderRoute: typeof StaffPandaRouteImport
-      parentRoute: typeof StaffRoute
-    }
-    '/staff/orders': {
-      id: '/staff/orders'
-      path: '/orders'
-      fullPath: '/staff/orders'
-      preLoaderRoute: typeof StaffOrdersRouteImport
-      parentRoute: typeof StaffRoute
-    }
-    '/staff/menu': {
-      id: '/staff/menu'
-      path: '/menu'
-      fullPath: '/staff/menu'
-      preLoaderRoute: typeof StaffMenuRouteImport
+    '/staff/audit': {
+      id: '/staff/audit'
+      path: '/audit'
+      fullPath: '/staff/audit'
+      preLoaderRoute: typeof StaffAuditRouteImport
       parentRoute: typeof StaffRoute
     }
     '/staff/discounts': {
@@ -269,19 +319,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StaffDiscountsRouteImport
       parentRoute: typeof StaffRoute
     }
-    '/staff/audit': {
-      id: '/staff/audit'
-      path: '/audit'
-      fullPath: '/staff/audit'
-      preLoaderRoute: typeof StaffAuditRouteImport
+    '/staff/menu': {
+      id: '/staff/menu'
+      path: '/menu'
+      fullPath: '/staff/menu'
+      preLoaderRoute: typeof StaffMenuRouteImport
       parentRoute: typeof StaffRoute
     }
-    '/order/$id': {
-      id: '/order/$id'
-      path: '/order/$id'
-      fullPath: '/order/$id'
-      preLoaderRoute: typeof OrderIdRouteImport
-      parentRoute: typeof rootRouteImport
+    '/staff/messages': {
+      id: '/staff/messages'
+      path: '/messages'
+      fullPath: '/staff/messages'
+      preLoaderRoute: typeof StaffMessagesRouteImport
+      parentRoute: typeof StaffRoute
+    }
+    '/staff/orders': {
+      id: '/staff/orders'
+      path: '/orders'
+      fullPath: '/staff/orders'
+      preLoaderRoute: typeof StaffOrdersRouteImport
+      parentRoute: typeof StaffRoute
+    }
+    '/staff/panda': {
+      id: '/staff/panda'
+      path: '/panda'
+      fullPath: '/staff/panda'
+      preLoaderRoute: typeof StaffPandaRouteImport
+      parentRoute: typeof StaffRoute
+    }
+    '/staff/priority': {
+      id: '/staff/priority'
+      path: '/priority'
+      fullPath: '/staff/priority'
+      preLoaderRoute: typeof StaffPriorityRouteImport
+      parentRoute: typeof StaffRoute
+    }
+    '/staff/users': {
+      id: '/staff/users'
+      path: '/users'
+      fullPath: '/staff/users'
+      preLoaderRoute: typeof StaffUsersRouteImport
+      parentRoute: typeof StaffRoute
     }
   }
 }
@@ -290,8 +368,10 @@ interface StaffRouteChildren {
   StaffAuditRoute: typeof StaffAuditRoute
   StaffDiscountsRoute: typeof StaffDiscountsRoute
   StaffMenuRoute: typeof StaffMenuRoute
+  StaffMessagesRoute: typeof StaffMessagesRoute
   StaffOrdersRoute: typeof StaffOrdersRoute
   StaffPandaRoute: typeof StaffPandaRoute
+  StaffPriorityRoute: typeof StaffPriorityRoute
   StaffUsersRoute: typeof StaffUsersRoute
   StaffIndexRoute: typeof StaffIndexRoute
 }
@@ -300,8 +380,10 @@ const StaffRouteChildren: StaffRouteChildren = {
   StaffAuditRoute: StaffAuditRoute,
   StaffDiscountsRoute: StaffDiscountsRoute,
   StaffMenuRoute: StaffMenuRoute,
+  StaffMessagesRoute: StaffMessagesRoute,
   StaffOrdersRoute: StaffOrdersRoute,
   StaffPandaRoute: StaffPandaRoute,
+  StaffPriorityRoute: StaffPriorityRoute,
   StaffUsersRoute: StaffUsersRoute,
   StaffIndexRoute: StaffIndexRoute,
 }
@@ -311,7 +393,9 @@ const StaffRouteWithChildren = StaffRoute._addFileChildren(StaffRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CheckoutRoute: CheckoutRoute,
+  DealsRoute: DealsRoute,
   HistoryRoute: HistoryRoute,
+  MeRoute: MeRoute,
   MenuRoute: MenuRoute,
   StaffRoute: StaffRouteWithChildren,
   OrderIdRoute: OrderIdRoute,
@@ -319,3 +403,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
