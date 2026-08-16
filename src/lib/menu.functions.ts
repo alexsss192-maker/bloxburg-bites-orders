@@ -47,9 +47,71 @@ export type PublicChef = {
 /** Every kitchen with live items: the admin menu is pinned first, then oldest menu first. */
 export const getPublicChefs = createServerFn({ method: "GET" }).handler(async () => {
   const supabase = serverPublicClient();
+
+  // The RPC is the preferred path because it also marks the admin kitchen.
+  // If an older Supabase schema has not applied the RPC migration yet, fall
+  // back to the public tables so /menu can still render instead of returning 500.
   const { data, error } = await supabase.rpc("get_public_chefs" as any);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as PublicChef[];
+
+  if (!error) {
+    return (data ?? []) as unknown as PublicChef[];
+  }
+
+  const isMissingRpc = /get_public_chefs|schema cache|function .* without parameters/i.test(
+    error.message,
+  );
+
+  if (!isMissingRpc) {
+    throw new Error(error.message);
+  }
+
+  const [{ data: menuRows, error: menuError }, { data: profiles, error: profileError }] =
+    await Promise.all([
+      supabase
+        .from("menu_items" as any)
+        .select("owner_id,created_at")
+        .eq("is_active", true)
+        .not("owner_id", "is", null)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("staff_profiles" as any)
+        .select("user_id,username"),
+    ]);
+
+  if (menuError) throw new Error(menuError.message);
+  if (profileError) throw new Error(profileError.message);
+
+  const usernameByUserId = new Map<string, string>();
+  for (const row of (profiles ?? []) as unknown as Array<{
+    user_id: string;
+    username: string | null;
+  }>) {
+    usernameByUserId.set(row.user_id, row.username?.trim() || "Chef");
+  }
+
+  const chefs = new Map<string, PublicChef>();
+
+  for (const row of (menuRows ?? []) as unknown as Array<{
+    owner_id: string;
+    created_at: string;
+  }>) {
+    const existing = chefs.get(row.owner_id);
+
+    if (existing) {
+      existing.item_count += 1;
+      continue;
+    }
+
+    chefs.set(row.owner_id, {
+      owner_id: row.owner_id,
+      username: usernameByUserId.get(row.owner_id) ?? "Chef",
+      is_admin: false,
+      first_item_at: row.created_at,
+      item_count: 1,
+    });
+  }
+
+  return Array.from(chefs.values());
 });
 
 export type PublicDeal = {
@@ -68,9 +130,71 @@ export type PublicDeal = {
 /** Live discounts, public so customers can grab a code without digging through checkout. */
 export const getPublicDeals = createServerFn({ method: "GET" }).handler(async () => {
   const supabase = serverPublicClient();
+
   const { data, error } = await supabase.rpc("get_public_discounts" as any);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as PublicDeal[];
+
+  if (!error) {
+    return (data ?? []) as unknown as PublicDeal[];
+  }
+
+  const isMissingRpc = /get_public_discounts|schema cache|function .* without parameters/i.test(
+    error.message,
+  );
+
+  if (!isMissingRpc) {
+    throw new Error(error.message);
+  }
+
+  // Graceful fallback for projects whose migration has not reached the live
+  // Supabase schema yet. Public policies already allow reading active deals.
+  const [{ data: discounts, error: discountsError }, { data: profiles, error: profileError }] =
+    await Promise.all([
+      supabase
+        .from("chef_discounts" as any)
+        .select(
+          "id,owner_id,name,code,discount_type,value,is_automatic,ends_at,starts_at,created_at,is_active",
+        )
+        .eq("is_active", true)
+        .or("starts_at.is.null,starts_at.lte." + new Date().toISOString())
+        .or("ends_at.is.null,ends_at.gt." + new Date().toISOString())
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("staff_profiles" as any)
+        .select("user_id,username"),
+    ]);
+
+  if (discountsError) throw new Error(discountsError.message);
+  if (profileError) throw new Error(profileError.message);
+
+  const usernameByUserId = new Map<string, string>();
+  for (const row of (profiles ?? []) as unknown as Array<{
+    user_id: string;
+    username: string | null;
+  }>) {
+    usernameByUserId.set(row.user_id, row.username?.trim() || "Chef");
+  }
+
+  return ((discounts ?? []) as unknown as Array<{
+    id: string;
+    owner_id: string;
+    name: string;
+    code: string | null;
+    discount_type: "percentage" | "fixed";
+    value: number;
+    is_automatic: boolean;
+    ends_at: string | null;
+  }>).map((discount) => ({
+    id: discount.id,
+    owner_id: discount.owner_id,
+    chef_username: usernameByUserId.get(discount.owner_id) ?? "Chef",
+    is_admin: false,
+    name: discount.name,
+    code: discount.code,
+    discount_type: discount.discount_type,
+    value: discount.value,
+    is_automatic: discount.is_automatic,
+    ends_at: discount.ends_at,
+  }));
 });
 
 /** No artificial order size limits — bulk carts (4 trays / 84+ items) must work. */
