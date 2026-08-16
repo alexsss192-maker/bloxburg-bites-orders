@@ -44,7 +44,9 @@ function HistoryPage() {
     queryKey: ["orders-by-username", username],
     queryFn: () => listFn({ data: { username } }),
     enabled: username.trim().length >= 2,
-    refetchInterval: 30_000,
+    // No interval — this page already has a manual "Refresh status"
+    // button (uses `refetch` below), so the 30s auto-poll was pure
+    // extra Lovable Cloud load on top of that.
   });
 
   function lookup(e: React.FormEvent) {
