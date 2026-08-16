@@ -1,6 +1,11 @@
 import type { Json } from "@/integrations/supabase/types";
 
-export async function logPandaAction(input: {
+/**
+ * Audit logging DISABLED to cut Supabase writes.
+ * Every Skippe tool used to INSERT into panda_audit_log — that added up fast.
+ * Re-enable by restoring the insert below if you need a compliance trail.
+ */
+export async function logPandaAction(_input: {
   actorUserId: string;
   actorEmail?: string | null;
   action: string;
@@ -8,18 +13,6 @@ export async function logPandaAction(input: {
   targetId?: string | null;
   payload?: Record<string, unknown>;
 }) {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  try {
-    await supabaseAdmin.from("panda_audit_log" as never).insert({
-      actor_user_id: input.actorUserId,
-      actor_email: input.actorEmail ?? null,
-      action: input.action,
-      target_type: input.targetType ?? null,
-      target_id: input.targetId ?? null,
-      payload: (input.payload ?? {}) as unknown as Json,
-    } as never);
-  } catch (err) {
-    // Never let audit failure break the primary action
-    console.error("audit log failed", err);
-  }
+  // no-op — was: supabaseAdmin.from("panda_audit_log").insert(...)
+  return;
 }
