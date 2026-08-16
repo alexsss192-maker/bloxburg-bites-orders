@@ -11,6 +11,7 @@ import {
   useEffect,
   useState,
   type ReactNode,
+  type ComponentType,
 } from "react";
 
 import appCss from "../styles.css?url";
@@ -27,7 +28,6 @@ import {
   type ResolvedStackFrame,
 } from "../lib/resolve-source-map";
 import { Toaster } from "@/components/ui/sonner";
-import { RewardPopup } from "../components/reward-popup";
 
 function NotFoundComponent() {
   return (
@@ -81,126 +81,166 @@ function ErrorComponent({
   const frames: ParsedStackFrame[] = parseErrorStack(error);
   const minifiedSourceFrame = findLikelySourceFrame(frames);
 
+  // Resolve minified assets/*.js:line:col frames back to the real
+  // src/*.tsx file/line using the build's sourcemaps (client-only —
+  // fetches the .map file next to each bundle).
   useEffect(() => {
     let active = true;
 
     resolveStackFrames(frames)
-      .then((nextFrames) => {
-        if (active) {
-          setResolvedFrames(nextFrames);
-        }
+      .then((resolved) => {
+        if (active) setResolvedFrames(resolved);
       })
       .catch(() => {
-        if (active) {
-          setResolvedFrames(null);
-        }
+        if (active) setResolvedFrames(null);
       });
 
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
 
-  const resolvedSourceFrame = resolvedFrames
+  const displayFrames = resolvedFrames ?? frames;
+  const sourceFrame = resolvedFrames
     ? findLikelyResolvedSourceFrame(resolvedFrames)
-    : null;
+    : minifiedSourceFrame;
 
-  const copyDetails = async () => {
-    try {
-      const details = formatErrorForCopy(
-        error,
-        minifiedSourceFrame,
-        resolvedSourceFrame,
-      );
+  const resolvedSourceFrame =
+    sourceFrame && "originalFile" in sourceFrame
+      ? (sourceFrame as ResolvedStackFrame)
+      : null;
 
-      await navigator.clipboard.writeText(details);
-      setCopied(true);
+  const displayFile =
+    resolvedSourceFrame?.originalFile ?? sourceFrame?.file ?? null;
+  const displayLine =
+    resolvedSourceFrame?.originalLine ?? sourceFrame?.line ?? null;
+  const displayColumn =
+    resolvedSourceFrame?.originalColumn ?? sourceFrame?.column ?? null;
+  const displayFnName =
+    resolvedSourceFrame?.originalName ??
+    sourceFrame?.functionName ??
+    null;
+  const isRealSource = Boolean(resolvedSourceFrame?.originalFile);
 
-      window.setTimeout(() => {
+  const copyText = formatErrorForCopy(error, frames);
+
+  function handleCopy() {
+    navigator.clipboard
+      .writeText(copyText)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => {
         setCopied(false);
-      }, 2000);
-    } catch {
-      setCopied(false);
-    }
-  };
-
-  const goHome = () => {
-    router.navigate({
-      to: "/",
-    });
-  };
+      });
+  }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-2xl rounded-3xl border border-border bg-card p-6 shadow-sm sm:p-8">
-        <div className="flex flex-col gap-6">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.25em] text-primary">
-              Something went wrong
+    <div className="flex min-h-screen items-start justify-center overflow-y-auto bg-background px-4 py-10">
+      <div className="w-full max-w-2xl">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5">
+          <div className="border-b border-destructive/30 px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-destructive">
+              This page crashed
             </p>
 
-            <h1 className="mt-2 text-2xl font-bold text-foreground">
-              The page could not be loaded.
+            <h1 className="mt-1 text-lg font-semibold text-foreground">
+              {error.name || "Error"}: {error.message || "Unknown error"}
             </h1>
-
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              You can try again or return to the homepage. The error details
-              below can be copied for debugging.
-            </p>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-border bg-muted/40">
-            <div className="border-b border-border px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Error
-              </p>
-            </div>
+          {displayFile && (
+            <div className="border-b border-destructive/30 px-5 py-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Likely source
+                </p>
 
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words px-4 py-4 text-xs leading-5 text-foreground">
-              {error.message}
-            </pre>
-          </div>
+                {resolvedFrames === null && (
+                  <p className="text-xs text-muted-foreground">
+                    Resolving original source…
+                  </p>
+                )}
 
-          {resolvedSourceFrame && (
-            <div className="rounded-2xl border border-border bg-muted/30 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Likely source
+                {resolvedFrames !== null && !isRealSource && (
+                  <p className="text-xs text-muted-foreground">
+                    Minified location (sourcemap unavailable)
+                  </p>
+                )}
+              </div>
+
+              <p className="mt-1 break-all font-mono text-sm text-foreground">
+                {displayFile}
+                {displayLine != null && (
+                  <span className="text-muted-foreground">
+                    :{displayLine}:{displayColumn}
+                  </span>
+                )}
               </p>
 
-              <p className="mt-1 break-all font-mono text-xs text-foreground">
-                {resolvedSourceFrame.file}:{resolvedSourceFrame.line}
-                {resolvedSourceFrame.column
-                  ? `:${resolvedSourceFrame.column}`
-                  : ""}
-              </p>
+              {displayFnName && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  in {displayFnName}()
+                </p>
+              )}
             </div>
           )}
 
-          <div className="flex flex-col gap-3 sm:flex-row">
+          {frames.length > 0 && (
+            <div className="px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Full stack trace
+              </p>
+
+              <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs leading-5 text-foreground">
+                {displayFrames
+                  .map((f) => {
+                    const resolved =
+                      "originalFile" in f
+                        ? (f as ResolvedStackFrame)
+                        : null;
+
+                    if (resolved?.originalFile) {
+                      return `at ${resolved.originalName ?? resolved.functionName ?? "(anonymous)"} — ${resolved.originalFile}:${resolved.originalLine}:${resolved.originalColumn}`;
+                    }
+
+                    return f.file
+                      ? `at ${f.functionName ?? "(anonymous)"} — ${f.file}:${f.line}:${f.column}`
+                      : f.raw;
+                  })
+                  .join("\n")}
+              </pre>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-destructive/30 px-5 py-4">
             <button
-              type="button"
-              onClick={() => {
-                reset();
-              }}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              onClick={handleCopy}
+              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
             >
-              Try again
+              {copied ? "Copied!" : "Copy error details"}
             </button>
 
-            <button
-              type="button"
-              onClick={copyDetails}
-              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              {copied ? "Copied!" : "Copy error"}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  router.invalidate();
+                  reset();
+                }}
+                className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Try again
+              </button>
 
-            <a
-              href="/"
-              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              Go home
-            </a>
+              <a
+                href="/"
+                className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+              >
+                Go home
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -243,6 +283,17 @@ export const Route =
           content: "website",
         },
         {
+          name: "twitter:card",
+          content: "summary_large_image",
+        },
+      ],
+
+      links: [
+        {
+          rel: "stylesheet",
+          href: appCss,
+        },
+        {
           rel: "icon",
           href: "/favicon.ico",
           type: "image/x-icon",
@@ -254,11 +305,11 @@ export const Route =
         {
           rel: "preconnect",
           href: "https://fonts.gstatic.com",
+          crossOrigin: "anonymous",
         },
         {
           rel: "stylesheet",
-          href:
-            "https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
+          href: "https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
         },
       ],
     }),
@@ -287,11 +338,39 @@ function RootShell({ children }: { children: ReactNode }) {
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
+  const [RewardPopup, setRewardPopup] =
+    useState<ComponentType | null>(null);
+
+  /*
+   * RewardPopup uses browser storage and server functions.
+   *
+   * Load it only after hydration so an error in this optional feature
+   * cannot crash the entire public website during SSR.
+   */
+  useEffect(() => {
+    let active = true;
+
+    import("../components/reward-popup")
+      .then((module) => {
+        if (active) {
+          setRewardPopup(() => module.RewardPopup);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load reward popup:", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
+      {/* Required: nested routes render here. */}
       <Outlet />
 
-      <RewardPopup />
+      {RewardPopup ? <RewardPopup /> : null}
 
       <Toaster
         position="top-right"
