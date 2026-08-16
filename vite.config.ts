@@ -12,4 +12,13 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    build: {
+      // Emit real sourcemaps in production builds so the crash screen
+      // (src/routes/__root.tsx ErrorComponent) can resolve minified
+      // stack frames (e.g. assets/routes-DV4WiMqk.js:1:496) back to the
+      // actual src/*.tsx file and line that threw.
+      sourcemap: true,
+    },
+  },
 });
