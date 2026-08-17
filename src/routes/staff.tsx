@@ -11,7 +11,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { staffUsernameToEmail } from "@/lib/staff-username";
 import { getMyRoles } from "@/lib/menu.functions";
-import { syncDiscordStaffRoles } from "@/lib/staff-role-sync.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -128,7 +127,6 @@ function StaffLayout() {
   const [darkMode, setDarkMode] = useState(false);
 
   const getRoles = useServerFn(getMyRoles);
-  const syncRoles = useServerFn(syncDiscordStaffRoles);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -197,8 +195,8 @@ function StaffLayout() {
       setRolesReady(false);
 
       try {
-        await syncRoles();
-
+        // Single DB round-trip (getMyRoles). syncDiscordStaffRoles only
+        // re-read user_roles and doubled every staff page load cost.
         const roles = await getRoles();
 
         if (cancelled) return;
@@ -230,7 +228,7 @@ function StaffLayout() {
     return () => {
       cancelled = true;
     };
-  }, [session, getRoles, syncRoles]);
+  }, [session, getRoles]);
 
   /* ============================================================
      ACTIONS
