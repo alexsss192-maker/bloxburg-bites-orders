@@ -21,6 +21,8 @@ export function SiteHeader() {
             {[
               { to: "/", label: "Home", exact: true },
               { to: "/menu", label: "Menu" },
+              { to: "/deals", label: "Deals" },
+              { to: "/me", label: "My Profile" },
               { to: "/history", label: "Orders" },
               { to: "/staff", label: "Staff" },
             ].map((link) => (
