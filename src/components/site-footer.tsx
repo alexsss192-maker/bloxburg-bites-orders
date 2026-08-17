@@ -28,28 +28,27 @@ export function SiteFooter() {
 
             <ul className="mt-4 space-y-2 text-sm">
               <li>
-                <a
-                  href="/menu"
-                  className="hover:text-cream"
-                >
+                <a href="/menu" className="hover:text-cream">
                   Non-seasonal menu
                 </a>
               </li>
-
               <li>
-                <a
-                  href="/menu"
-                  className="hover:text-cream"
-                >
-                  Seasonal menu
+                <a href="/deals" className="hover:text-cream">
+                  Deals & promo codes
                 </a>
               </li>
-
               <li>
-                <a
-                  href="/checkout"
-                  className="hover:text-cream"
-                >
+                <a href="/me" className="hover:text-cream">
+                  My Profile
+                </a>
+              </li>
+              <li>
+                <a href="/history" className="hover:text-cream">
+                  Order history
+                </a>
+              </li>
+              <li>
+                <a href="/checkout" className="hover:text-cream">
                   Basket
                 </a>
               </li>
