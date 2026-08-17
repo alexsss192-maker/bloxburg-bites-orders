@@ -287,6 +287,7 @@ function CheckoutPage() {
     discord.trim().length >= 2;
 
   // Auto-preview totals (promo, priority, bulk / fast service fee).
+  // Debounced harder to cut preview_order_total RPC spam while typing.
   useEffect(() => {
     if (items.length === 0) {
       setPricing(null);
@@ -316,7 +317,7 @@ function CheckoutPage() {
         .finally(() => {
           if (!cancelled) setPricingLoading(false);
         });
-    }, 600);
+    }, 1500);
 
     return () => {
       cancelled = true;
