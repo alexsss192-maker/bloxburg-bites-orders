@@ -17,6 +17,10 @@ import {
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import {
+  diagnoseSecurityRisk,
+  formatSecurityDiagnosisForCopy,
+} from "../lib/security-risk";
+import {
   parseErrorStack,
   findLikelySourceFrame,
   formatErrorForCopy,
@@ -123,7 +127,10 @@ function ErrorComponent({
     null;
   const isRealSource = Boolean(resolvedSourceFrame?.originalFile);
 
-  const copyText = formatErrorForCopy(error, frames);
+  const security = diagnoseSecurityRisk(error);
+  const copyText = security
+    ? `${formatSecurityDiagnosisForCopy(security)}\n\n${formatErrorForCopy(error, frames)}`
+    : formatErrorForCopy(error, frames);
 
   function handleCopy() {
     navigator.clipboard
@@ -140,16 +147,75 @@ function ErrorComponent({
   return (
     <div className="flex min-h-screen items-start justify-center overflow-y-auto bg-background px-4 py-10">
       <div className="w-full max-w-2xl">
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5">
-          <div className="border-b border-destructive/30 px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-destructive">
-              This page crashed
+        <div
+          className={
+            security
+              ? "rounded-lg border border-amber-500/40 bg-amber-500/5"
+              : "rounded-lg border border-destructive/30 bg-destructive/5"
+          }
+        >
+          <div
+            className={
+              security
+                ? "border-b border-amber-500/40 px-5 py-4"
+                : "border-b border-destructive/30 px-5 py-4"
+            }
+          >
+            <p
+              className={
+                security
+                  ? "text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
+                  : "text-xs font-semibold uppercase tracking-wide text-destructive"
+              }
+            >
+              {security
+                ? `Security risk · ${security.level}`
+                : "This page crashed"}
             </p>
 
             <h1 className="mt-1 text-lg font-semibold text-foreground">
-              {error.name || "Error"}: {error.message || "Unknown error"}
+              {security
+                ? security.title
+                : `${error.name || "Error"}: ${error.message || "Unknown error"}`}
             </h1>
+
+            {security ? (
+              <p className="mt-2 text-sm text-foreground/80">{security.risk}</p>
+            ) : null}
           </div>
+
+          {security ? (
+            <div className="space-y-3 border-b border-amber-500/40 px-5 py-4 text-sm">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Why
+                </p>
+                <p className="mt-1 text-foreground/90">{security.why}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Where
+                </p>
+                <p className="mt-1 font-mono text-xs text-foreground/90">
+                  {security.where}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Fix
+                </p>
+                <p className="mt-1 text-foreground/90">{security.fix}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Raw error
+                </p>
+                <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-muted p-2 font-mono text-xs">
+                  {error.name || "Error"}: {error.message || "Unknown error"}
+                </pre>
+              </div>
+            </div>
+          ) : null}
 
           {displayFile && (
             <div className="border-b border-destructive/30 px-5 py-4">
