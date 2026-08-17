@@ -1,10 +1,24 @@
+import {
+  diagnoseSecurityRisk,
+  formatSecurityDiagnosisForCopy,
+  type SecurityDiagnosis,
+} from "./security-risk";
+
+export type { SecurityDiagnosis };
+export {
+  diagnoseSecurityRisk,
+  formatSecurityDiagnosisForCopy,
+  isSecurityRiskError,
+} from "./security-risk";
+
 type LovableErrorOptions = {
   mechanism?:
     | "manual"
     | "onerror"
     | "unhandledrejection"
     | "react_error_boundary"
-    | "skippe_health";
+    | "skippe_health"
+    | "security_risk";
   handled?: boolean;
   severity?: "error" | "warning" | "info";
 };
@@ -28,19 +42,62 @@ export function reportLovableError(
   context: Record<string, unknown> = {},
 ) {
   if (typeof window === "undefined") return;
+
+  const security = diagnoseSecurityRisk(error);
+
   window.__lovableEvents?.captureException?.(
     error,
     {
       source: "react_error_boundary",
       route: window.location.pathname,
+      security_risk: security?.isSecurityRisk ?? false,
+      security_level: security?.level ?? null,
+      security_title: security?.title ?? null,
       ...context,
     },
     {
-      mechanism: "react_error_boundary",
+      mechanism: security?.isSecurityRisk
+        ? "security_risk"
+        : "react_error_boundary",
       handled: false,
       severity: "error",
     },
   );
+}
+
+/** Report a handled security-related failure (RLS, auth, schema exposure). */
+export function reportSecurityRisk(
+  error: unknown,
+  context: Record<string, unknown> = {},
+) {
+  if (typeof window === "undefined") return;
+
+  const security = diagnoseSecurityRisk(error);
+  const err =
+    error instanceof Error
+      ? error
+      : new Error(typeof error === "string" ? error : "Security risk");
+  if (!(error instanceof Error)) err.name = "SecurityRisk";
+
+  window.__lovableEvents?.captureException?.(
+    err,
+    {
+      source: "security_diagnosis",
+      route: window.location.pathname,
+      security_risk: true,
+      security_level: security?.level ?? "medium",
+      security_title: security?.title ?? "Security risk",
+      security_fix: security?.fix ?? null,
+      ...context,
+    },
+    {
+      mechanism: "security_risk",
+      handled: true,
+      severity: security?.level === "critical" ? "error" : "warning",
+    },
+  );
+
+  console.warn("[SecurityRisk]", security?.title ?? err.message, context);
 }
 
 export function reportSkippeIssue(
@@ -114,6 +171,30 @@ export type SkippeDiagnosis = {
 /** Map known failure text → diagnosis with file/line/why/fix. */
 export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   const text = raw || "Unknown Skippe failure";
+
+  // Prefer security diagnosis when the failure is auth/RLS/schema exposure
+  const security = diagnoseSecurityRisk(text);
+  if (security && /schema cache|row-level|permission denied|forbidden|401|403/i.test(text)) {
+    return {
+      title: security.title,
+      why: security.why,
+      where: security.where,
+      lines: `Security level: ${security.level}`,
+      fix: security.fix,
+      message: text,
+    };
+  }
+
+  if (/bulk_service_fees|fee_message|set_bulk_service_fee/i.test(text)) {
+    return {
+      title: "Bulk / Fast Service fee table or column missing",
+      why: "Skippe set_bulk_service_fee needs public.bulk_service_fees (and column fee_message). Those objects live in later migrations that may not be applied on Lovable Cloud.",
+      where: "src/lib/skippe.server.ts → set_bulk_service_fee · supabase/migrations/20260816000000_fix_bulk_service_fees.sql · bulk_fee_message.sql",
+      lines: "runSkippeTool case set_bulk_service_fee; select/upsert fee_type, fee_value, fee_message",
+      fix: "1) Create public.bulk_service_fees + bulk_service_eligible_chefs from the fix migration. 2) ALTER TABLE … ADD COLUMN fee_message text. 3) NOTIFY pgrst, 'reload schema'; 4) Retry in Skippe.",
+      message: text,
+    };
+  }
 
   if (/schema cache|could not find the table.*discounts/i.test(text)) {
     return {
