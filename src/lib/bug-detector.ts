@@ -250,11 +250,35 @@ function parseNullAccess(message: string): {
   prop: string | null;
   base: "null" | "undefined" | null;
 } {
-  const m = message.match(
+  // Chrome/V8 modern: Cannot read properties of null (reading 'volume')
+  const modern = message.match(
+    /cannot read propert(?:y|ies) of (null|undefined)\s*\(reading ['"]?([a-zA-Z0-9_$]+)['"]?\)/i,
+  );
+  if (modern) {
+    return {
+      prop: modern[2],
+      base: modern[1].toLowerCase() as "null" | "undefined",
+    };
+  }
+  // Older: Cannot read property 'volume' of null
+  const legacy = message.match(
     /cannot read propert(?:y|ies) ['"]?([a-zA-Z0-9_$]+)['"]? of (null|undefined)/i,
   );
-  if (m) {
-    return { prop: m[1], base: m[2].toLowerCase() as "null" | "undefined" };
+  if (legacy) {
+    return {
+      prop: legacy[1],
+      base: legacy[2].toLowerCase() as "null" | "undefined",
+    };
+  }
+  // Optional chaining style / TS: undefined is not an object
+  const undef = message.match(
+    /(null|undefined) is not an object\s*\(evaluating ['"]?[^'"]*\.([a-zA-Z0-9_$]+)['"]?\)/i,
+  );
+  if (undef) {
+    return {
+      prop: undef[2],
+      base: undef[1].toLowerCase() as "null" | "undefined",
+    };
   }
   return { prop: null, base: null };
 }
@@ -612,15 +636,25 @@ function synthesizeConfirmed(
 
   // Null property — most precise path
   if (f.nullProp && f.nullBase) {
-    const where = loc ? ` at ${loc}` : "";
+    const minified =
+      Boolean(loc) &&
+      (/assets\/|chunks\/|\.js:\d+$/i.test(loc || "") ||
+        /\/assets\//i.test(loc || ""));
+    const where = loc
+      ? minified
+        ? ` (bundled frame ${loc}; resolve sourcemap for the real .tsx line)`
+        : ` at ${loc}`
+      : "";
     return {
       statement: `Code read property '${f.nullProp}' on ${f.nullBase}${where}. The base value was ${f.nullBase} at runtime (often missing env/config, failed fetch, or optional data).`,
-      fix: loc
-        ? `In ${loc}, stop using non-null assertions on that value. Use optional chaining (?.${f.nullProp}) or a default before access.`
-        : `Use optional chaining (?.${f.nullProp}) or guard with an early return before reading '${f.nullProp}'.`,
+      fix: minified
+        ? `Guard the access to '.${f.nullProp}': use optional chaining (?.${f.nullProp}) or a default. In dev, open the error overlay source map to jump to the real file (often src/routes/*.tsx). Remove non-null assertions (!) on values that can be null.`
+        : loc
+          ? `In ${loc}, stop using non-null assertions on that value. Use optional chaining (?.${f.nullProp}) or a default before access.`
+          : `Use optional chaining (?.${f.nullProp}) or guard with an early return before reading '${f.nullProp}'.`,
       location: loc,
       anchor: f.nullProp,
-      confidence: loc ? 0.93 : 0.82,
+      confidence: minified ? 0.88 : loc ? 0.93 : 0.82,
     };
   }
 
