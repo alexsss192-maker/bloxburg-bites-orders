@@ -264,17 +264,17 @@ function StaffLayout() {
 
   if (!isAdmin && !isChef) {
     return (
-      <div className="relative min-h-screen overflow-hidden bg-[#fbf5ef] px-5 py-8 text-[#21191a]">
-        <div className="pointer-events-none absolute -left-40 -top-40 h-96 w-96 rounded-full bg-[#e85c72]/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-[#f6d7dc] blur-3xl" />
+      <div className="relative min-h-screen overflow-hidden bg-cream px-5 py-8 text-ink">
+        <div className="pointer-events-none absolute -left-40 -top-40 h-96 w-96 rounded-full bg-cherry/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-sakura blur-3xl" />
 
         <div className="relative flex min-h-[calc(100vh-4rem)] items-center justify-center">
-          <div className="w-full max-w-xl rounded-[2rem] border border-[#ecdfe0] bg-white p-8 text-center shadow-[0_30px_80px_-30px_rgba(70,30,40,0.22)] md:p-12">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-[#fff0f2]">
-              <ShieldCheck className="h-9 w-9 text-[#d84460]" />
+          <div className="w-full max-w-xl rounded-[2rem] border border-border bg-card p-8 text-center shadow-[0_30px_80px_-30px_rgba(70,30,40,0.22)] md:p-12">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[1.5rem] bg-petal">
+              <ShieldCheck className="h-9 w-9 text-cherry" />
             </div>
 
-            <p className="mt-7 text-[10px] font-black uppercase tracking-[0.28em] text-[#d84460]">
+            <p className="mt-7 text-[10px] font-black uppercase tracking-[0.28em] text-cherry">
               Panda Bites Staff
             </p>
 
@@ -282,7 +282,7 @@ function StaffLayout() {
               No staff access
             </h1>
 
-            <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-[#746b6d]">
+            <p className="mx-auto mt-4 max-w-md text-sm leading-7 text-muted-foreground">
               Your account does not currently have the Chef
               or Administrator role required to access the
               staff workspace.
@@ -290,7 +290,7 @@ function StaffLayout() {
 
             <Button
               onClick={signOut}
-              className="mt-8 h-12 rounded-xl bg-[#21191a] px-6 text-white hover:bg-[#332728]"
+              className="mt-8 h-12 rounded-xl bg-ink px-6 text-cream hover:bg-ink/90"
             >
               <LogOut className="mr-2 h-4 w-4" />
               Sign out
@@ -324,7 +324,7 @@ function StaffLayout() {
       : "C";
 
   return (
-    <div className="min-h-screen bg-[#fbf5ef] text-[#21191a]">
+    <div className="min-h-screen bg-cream text-ink">
       {/* ========================================================
           MOBILE BACKDROP
       ======================================================== */}
@@ -334,7 +334,7 @@ function StaffLayout() {
           type="button"
           aria-label="Close navigation"
           onClick={() => setMobileOpen(false)}
-          className="fixed inset-0 z-40 bg-[#21191a]/40 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-sm lg:hidden"
         />
       )}
 
@@ -345,7 +345,7 @@ function StaffLayout() {
       <aside
         className={[
           "fixed inset-y-0 left-0 z-50 flex w-[270px] flex-col",
-          "border-r border-[#eadedf] bg-white",
+          "border-r border-border bg-card",
           "shadow-[12px_0_40px_-30px_rgba(50,20,30,0.35)]",
           "transition-transform duration-300",
           mobileOpen
@@ -355,14 +355,14 @@ function StaffLayout() {
       >
         {/* Brand */}
 
-        <div className="flex h-[84px] items-center justify-between border-b border-[#f0e5e4] px-5">
+        <div className="flex h-[84px] items-center justify-between border-b border-border px-5">
           <Link
             to="/staff/orders"
             onClick={() => setMobileOpen(false)}
             className="group flex items-center gap-3"
           >
             <div className="relative">
-              <div className="absolute inset-0 rounded-2xl bg-[#f6d7dc] blur-md transition-all group-hover:blur-lg" />
+              <div className="absolute inset-0 rounded-2xl bg-sakura blur-md transition-all group-hover:blur-lg" />
 
               <img
                 src={pandaMascot}
@@ -376,7 +376,7 @@ function StaffLayout() {
                 Panda Bites
               </p>
 
-              <p className="mt-1.5 text-[8px] font-black uppercase tracking-[0.25em] text-[#a39a9b]">
+              <p className="mt-1.5 text-[8px] font-black uppercase tracking-[0.25em] text-muted-foreground">
                 Staff workspace
               </p>
             </div>
@@ -397,11 +397,11 @@ function StaffLayout() {
 
         <nav className="flex-1 overflow-y-auto px-4 py-6">
           <div className="mb-4 flex items-center justify-between px-2">
-            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-[#aaa0a1]">
+            <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground">
               Workspace
             </p>
 
-            <span className="rounded-full bg-[#f8e9eb] px-2 py-1 text-[8px] font-bold text-[#c83e58]">
+            <span className="rounded-full bg-petal px-2 py-1 text-[8px] font-bold text-cherry">
               LIVE
             </span>
           </div>
@@ -425,28 +425,28 @@ function StaffLayout() {
                     "group relative flex h-12 items-center gap-3 rounded-2xl px-3",
                     "text-sm font-semibold transition-all duration-200",
                     active
-                      ? "bg-[#21191a] text-white shadow-[0_10px_25px_-12px_rgba(30,15,18,0.7)]"
-                      : "text-[#756b6d] hover:bg-[#fff3f4] hover:text-[#21191a]",
+                      ? "bg-ink text-cream shadow-[0_10px_25px_-12px_rgba(30,15,18,0.7)]"
+                      : "text-muted-foreground hover:bg-petal hover:text-ink",
                   ].join(" ")}
                 >
                   {active && (
-                    <span className="absolute left-0 h-6 w-1 rounded-r-full bg-[#ed7185]" />
+                    <span className="absolute left-0 h-6 w-1 rounded-r-full bg-cherry" />
                   )}
 
                   <span
                     className={[
                       "grid h-9 w-9 shrink-0 place-items-center rounded-xl transition-colors",
                       active
-                        ? "bg-white/10"
-                        : "bg-[#faf0f1] group-hover:bg-[#f8e0e4]",
+                        ? "bg-card/10"
+                        : "bg-petal group-hover:bg-sakura/40",
                     ].join(" ")}
                   >
                     <Icon
                       className={[
                         "h-[17px] w-[17px]",
                         active
-                          ? "text-white"
-                          : "text-[#b04a5e]",
+                          ? "text-cream"
+                          : "text-cherry",
                       ].join(" ")}
                     />
                   </span>
@@ -456,7 +456,7 @@ function StaffLayout() {
                   </span>
 
                   {active && (
-                    <ArrowRight className="h-3.5 w-3.5 text-white/50" />
+                    <ArrowRight className="h-3.5 w-3.5 text-cream/50" />
                   )}
                 </Link>
               );
@@ -466,15 +466,15 @@ function StaffLayout() {
 
         {/* Bottom account area */}
 
-        <div className="border-t border-[#f0e5e4] p-4">
-          <div className="rounded-2xl bg-[#fbf5ef] p-3">
+        <div className="border-t border-border p-4">
+          <div className="rounded-2xl bg-cream p-3">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#21191a] text-xs font-black text-white">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-ink text-xs font-black text-cream">
                   {roleLetter}
                 </div>
 
-                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-[#fbf5ef] bg-[#54b77c]" />
+                <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-cream bg-bamboo" />
               </div>
 
               <div className="min-w-0 flex-1">
@@ -482,7 +482,7 @@ function StaffLayout() {
                   {roleLabel}
                 </p>
 
-                <p className="mt-0.5 text-[9px] text-[#94898b]">
+                <p className="mt-0.5 text-[9px] text-muted-foreground">
                   Staff account
                 </p>
               </div>
@@ -494,7 +494,7 @@ function StaffLayout() {
               type="button"
               variant="ghost"
               onClick={toggleTheme}
-              className="h-10 rounded-xl text-[11px] text-[#817779] hover:bg-[#fff0f2]"
+              className="h-10 rounded-xl text-[11px] text-muted-foreground hover:bg-petal"
             >
               {darkMode ? (
                 <Sun className="mr-1.5 h-4 w-4" />
@@ -508,7 +508,7 @@ function StaffLayout() {
               type="button"
               variant="ghost"
               onClick={signOut}
-              className="h-10 rounded-xl text-[11px] text-[#817779] hover:bg-[#fff0f2] hover:text-[#d84460]"
+              className="h-10 rounded-xl text-[11px] text-muted-foreground hover:bg-petal hover:text-cherry"
             >
               <LogOut className="mr-1.5 h-4 w-4" />
               Sign out
@@ -524,21 +524,21 @@ function StaffLayout() {
       <div className="min-h-screen lg:pl-[270px]">
         {/* Top navigation */}
 
-        <header className="sticky top-0 z-30 h-[76px] border-b border-[#eadedf] bg-[#fbf5ef]/90 backdrop-blur-2xl">
+        <header className="sticky top-0 z-30 h-[76px] border-b border-border bg-cream/90 backdrop-blur-2xl">
           <div className="flex h-full items-center justify-between px-4 sm:px-6 lg:px-9">
             <div className="flex min-w-0 items-center gap-3">
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-10 w-10 rounded-xl border-[#eadedf] bg-white lg:hidden"
+                className="h-10 w-10 rounded-xl border-border bg-card lg:hidden"
                 onClick={() => setMobileOpen(true)}
               >
                 <ClipboardList className="h-4 w-4" />
               </Button>
 
               <div className="min-w-0">
-                <p className="text-[8px] font-black uppercase tracking-[0.28em] text-[#d84460]">
+                <p className="text-[8px] font-black uppercase tracking-[0.28em] text-cherry">
                   Panda Bites
                 </p>
 
@@ -549,10 +549,10 @@ function StaffLayout() {
             </div>
 
             <div className="flex items-center gap-2">
-              <div className="hidden items-center gap-2 rounded-full border border-[#e9dfe0] bg-white px-3.5 py-2 sm:flex">
-                <span className="h-2 w-2 rounded-full bg-[#54b77c] shadow-[0_0_0_3px_rgba(84,183,124,0.12)]" />
+              <div className="hidden items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 sm:flex">
+                <span className="h-2 w-2 rounded-full bg-bamboo shadow-[0_0_0_3px_color-mix(in_oklab,var(--bamboo)_20%,transparent)]" />
 
-                <span className="text-[10px] font-bold text-[#756b6d]">
+                <span className="text-[10px] font-bold text-muted-foreground">
                   Online
                 </span>
               </div>
@@ -562,7 +562,7 @@ function StaffLayout() {
                 variant="outline"
                 size="icon"
                 onClick={toggleTheme}
-                className="h-10 w-10 rounded-xl border-[#e9dfe0] bg-white"
+                className="h-10 w-10 rounded-xl border-border bg-card"
               >
                 {darkMode ? (
                   <Sun className="h-4 w-4" />
@@ -571,8 +571,8 @@ function StaffLayout() {
                 )}
               </Button>
 
-              <div className="flex items-center gap-2 rounded-full border border-[#e9dfe0] bg-white py-1.5 pl-1.5 pr-3">
-                <div className="grid h-8 w-8 place-items-center rounded-full bg-[#21191a] text-[10px] font-black text-white">
+              <div className="flex items-center gap-2 rounded-full border border-border bg-card py-1.5 pl-1.5 pr-3">
+                <div className="grid h-8 w-8 place-items-center rounded-full bg-ink text-[10px] font-black text-cream">
                   {roleLetter}
                 </div>
 
@@ -581,7 +581,7 @@ function StaffLayout() {
                     {roleLabel}
                   </p>
 
-                  <p className="text-[8px] text-[#958a8c]">
+                  <p className="text-[8px] text-muted-foreground">
                     Panda Bites staff
                   </p>
                 </div>
@@ -608,13 +608,13 @@ function StaffLoading({
   label: string;
 }) {
   return (
-    <div className="relative grid min-h-screen place-items-center overflow-hidden bg-[#fbf5ef] px-6">
-      <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-[#e85c72]/10 blur-3xl" />
-      <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-[#f6d7dc] blur-3xl" />
+    <div className="relative grid min-h-screen place-items-center overflow-hidden bg-cream px-6">
+      <div className="absolute -left-32 -top-32 h-80 w-80 rounded-full bg-cherry/10 blur-3xl" />
+      <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-sakura blur-3xl" />
 
       <div className="relative text-center">
         <div className="relative mx-auto h-20 w-20">
-          <div className="absolute inset-0 rounded-[1.75rem] bg-[#f6d7dc] blur-xl" />
+          <div className="absolute inset-0 rounded-[1.75rem] bg-sakura blur-xl" />
 
           <img
             src={pandaMascot}
@@ -624,12 +624,12 @@ function StaffLoading({
         </div>
 
         <div className="mt-6 flex justify-center gap-1.5">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#d84460]" />
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#d84460] [animation-delay:150ms]" />
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#d84460] [animation-delay:300ms]" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cherry" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cherry [animation-delay:150ms]" />
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cherry [animation-delay:300ms]" />
         </div>
 
-        <p className="mt-4 text-xs font-semibold text-[#817779]">
+        <p className="mt-4 text-xs font-semibold text-muted-foreground">
           {label}
         </p>
       </div>
@@ -680,23 +680,23 @@ function StaffLogin() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#fbf5ef] text-[#21191a]">
+    <div className="relative min-h-screen overflow-hidden bg-cream text-ink">
       {/* ========================================================
           BACKGROUND ART
       ======================================================== */}
 
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -left-48 -top-48 h-[600px] w-[600px] rounded-full bg-[#e85c72]/10 blur-3xl" />
+        <div className="absolute -left-48 -top-48 h-[600px] w-[600px] rounded-full bg-cherry/10 blur-3xl" />
 
-        <div className="absolute -bottom-60 -right-40 h-[650px] w-[650px] rounded-full bg-[#f4d7dc] blur-3xl" />
+        <div className="absolute -bottom-60 -right-40 h-[650px] w-[650px] rounded-full bg-sakura blur-3xl" />
 
-        <div className="absolute left-[8%] top-[32%] h-3 w-3 rounded-full bg-[#d84460]/20" />
+        <div className="absolute left-[8%] top-[32%] h-3 w-3 rounded-full bg-cherry/20" />
 
-        <div className="absolute right-[12%] top-[18%] h-2 w-2 rounded-full bg-[#d84460]/25" />
+        <div className="absolute right-[12%] top-[18%] h-2 w-2 rounded-full bg-cherry/25" />
 
-        <div className="absolute bottom-[22%] left-[18%] h-2 w-2 rounded-full bg-[#d84460]/20" />
+        <div className="absolute bottom-[22%] left-[18%] h-2 w-2 rounded-full bg-cherry/20" />
 
-        <div className="absolute right-[28%] bottom-[15%] h-3 w-3 rounded-full bg-[#e9a6b1]/30" />
+        <div className="absolute right-[28%] bottom-[15%] h-3 w-3 rounded-full bg-sakura/50" />
       </div>
 
       {/* ========================================================
@@ -709,7 +709,7 @@ function StaffLogin() {
           className="group flex items-center gap-3"
         >
           <div className="relative">
-            <div className="absolute inset-0 rounded-2xl bg-[#eabac3] blur-md transition-all group-hover:blur-lg" />
+            <div className="absolute inset-0 rounded-2xl bg-sakura blur-md transition-all group-hover:blur-lg" />
 
             <img
               src={pandaMascot}
@@ -723,16 +723,16 @@ function StaffLogin() {
               Panda Bites
             </p>
 
-            <p className="mt-1 text-[8px] font-black uppercase tracking-[0.25em] text-[#988e90]">
+            <p className="mt-1 text-[8px] font-black uppercase tracking-[0.25em] text-muted-foreground">
               Staff workspace
             </p>
           </div>
         </Link>
 
-        <div className="hidden items-center gap-2 rounded-full border border-[#e8dfe0] bg-white/70 px-3.5 py-2 backdrop-blur-md sm:flex">
-          <LockKeyhole className="h-3.5 w-3.5 text-[#c7475f]" />
+        <div className="hidden items-center gap-2 rounded-full border border-border bg-card/70 px-3.5 py-2 backdrop-blur-md sm:flex">
+          <LockKeyhole className="h-3.5 w-3.5 text-cherry" />
 
-          <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#817779]">
+          <span className="text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             Secure access
           </span>
         </div>
@@ -743,27 +743,27 @@ function StaffLogin() {
       ======================================================== */}
 
       <div className="relative z-10 flex min-h-[calc(100vh-88px)] items-center justify-center px-5 pb-12 pt-4 sm:px-8">
-        <div className="w-full max-w-[1120px] overflow-hidden rounded-[2.5rem] border border-[#eadedf] bg-white shadow-[0_40px_100px_-40px_rgba(60,25,35,0.3)] lg:grid lg:grid-cols-[0.95fr_1.05fr]">
+        <div className="w-full max-w-[1120px] overflow-hidden rounded-[2.5rem] border border-border bg-card shadow-[0_40px_100px_-40px_rgba(60,25,35,0.3)] lg:grid lg:grid-cols-[0.95fr_1.05fr]">
           {/* ----------------------------------------------------
               LEFT VISUAL PANEL
           ---------------------------------------------------- */}
 
-          <div className="relative hidden min-h-[650px] overflow-hidden bg-[#21191a] p-10 text-white lg:block xl:p-14">
-            <div className="absolute -right-40 -top-40 h-[500px] w-[500px] rounded-full bg-[#d84460]/20 blur-3xl" />
+          <div className="relative hidden min-h-[650px] overflow-hidden bg-ink p-10 text-cream lg:block xl:p-14">
+            <div className="absolute -right-40 -top-40 h-[500px] w-[500px] rounded-full bg-cherry/20 blur-3xl" />
 
-            <div className="absolute -bottom-48 -left-40 h-[500px] w-[500px] rounded-full bg-[#f29aaa]/10 blur-3xl" />
+            <div className="absolute -bottom-48 -left-40 h-[500px] w-[500px] rounded-full bg-cherry/10 blur-3xl" />
 
-            <div className="absolute right-10 top-24 h-2 w-2 rounded-full bg-white/20" />
+            <div className="absolute right-10 top-24 h-2 w-2 rounded-full bg-card/20" />
 
-            <div className="absolute bottom-40 left-16 h-3 w-3 rounded-full bg-white/10" />
+            <div className="absolute bottom-40 left-16 h-3 w-3 rounded-full bg-card/10" />
 
             <div className="relative flex h-full flex-col">
               {/* Mini badge */}
 
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-[#61c98a]" />
+                <span className="h-2 w-2 rounded-full bg-bamboo" />
 
-                <span className="text-[9px] font-black uppercase tracking-[0.25em] text-white/45">
+                <span className="text-[9px] font-black uppercase tracking-[0.25em] text-cream/45">
                   Staff portal
                 </span>
               </div>
@@ -771,7 +771,7 @@ function StaffLogin() {
               {/* Hero */}
 
               <div className="mt-auto">
-                <div className="mb-8 flex h-28 w-28 items-center justify-center rounded-[2rem] border border-white/10 bg-white/[0.06] shadow-2xl backdrop-blur-sm">
+                <div className="mb-8 flex h-28 w-28 items-center justify-center rounded-[2rem] border border-cream/10 bg-card/[0.06] shadow-2xl backdrop-blur-sm">
                   <img
                     src={pandaMascot}
                     alt="Panda Bites"
@@ -779,7 +779,7 @@ function StaffLogin() {
                   />
                 </div>
 
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-[#ed7b8d]">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cherry">
                   Behind the counter
                 </p>
 
@@ -789,7 +789,7 @@ function StaffLogin() {
                   back.
                 </h1>
 
-                <p className="mt-7 max-w-sm text-sm leading-7 text-white/55">
+                <p className="mt-7 max-w-sm text-sm leading-7 text-cream/55">
                   Everything your team needs to keep Panda
                   Bites moving. Orders, menus, messages,
                   discounts, and more.
@@ -799,10 +799,10 @@ function StaffLogin() {
               {/* Bottom stats */}
 
               <div className="mt-12 grid grid-cols-3 gap-3">
-                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
-                  <CircleCheck className="h-4 w-4 text-[#61c98a]" />
+                <div className="rounded-2xl border border-cream/10 bg-card/[0.05] p-4">
+                  <CircleCheck className="h-4 w-4 text-bamboo" />
 
-                  <p className="mt-3 text-[9px] font-black uppercase tracking-wider text-white/35">
+                  <p className="mt-3 text-[9px] font-black uppercase tracking-wider text-cream/35">
                     Access
                   </p>
 
@@ -811,10 +811,10 @@ function StaffLogin() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
-                  <ShieldCheck className="h-4 w-4 text-[#ed7b8d]" />
+                <div className="rounded-2xl border border-cream/10 bg-card/[0.05] p-4">
+                  <ShieldCheck className="h-4 w-4 text-cherry" />
 
-                  <p className="mt-3 text-[9px] font-black uppercase tracking-wider text-white/35">
+                  <p className="mt-3 text-[9px] font-black uppercase tracking-wider text-cream/35">
                     Roles
                   </p>
 
@@ -823,10 +823,10 @@ function StaffLogin() {
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-4">
-                  <Zap className="h-4 w-4 text-[#eebd74]" />
+                <div className="rounded-2xl border border-cream/10 bg-card/[0.05] p-4">
+                  <Zap className="h-4 w-4 text-amber-500" />
 
-                  <p className="mt-3 text-[9px] font-black uppercase tracking-wider text-white/35">
+                  <p className="mt-3 text-[9px] font-black uppercase tracking-wider text-cream/35">
                     System
                   </p>
 
@@ -858,14 +858,14 @@ function StaffLogin() {
                     Panda Bites
                   </p>
 
-                  <p className="text-[8px] font-black uppercase tracking-[0.22em] text-[#9a9091]">
+                  <p className="text-[8px] font-black uppercase tracking-[0.22em] text-muted-foreground">
                     Staff workspace
                   </p>
                 </div>
               </div>
 
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-[#d84460]">
+                <p className="text-[10px] font-black uppercase tracking-[0.28em] text-cherry">
                   Staff sign in
                 </p>
 
@@ -873,7 +873,7 @@ function StaffLogin() {
                   Sign in.
                 </h2>
 
-                <p className="mt-5 max-w-sm text-sm leading-6 text-[#827779]">
+                <p className="mt-5 max-w-sm text-sm leading-6 text-muted-foreground">
                   Enter your staff credentials to access
                   the Panda Bites workspace.
                 </p>
@@ -889,7 +889,7 @@ function StaffLogin() {
                   <div>
                     <Label
                       htmlFor="staff-username"
-                      className="text-[10px] font-black uppercase tracking-[0.18em] text-[#453a3c]"
+                      className="text-[10px] font-black uppercase tracking-[0.18em] text-ink"
                     >
                       Username
                     </Label>
@@ -906,7 +906,7 @@ function StaffLogin() {
                         spellCheck={false}
                         required
                         placeholder="Your staff username"
-                        className="h-14 rounded-2xl border-[#e7dcdd] bg-[#fcf8f4] px-4 text-sm shadow-none transition-all placeholder:text-[#afa5a6] focus:border-[#d84460] focus:bg-white focus:ring-4 focus:ring-[#d84460]/10"
+                        className="h-14 rounded-2xl border-border bg-background px-4 text-sm shadow-none transition-all placeholder:text-muted-foreground focus:border-cherry focus:bg-card focus:ring-4 focus:ring-cherry/10"
                       />
                     </div>
                   </div>
@@ -916,7 +916,7 @@ function StaffLogin() {
                   <div>
                     <Label
                       htmlFor="staff-password"
-                      className="text-[10px] font-black uppercase tracking-[0.18em] text-[#453a3c]"
+                      className="text-[10px] font-black uppercase tracking-[0.18em] text-ink"
                     >
                       Password
                     </Label>
@@ -936,7 +936,7 @@ function StaffLogin() {
                         autoComplete="current-password"
                         required
                         placeholder="Your password"
-                        className="h-14 rounded-2xl border-[#e7dcdd] bg-[#fcf8f4] px-4 pr-12 text-sm shadow-none transition-all placeholder:text-[#afa5a6] focus:border-[#d84460] focus:bg-white focus:ring-4 focus:ring-[#d84460]/10"
+                        className="h-14 rounded-2xl border-border bg-background px-4 pr-12 text-sm shadow-none transition-all placeholder:text-muted-foreground focus:border-cherry focus:bg-card focus:ring-4 focus:ring-cherry/10"
                       />
 
                       <button
@@ -951,7 +951,7 @@ function StaffLogin() {
                             ? "Hide password"
                             : "Show password"
                         }
-                        className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-xl text-[#9a9091] transition-colors hover:bg-[#fff0f2] hover:text-[#d84460]"
+                        className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-petal hover:text-cherry"
                       >
                         {showPassword ? (
                           <EyeOff className="h-4 w-4" />
@@ -968,7 +968,7 @@ function StaffLogin() {
                 <Button
                   disabled={loading}
                   type="submit"
-                  className="group mt-7 h-14 w-full rounded-2xl bg-[#21191a] text-sm font-bold text-white shadow-[0_15px_30px_-15px_rgba(33,25,26,0.7)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#332728] hover:shadow-[0_20px_35px_-15px_rgba(33,25,26,0.75)] disabled:pointer-events-none disabled:opacity-60"
+                  className="group mt-7 h-14 w-full rounded-2xl bg-ink text-sm font-bold text-cream shadow-[0_15px_30px_-15px_rgba(33,25,26,0.7)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-ink/90 hover:shadow-[0_20px_35px_-15px_rgba(33,25,26,0.75)] disabled:pointer-events-none disabled:opacity-60"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2.5">
@@ -986,18 +986,18 @@ function StaffLogin() {
 
                 {/* Security card */}
 
-                <div className="mt-6 rounded-2xl border border-[#eadfe0] bg-[#fff8f8] p-4">
+                <div className="mt-6 rounded-2xl border border-border bg-petal/80 p-4">
                   <div className="flex gap-3">
-                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#fcebed]">
-                      <LockKeyhole className="h-4 w-4 text-[#d84460]" />
+                    <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-petal">
+                      <LockKeyhole className="h-4 w-4 text-cherry" />
                     </div>
 
                     <div>
-                      <p className="text-xs font-bold text-[#3c3133]">
+                      <p className="text-xs font-bold text-ink">
                         Secure staff access
                       </p>
 
-                      <p className="mt-1 text-[11px] leading-5 text-[#8c8082]">
+                      <p className="mt-1 text-[11px] leading-5 text-muted-foreground">
                         Your account must have a verified
                         Chef or Administrator role.
                       </p>
@@ -1006,8 +1006,8 @@ function StaffLogin() {
                 </div>
               </form>
 
-              <div className="mt-8 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-[#aaa0a1]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#54b77c]" />
+              <div className="mt-8 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-bamboo" />
                 Panda Bites Staff Portal
               </div>
             </div>
