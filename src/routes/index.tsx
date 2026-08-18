@@ -41,15 +41,6 @@ export const Route = createFileRoute("/")({
 });
 
 function Landing() {
-  // TEST BUG (remove after detector test):
-  // Reads optional magazine meta from env. VITE_MAGAZINE_META is unset →
-  // JSON.parse("null") → null → .volume throws TypeError during render.
-  const magazineMeta = JSON.parse(
-    (import.meta as ImportMeta & { env?: Record<string, string> }).env
-      ?.VITE_MAGAZINE_META ?? "null",
-  ) as { volume?: { label?: string } } | null;
-  const volumeLabel = magazineMeta!.volume!.label;
-
   return (
     <div className="min-h-screen bg-cream text-ink">
       <SiteHeader />
