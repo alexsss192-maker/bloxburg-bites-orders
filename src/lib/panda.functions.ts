@@ -125,7 +125,7 @@ export const pandaChat = createServerFn({
     const staffName = actorEmail?.split("@")[0] || "Chef";
 
     // History is browser localStorage only — never skippe_messages.
-    const history = (data.history ?? []).slice(-16);
+    const history = (data.history ?? []).slice(-6);
 
     // Pure vision (screenshots / fridge / video frames): no kitchen tools → no
     // menu/order/discount/audit table hits. Only the AI gateway is used.
