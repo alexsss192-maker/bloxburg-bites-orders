@@ -956,12 +956,12 @@ function PandaPage() {
     };
     setMessages((m) => [...m, userMsg]);
     setLoading(true);
-    // Short history keeps gateway fast — even shorter when images are attached
-    const historyWindow = sendImages.length > 0 ? 4 : 8;
+    // Tiny history = much faster gateway (tokens dominate latency).
+    const historyWindow = sendImages.length > 0 ? 3 : 2;
     const history = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .slice(-historyWindow)
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 800) }));
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 400) }));
     const payload = {
       message: input.trim(),
       images: sendImages.map((d) => ({ data_url: d })),
