@@ -1348,7 +1348,38 @@ function gatewayError(status: number, body: string, hint?: string) {
     );
   }
 
+  if (status === 520 || status === 521 || status === 522 || status === 523 || status === 524) {
+    return new Error(
+      `Skippe gateway upstream error (${status})${hint ? ` ${hint}` : ""}. Usually temporary — retry in a few seconds. If it keeps happening with many fridge frames, send fewer images (3–5) or a shorter video.`,
+    );
+  }
+
   return new Error(`Skippe call failed (${status})${hint ? ` ${hint}` : ""}: ${body.slice(0, 200)}`);
+}
+
+/** Retry transient gateway failures (429 / 5xx) with short backoff. */
+async function gatewayFetch(
+  url: string,
+  init: RequestInit,
+  hint: string,
+  attempts = 3,
+): Promise<Response> {
+  let last: Response | null = null;
+  for (let i = 0; i < attempts; i++) {
+    const res = await fetch(url, init);
+    last = res;
+    if (res.ok) return res;
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable || i === attempts - 1) return res;
+    // Read/discard body so the connection can close cleanly before retry
+    try {
+      await res.text();
+    } catch {
+      /* ignore */
+    }
+    await new Promise((r) => setTimeout(r, 400 * (i + 1) * (i + 1)));
+  }
+  return last!;
 }
 
 /** Reads a Server-Sent-Events body and hands every parsed event to `onEvent`. */
@@ -1466,27 +1497,31 @@ async function runOpenAiTurn(args: {
     : undefined;
 
   for (let round = 0; round < maxRounds; round += 1) {
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Lovable-API-Key": key,
-        Authorization: `Bearer ${key}`,
-        "X-Lovable-AIG-SDK": "fetch",
+    const res = await gatewayFetch(
+      "https://ai.gateway.lovable.dev/v1/responses",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Lovable-API-Key": key,
+          Authorization: `Bearer ${key}`,
+          "X-Lovable-AIG-SDK": "fetch",
+        },
+        body: JSON.stringify({
+          model: args.model,
+          instructions: args.instructions,
+          input,
+          // Non-stream is faster for tool-agent loops (UI waits for full reply anyway).
+          stream: false,
+          store: false,
+          // Faster OpenAI tier when available (falls back to standard if not).
+          service_tier: "priority",
+          max_output_tokens: 1200,
+          ...(toolDefs ? { tools: toolDefs } : {}),
+        }),
       },
-      body: JSON.stringify({
-        model: args.model,
-        instructions: args.instructions,
-        input,
-        // Non-stream is faster for tool-agent loops (UI waits for full reply anyway).
-        stream: false,
-        store: false,
-        // Faster OpenAI tier when available (falls back to standard if not).
-        service_tier: "priority",
-        max_output_tokens: 1200,
-        ...(toolDefs ? { tools: toolDefs } : {}),
-      }),
-    });
+      `model=${args.model} path=/v1/responses`,
+    );
 
     if (!res.ok) {
       throw gatewayError(res.status, await res.text(), `model=${args.model} path=/v1/responses`);
@@ -1649,31 +1684,35 @@ async function runGoogleTurn(args: {
   const maxRounds = toolsEnabled ? 2 : 1;
 
   for (let round = 0; round < maxRounds; round += 1) {
-    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Lovable-API-Key": key,
-        Authorization: `Bearer ${key}`,
-        "X-Lovable-AIG-SDK": "fetch",
+    const res = await gatewayFetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Lovable-API-Key": key,
+          Authorization: `Bearer ${key}`,
+          "X-Lovable-AIG-SDK": "fetch",
+        },
+        body: JSON.stringify({
+          model: args.model,
+          messages,
+          ...(tools ? { tools } : {}),
+          ...(tools
+            ? {
+                // Prefer tools when the chef is clearly asking for kitchen work.
+                tool_choice: /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier)\b/i.test(
+                  args.userText,
+                )
+                  ? "required"
+                  : "auto",
+              }
+            : {}),
+          stream: false,
+        }),
       },
-      body: JSON.stringify({
-        model: args.model,
-        messages,
-        ...(tools ? { tools } : {}),
-        ...(tools
-          ? {
-              // Prefer tools when the chef is clearly asking for kitchen work.
-              tool_choice: /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier)\b/i.test(
-                args.userText,
-              )
-                ? "required"
-                : "auto",
-            }
-          : {}),
-        stream: false,
-      }),
-    });
+      `model=${args.model} path=/v1/chat/completions`,
+    );
 
     if (!res.ok) {
       throw gatewayError(res.status, await res.text(), `model=${args.model} path=/v1/chat/completions`);
