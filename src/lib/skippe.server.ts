@@ -6,7 +6,19 @@ export type SkippeContext = {
   userId: string;
   isAdmin: boolean;
   actorEmail: string | null;
+  /** Per-turn memo so list/own lookups are not repeated in the same Skippe turn. */
+  _cache?: Map<string, unknown>;
 };
+
+function cacheGet<T>(ctx: SkippeContext, key: string): T | undefined {
+  return ctx._cache?.get(key) as T | undefined;
+}
+
+function cacheSet<T>(ctx: SkippeContext, key: string, value: T): T {
+  if (!ctx._cache) ctx._cache = new Map();
+  ctx._cache.set(key, value);
+  return value;
+}
 
 export type SkippeToolRun = {
   name: string;
@@ -273,16 +285,30 @@ function clampInt(v: unknown, min: number, max: number, fallback: number) {
 }
 
 async function ownItem(ctx: SkippeContext, id: string) {
+  const key = `ownItem:${id}`;
+  const hit = cacheGet<ReturnType<typeof ownItem> extends Promise<infer R> ? R : never>(ctx, key);
+  if (hit !== undefined) return hit;
+
   const { data } = await ctx.supabase.from("menu_items").select("id,name,owner_id").eq("id", id).maybeSingle();
 
-  return (data ?? null) as {
+  const row = (data ?? null) as {
     id: string;
     name: string;
     owner_id: string | null;
   } | null;
+  return cacheSet(ctx, key, row);
 }
 
 async function ownFulfillment(ctx: SkippeContext, orderId: string) {
+  const key = `ownFulfillment:${orderId}`;
+  const hit = cacheGet<{
+    id: string;
+    order_id: string;
+    chef_id: string;
+    status: string;
+  } | null>(ctx, key);
+  if (hit !== undefined) return hit;
+
   const { data } = await ctx.supabase
     .from("order_fulfillments")
     .select("id,order_id,chef_id,status")
@@ -290,12 +316,13 @@ async function ownFulfillment(ctx: SkippeContext, orderId: string) {
     .eq("chef_id", ctx.userId)
     .maybeSingle();
 
-  return (data ?? null) as {
+  const row = (data ?? null) as {
     id: string;
     order_id: string;
     chef_id: string;
     status: string;
   } | null;
+  return cacheSet(ctx, key, row);
 }
 
 /** Short-lived cache so one Skippe turn does not re-hit staff_profiles. */
@@ -373,6 +400,12 @@ export async function runSkippeTool(
 
   switch (name) {
     case "list_menu_items": {
+      const cacheKey = `list_menu_items:${ctx.userId}`;
+      const cached = cacheGet<{ items: unknown[] }>(ctx, cacheKey);
+      if (cached) {
+        return done(`Read ${cached.items.length} of your items (cached)`, cached);
+      }
+
       const { data, error } = await ctx.supabase
         .from("menu_items")
         .select("id,name,price_bs,stock,category,is_active")
@@ -381,9 +414,9 @@ export async function runSkippeTool(
 
       if (error) return fail(error.message);
 
-      return done(`Read ${(data ?? []).length} of your items`, {
-        items: data ?? [],
-      });
+      const payload = { items: data ?? [] };
+      cacheSet(ctx, cacheKey, payload);
+      return done(`Read ${(data ?? []).length} of your items`, payload);
     }
 
     case "create_menu_item": {
@@ -418,6 +451,7 @@ export async function runSkippeTool(
       const id = (data as { id: string }).id;
 
       await log("skippe_create_menu_item", "menu_item", id, payload);
+      ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
 
       return done(
         `Added ${payload.name}`,
@@ -475,6 +509,8 @@ export async function runSkippeTool(
       if (error) return fail(error.message);
 
       await log("skippe_update_menu_item", "menu_item", id, patch);
+      ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
+      ctx._cache?.delete(`ownItem:${id}`);
 
       return done(
         `Updated ${item.name}`,
@@ -505,6 +541,8 @@ export async function runSkippeTool(
       await log("skippe_delete_menu_item", "menu_item", id, {
         name: item.name,
       });
+      ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
+      ctx._cache?.delete(`ownItem:${id}`);
 
       return done(`Deleted ${item.name}`, {
         ok: true,
