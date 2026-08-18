@@ -163,10 +163,10 @@ function parseStack(stack: string): {
     // Prefer real src paths
     const src =
       line.match(
-        /((?:src|app|routes|components|lib)\/[a-zA-Z0-9_./\-]+\.(?:tsx?|jsx?)):(\d+)(?::(\d+))?/,
+        /((?:src|app|routes|components|lib)\/[a-zA-Z0-9_./\-]+\.(?:tsx?|jsx?))(?:\?[^):\s]*)?:(\d+)(?::(\d+))?/,
       ) ||
       line.match(
-        /((?:\.\.\/)+src\/[a-zA-Z0-9_./\-]+\.(?:tsx?|jsx?)):(\d+)/,
+        /((?:\.\.\/)+src\/[a-zA-Z0-9_./\-]+\.(?:tsx?|jsx?))(?:\?[^):\s]*)?:(\d+)/,
       );
     if (src) {
       app.push(line.slice(0, 220));
@@ -854,7 +854,12 @@ export function diagnoseBug(error: unknown): BugDiagnosis | null {
     features,
     scorers,
     security,
-    isSecurityRelated: Boolean(security),
+    isSecurityRelated: Boolean(
+      security &&
+        (security.level === "critical" ||
+          security.level === "high" ||
+          family === "security"),
+    ),
     fingerprint: fingerprintError(features),
     sqlHints:
       top?.evidence.includes("schema-cache") || top?.evidence.includes("rls")
@@ -892,7 +897,11 @@ export function formatBugDiagnosisForCopy(d: BugDiagnosis): string {
       ...d.scorers.slice(1).map((s) => `  - [${s.score}] ${s.family}: ${s.titleHint}`),
     );
   }
-  if (d.security) {
+  if (
+    d.security &&
+    d.isSecurityRelated &&
+    (d.security.level === "critical" || d.security.level === "high")
+  ) {
     lines.push("", "── Security ──", formatSecurityDiagnosisForCopy(d.security));
   }
   lines.push("", "Raw:", d.message);
