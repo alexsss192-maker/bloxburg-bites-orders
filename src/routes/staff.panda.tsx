@@ -70,7 +70,7 @@ type Msg = {
 const GREETING: Msg = {
   role: "assistant",
   content:
-    "Hi chef — I’m Skippe. Ask me to add or edit your menu items, run a discount, move an order to preparing/ready/delivered, or reply to a customer. Snap photos too (up to 9) and I’ll read them.",
+    "Hi chef — I’m Skippe. Ask me to add or edit menu items, run discounts, or move orders pending → preparing → ready → delivered. For fridge restock: hit Fridge share (Gemini 2.5 Flash Lite), scroll your Bloxburg fridge — I auto-capture frames (no extra clicks). I’ll list open orders, subtract reserved stock for pending/preparing/ready unless you correct me, then create items or update stock. You can also upload up to 2 short videos.",
 };
 
 function ModeGlyph({ vendor }: { vendor: "openai" | "google" }) {
@@ -711,6 +711,32 @@ function PandaPage() {
     };
   }, [sharing, splitScreen]);
 
+  // Auto-capture frames while fridge share is live so the chef can scroll
+  // without pressing Snap. Stops at 9 frames. Dedupes near-identical frames
+  // by skipping if the last capture was < 1.2s ago and tray is filling.
+  useEffect(() => {
+    if (!sharing || !splitScreen) return;
+    let cancelled = false;
+    const intervalMs = 1600;
+    const id = window.setInterval(() => {
+      if (cancelled) return;
+      const video = shareVideoRef.current;
+      if (!video || video.videoWidth === 0) return;
+      setImages((prev) => {
+        if (prev.length >= 9) return prev;
+        const dataUrl = frameFromVideo(video);
+        if (!dataUrl) return prev;
+        // Skip exact duplicate of the last frame (user not scrolling)
+        if (prev.length > 0 && prev[prev.length - 1] === dataUrl) return prev;
+        return [...prev, dataUrl].slice(0, 9);
+      });
+    }, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [sharing, splitScreen]);
+
   /**
    * One-shot screenshot via the browser share picker (pick window / screen).
    * Prefer a *different* window than Skippe — capturing this tab often goes black.
@@ -1329,9 +1355,10 @@ function PandaPage() {
             )}
           </div>
           <p className="border-t border-cream/10 px-4 py-2 text-[11px] text-cream/45">
-            Browser will ask which tab/window/screen to share. Pick your game
-            window so Skippe can read the fridge from snaps — nothing is
-            uploaded until you send a chat message.
+            Share your Roblox/Bloxburg window, then scroll the fridge — frames
+            auto-capture every ~1.6s (max 9). Snap still works for a manual
+            frame. Nothing is uploaded until you Send. For restock, say e.g.
+            “update stock from this scan” so I also check open orders.
           </p>
         </aside>
       )}
