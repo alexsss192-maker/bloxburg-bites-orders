@@ -14,39 +14,6 @@ import {
 const KITCHEN_ACTION_RE =
   /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier|delete|update|price|fee|bulk|edit|change|rename|remove|put|save|enable|disable|activate|deactivate|prepare|ready|deliver|cancel|item|items|them)\b/i;
 
-const STAFF_ROLES = new Set(["chef", "admin"]);
-
-/**
- * Only accept real staff roles from the JWT. Generic claim noise must not
- * skip the user_roles lookup or chefs get "Chef or admin only".
- */
-function staffRolesFromClaims(claims: unknown): string[] {
-  if (!claims || typeof claims !== "object") return [];
-  const c = claims as Record<string, unknown>;
-  const buckets: unknown[] = [
-    c.role,
-    c.roles,
-    (c.app_metadata as Record<string, unknown> | undefined)?.role,
-    (c.app_metadata as Record<string, unknown> | undefined)?.roles,
-    (c.user_metadata as Record<string, unknown> | undefined)?.role,
-    (c.user_metadata as Record<string, unknown> | undefined)?.roles,
-  ];
-  const out: string[] = [];
-  for (const b of buckets) {
-    if (typeof b === "string" && STAFF_ROLES.has(b.trim().toLowerCase())) {
-      out.push(b.trim().toLowerCase());
-    }
-    if (Array.isArray(b)) {
-      for (const x of b) {
-        if (typeof x === "string" && STAFF_ROLES.has(x.trim().toLowerCase())) {
-          out.push(x.trim().toLowerCase());
-        }
-      }
-    }
-  }
-  return Array.from(new Set(out));
-}
-
 export type { SkippeMode } from "@/lib/skippe-models";
 
 export {
@@ -135,27 +102,22 @@ export const pandaChat = createServerFn({
           | undefined
       )?.email ?? null;
 
-    // Always verify staff via user_roles (same as rest of staff portal).
-    // JWT claim shortcuts only count if they are exactly chef/admin.
-    let roles = staffRolesFromClaims(context.claims);
-    if (!roles.includes("chef") && !roles.includes("admin")) {
-      const { data: roleRows, error: roleError } = await context.supabase
-        .from("user_roles" as never)
-        .select("role")
-        .eq("user_id", context.userId);
-      if (roleError) {
-        throw new Error(
-          roleError.message || "Could not verify staff role — try signing in again",
-        );
-      }
-      roles = (
-        (roleRows as unknown as Array<{ role: string }> | null) ?? []
-      ).map((r) => String(r.role || "").toLowerCase());
+    // Same staff gate as menu.functions assertStaff / getMyRoles (proven on /staff).
+    const { data: roleRows, error: roleError } = await context.supabase
+      .from("user_roles" as never)
+      .select("role")
+      .eq("user_id", context.userId);
+    if (roleError) {
+      throw new Error(
+        roleError.message || "Could not verify staff role — try signing in again",
+      );
     }
-
+    const roles =
+      (roleRows as unknown as Array<{ role: string }> | null)?.map((r) => r.role) ??
+      [];
     const isAdmin = roles.includes("admin");
     const isChef = roles.includes("chef");
-    if (!isChef && !isAdmin) {
+    if (!isAdmin && !isChef) {
       throw new Error("Chef or admin only");
     }
 
