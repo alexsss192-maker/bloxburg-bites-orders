@@ -193,6 +193,7 @@ export const pandaChat = createServerFn({
         userId: context.userId,
         isAdmin,
         actorEmail,
+        _cache: new Map(),
       },
     });
 
