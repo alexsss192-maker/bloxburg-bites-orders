@@ -531,7 +531,7 @@ function PandaPage() {
     const h = video.videoHeight;
     if (!w || !h) return null;
     const canvas = document.createElement("canvas");
-    const max = 1280;
+    const max = 1024; // keep payloads small to avoid gateway 520s
     const scale = Math.min(1, max / Math.max(w, h));
     canvas.width = Math.round(w * scale);
     canvas.height = Math.round(h * scale);
@@ -539,7 +539,7 @@ function PandaPage() {
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     try {
-      return canvas.toDataURL("image/jpeg", 0.85);
+      return canvas.toDataURL("image/jpeg", 0.72);
     } catch {
       // Tainted canvas (rare) — fail soft
       return null;
@@ -717,18 +717,19 @@ function PandaPage() {
   useEffect(() => {
     if (!sharing || !splitScreen) return;
     let cancelled = false;
-    const intervalMs = 1600;
+    // Cap auto-frames at 6 to keep gateway payloads reliable (520s on huge batches)
+    const intervalMs = 1800;
     const id = window.setInterval(() => {
       if (cancelled) return;
       const video = shareVideoRef.current;
       if (!video || video.videoWidth === 0) return;
       setImages((prev) => {
-        if (prev.length >= 9) return prev;
+        if (prev.length >= 6) return prev;
         const dataUrl = frameFromVideo(video);
         if (!dataUrl) return prev;
         // Skip exact duplicate of the last frame (user not scrolling)
         if (prev.length > 0 && prev[prev.length - 1] === dataUrl) return prev;
-        return [...prev, dataUrl].slice(0, 9);
+        return [...prev, dataUrl].slice(0, 6);
       });
     }, intervalMs);
     return () => {
