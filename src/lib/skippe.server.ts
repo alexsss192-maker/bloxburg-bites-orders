@@ -28,10 +28,15 @@ export type SkippeTurn = {
  * GPT-5 Nano remains available as a manual mode pick.
  */
 export function resolveModel(mode: SkippeMode, imageCount: number, message: string) {
+  // Locked mode: never escalate — honor the chef's Cost picker exactly.
   if (mode !== "auto") return { model: MODEL_BY_MODE[mode], auto: false };
 
-  const heavyPattern = new RegExp("every|all of (them|these)|bulk|whole (fridge|menu)", "i");
-  const heavy = imageCount >= 7 || message.length > 600 || heavyPattern.test(message);
+  // Auto only: escalate for big photo batches or explicit "scan everything" wording.
+  // Do NOT match "bulk service fee" / "bulk fee" — that is a normal kitchen tool call.
+  const heavyPattern =
+    /\b(every\s+order|all of (them|these)|whole (fridge|menu|inventory)|scan (all|everything|every))\b/i;
+  const heavy =
+    imageCount >= 7 || message.length > 600 || heavyPattern.test(message);
 
   if (heavy) {
     return { model: MODEL_BY_MODE.lite_31, auto: true };
