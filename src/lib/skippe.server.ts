@@ -1320,10 +1320,12 @@ async function runOpenAiTurn(args: {
   images: Img[];
   ctx: SkippeContext;
   staffName: string;
+  toolsEnabled?: boolean;
 }): Promise<SkippeTurn> {
   const key = gatewayKey();
   const runs: SkippeToolRun[] = [];
   let reply = "";
+  const toolsEnabled = args.toolsEnabled !== false;
 
   // Keep context tight — less tokens = less latency.
   const recent = args.history.slice(-8);
@@ -1353,7 +1355,18 @@ async function runOpenAiTurn(args: {
     ],
   });
 
-  for (let round = 0; round < 2; round += 1) {
+  const maxRounds = toolsEnabled ? 2 : 1;
+  const toolDefs = toolsEnabled
+    ? SKIPPE_TOOLS.map((t) => ({
+        type: "function",
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+        strict: true,
+      }))
+    : undefined;
+
+  for (let round = 0; round < maxRounds; round += 1) {
     const res = await fetch("https://ai.gateway.lovable.dev/v1/responses", {
       method: "POST",
       headers: {
@@ -1372,13 +1385,7 @@ async function runOpenAiTurn(args: {
         // Faster OpenAI tier when available (falls back to standard if not).
         service_tier: "priority",
         max_output_tokens: 1200,
-        tools: SKIPPE_TOOLS.map((t) => ({
-          type: "function",
-          name: t.name,
-          description: t.description,
-          parameters: t.parameters,
-          strict: true,
-        })),
+        ...(toolDefs ? { tools: toolDefs } : {}),
       }),
     });
 
@@ -1483,6 +1490,7 @@ async function runGoogleTurn(args: {
   images: Img[];
   ctx: SkippeContext;
   staffName: string;
+  toolsEnabled?: boolean;
 }): Promise<SkippeTurn> {
   const key = gatewayKey();
   const runs: SkippeToolRun[] = [];
@@ -1526,16 +1534,22 @@ async function runGoogleTurn(args: {
     content: args.images.length > 0 ? userContent : args.userText || "(look at these images)",
   });
 
-  const tools = SKIPPE_TOOLS.map((t) => ({
-    type: "function",
-    function: {
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
-    },
-  }));
+  const toolsEnabled = args.toolsEnabled !== false;
+  const tools = toolsEnabled
+    ? SKIPPE_TOOLS.map((t) => ({
+        type: "function",
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }))
+    : undefined;
 
-  for (let round = 0; round < 2; round += 1) {
+  // Vision-only / chat-only: single round, no tools → no kitchen table access.
+  const maxRounds = toolsEnabled ? 2 : 1;
+
+  for (let round = 0; round < maxRounds; round += 1) {
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1547,13 +1561,17 @@ async function runGoogleTurn(args: {
       body: JSON.stringify({
         model: args.model,
         messages,
-        tools,
-        // Prefer tools when the chef is clearly asking for kitchen work.
-        tool_choice: /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier)\b/i.test(
-          args.userText,
-        )
-          ? "required"
-          : "auto",
+        ...(tools ? { tools } : {}),
+        ...(tools
+          ? {
+              // Prefer tools when the chef is clearly asking for kitchen work.
+              tool_choice: /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier)\b/i.test(
+                args.userText,
+              )
+                ? "required"
+                : "auto",
+            }
+          : {}),
         stream: false,
       }),
     });
@@ -1588,7 +1606,7 @@ async function runGoogleTurn(args: {
       reply = message.content;
     }
 
-    const toolCalls = message.tool_calls ?? [];
+    const toolCalls = toolsEnabled ? (message.tool_calls ?? []) : [];
     if (toolCalls.length === 0) {
       break;
     }
@@ -1634,7 +1652,8 @@ async function runGoogleTurn(args: {
 
   // Lite models sometimes invent "I couldn't create that" without calling tools.
   // If the chef clearly asked for a kitchen action and zero tools ran, do it here.
-  if (runs.length === 0) {
+  // Skipped entirely when toolsEnabled is false (pure vision = zero kitchen DB).
+  if (toolsEnabled && runs.length === 0) {
     const fallback = await maybeRunIntentFallback(args.ctx, args.staffName, args.userText, args.history);
     if (fallback) {
       runs.push(...fallback.runs);
@@ -1775,6 +1794,8 @@ export async function runSkippeTurn(args: {
   images: Img[];
   ctx: SkippeContext;
   staffName: string;
+  /** When false, no tools are offered — pure vision/chat, zero kitchen DB. */
+  toolsEnabled?: boolean;
 }): Promise<SkippeTurn> {
   // OpenAI models → /v1/responses
   // Google (and any other) → /v1/chat/completions
