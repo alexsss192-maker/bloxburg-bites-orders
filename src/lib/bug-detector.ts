@@ -602,11 +602,11 @@ function synthesizeConfirmed(
   // Security wins when critical/high
   if (security && (security.level === "critical" || security.level === "high")) {
     return {
-      statement: security.why.split(".")[0] + ".",
-      fix: security.priorityAction || security.fix.split(".")[0] + ".",
+      statement: (security.why || security.risk || security.title).split(".")[0] + ".",
+      fix: (security.fix || "See security fix details.").split(".")[0] + ".",
       location: loc,
-      anchor: security.evidence[0] ?? security.category,
-      confidence: security.confidence,
+      anchor: security.title,
+      confidence: 0.9,
     };
   }
 
@@ -790,7 +790,7 @@ export function diagnoseBug(error: unknown): BugDiagnosis | null {
   if (security && (security.level === "critical" || security.level === "high")) {
     family = "security";
     level = security.level;
-    score = security.score;
+    score = 80;
   }
 
   const confidence = Math.min(
@@ -876,4 +876,104 @@ export function bugBannerProps(error: unknown): {
 } {
   const diagnosis = diagnoseBug(error);
   return { show: Boolean(diagnosis), diagnosis };
+}
+
+/* ── GLOBAL (required by __root.tsx + router.tsx) ── */
+
+let globalInstalled = false;
+
+/** Call once from RootComponent — covers every file without per-page edits. */
+export function installGlobalBugDetector(): () => void {
+  if (typeof window === "undefined" || globalInstalled) {
+    return () => {};
+  }
+  globalInstalled = true;
+
+  const onError = (event: ErrorEvent) => {
+    const err = event.error ?? event.message;
+    const d = diagnoseBug(err);
+    if (d) {
+      console.warn(
+        "[GlobalBug]",
+        d.fingerprint,
+        d.confirmed.statement,
+        d.confirmed.fix,
+      );
+      try {
+        void import("./lovable-error-reporting").then((m) => {
+          m.reportLovableError?.(err, {
+            source: "window.onerror",
+            bug_family: d.family,
+            bug_score: d.score,
+            bug_fingerprint: d.fingerprint,
+            confirmed_cause: d.confirmed.statement,
+            confirmed_fix: d.confirmed.fix,
+          });
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const onRejection = (event: PromiseRejectionEvent) => {
+    const err = event.reason;
+    const d = diagnoseBug(err);
+    if (d) {
+      console.warn(
+        "[GlobalBug:rejection]",
+        d.fingerprint,
+        d.confirmed.statement,
+        d.confirmed.fix,
+      );
+      try {
+        void import("./lovable-error-reporting").then((m) => {
+          m.reportLovableError?.(err, {
+            source: "unhandledrejection",
+            bug_family: d.family,
+            bug_score: d.score,
+            bug_fingerprint: d.fingerprint,
+            confirmed_cause: d.confirmed.statement,
+            confirmed_fix: d.confirmed.fix,
+          });
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  window.addEventListener("error", onError);
+  window.addEventListener("unhandledrejection", onRejection);
+
+  return () => {
+    window.removeEventListener("error", onError);
+    window.removeEventListener("unhandledrejection", onRejection);
+    globalInstalled = false;
+  };
+}
+
+/** Used by router.tsx QueryClient cache subscription. */
+export function reportQueryBug(
+  error: unknown,
+  meta?: Record<string, unknown>,
+) {
+  const d = diagnoseBug(error);
+  if (!d) return;
+  console.warn("[QueryBug]", d.fingerprint, d.confirmed.statement);
+  try {
+    void import("./lovable-error-reporting").then((m) => {
+      m.reportLovableError?.(error, {
+        source: "react_query",
+        bug_family: d.family,
+        bug_score: d.score,
+        bug_fingerprint: d.fingerprint,
+        confirmed_cause: d.confirmed.statement,
+        confirmed_fix: d.confirmed.fix,
+        ...meta,
+      });
+    });
+  } catch {
+    /* ignore */
+  }
 }
