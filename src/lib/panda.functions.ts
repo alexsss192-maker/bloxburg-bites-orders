@@ -14,8 +14,13 @@ import {
 const KITCHEN_ACTION_RE =
   /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier|delete|update|price|fee|bulk|edit|change|rename|remove|put|save|enable|disable|activate|deactivate|prepare|ready|deliver|cancel|item|items|them)\b/i;
 
-/** Pull roles from JWT claims when present — avoids a user_roles table hit. */
-function rolesFromClaims(claims: unknown): string[] {
+const STAFF_ROLES = new Set(["chef", "admin"]);
+
+/**
+ * Only accept real staff roles from the JWT. Generic claim noise must not
+ * skip the user_roles lookup or chefs get "Chef or admin only".
+ */
+function staffRolesFromClaims(claims: unknown): string[] {
   if (!claims || typeof claims !== "object") return [];
   const c = claims as Record<string, unknown>;
   const buckets: unknown[] = [
@@ -28,10 +33,14 @@ function rolesFromClaims(claims: unknown): string[] {
   ];
   const out: string[] = [];
   for (const b of buckets) {
-    if (typeof b === "string" && b.trim()) out.push(b.trim());
+    if (typeof b === "string" && STAFF_ROLES.has(b.trim().toLowerCase())) {
+      out.push(b.trim().toLowerCase());
+    }
     if (Array.isArray(b)) {
       for (const x of b) {
-        if (typeof x === "string" && x.trim()) out.push(x.trim());
+        if (typeof x === "string" && STAFF_ROLES.has(x.trim().toLowerCase())) {
+          out.push(x.trim().toLowerCase());
+        }
       }
     }
   }
@@ -126,20 +135,28 @@ export const pandaChat = createServerFn({
           | undefined
       )?.email ?? null;
 
-    // Prefer roles from the JWT (0 table reads). Fall back to one user_roles query.
-    let roles = rolesFromClaims(context.claims);
+    // Prefer chef/admin from JWT when present; otherwise read user_roles (required).
+    let roles = staffRolesFromClaims(context.claims);
     if (roles.length === 0) {
-      const { data: roleRows } = await context.supabase
+      const { data: roleRows, error: roleError } = await context.supabase
         .from("user_roles" as never)
         .select("role")
         .eq("user_id", context.userId);
+      if (roleError) {
+        throw new Error(
+          roleError.message || "Could not verify staff role — try signing in again",
+        );
+      }
       roles = (
         (roleRows as unknown as Array<{ role: string }> | null) ?? []
-      ).map((r) => r.role);
+      )
+        .map((r) => String(r.role || "").toLowerCase())
+        .filter((r) => STAFF_ROLES.has(r));
     }
 
     const isAdmin = roles.includes("admin");
-    if (!roles.includes("chef") && !isAdmin) {
+    const isChef = roles.includes("chef");
+    if (!isChef && !isAdmin) {
       throw new Error("Chef or admin only");
     }
 
