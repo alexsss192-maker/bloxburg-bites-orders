@@ -49,7 +49,7 @@ const pandaInput = z.object({
 
   mode: z
     .enum(SKIPPE_MODES)
-    .default("gpt5_nano"),
+    .default("lite_25"),
 
   /** Client-side chat history (localStorage). No DB read. */
   history: z
