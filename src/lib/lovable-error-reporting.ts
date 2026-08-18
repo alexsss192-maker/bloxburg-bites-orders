@@ -3,6 +3,7 @@ import {
   formatSecurityDiagnosisForCopy,
   type SecurityDiagnosis,
 } from "./security-risk";
+import { diagnoseBug } from "./bug-detector";
 
 export type { SecurityDiagnosis };
 export {
@@ -10,6 +11,12 @@ export {
   formatSecurityDiagnosisForCopy,
   isSecurityRiskError,
 } from "./security-risk";
+export {
+  diagnoseBug,
+  formatBugDiagnosisForCopy,
+  bugSummary,
+  installGlobalBugDetector,
+} from "./bug-detector";
 
 type LovableErrorOptions = {
   mechanism?:
@@ -44,28 +51,44 @@ export function reportLovableError(
   if (typeof window === "undefined") return;
 
   const security = diagnoseSecurityRisk(error);
+  const bug = diagnoseBug(error);
 
   window.__lovableEvents?.captureException?.(
     error,
     {
-      source: "react_error_boundary",
+      source: context.source ?? "react_error_boundary",
       route: window.location.pathname,
       security_risk: security?.isSecurityRisk ?? false,
       security_level: security?.level ?? null,
       security_title: security?.title ?? null,
+      bug_family: bug?.family ?? null,
+      bug_score: bug?.score ?? null,
+      bug_fingerprint: bug?.fingerprint ?? null,
+      confirmed_cause: bug?.confirmed.statement ?? null,
+      confirmed_fix: bug?.confirmed.fix ?? null,
+      confirmed_location: bug?.confirmed.location ?? null,
       ...context,
     },
     {
       mechanism: security?.isSecurityRisk
         ? "security_risk"
         : "react_error_boundary",
-      handled: false,
+      handled: Boolean(context.handled),
       severity: "error",
     },
   );
+
+  if (bug) {
+    console.warn(
+      "[BugDetector]",
+      bug.fingerprint,
+      bug.confirmed.statement,
+      "→",
+      bug.confirmed.fix,
+    );
+  }
 }
 
-/** Report a handled security-related failure (RLS, auth, schema exposure). */
 export function reportSecurityRisk(
   error: unknown,
   context: Record<string, unknown> = {},
@@ -154,25 +177,29 @@ export type SkippeRunLike = {
 };
 
 export type SkippeDiagnosis = {
-  /** Short headline */
   title: string;
-  /** Why this happened */
   why: string;
-  /** Where in the codebase */
   where: string;
-  /** Approximate lines / case */
   lines: string;
-  /** What to do next */
   fix: string;
-  /** Full combined message for Error.message */
   message: string;
 };
 
-/** Map known failure text → diagnosis with file/line/why/fix. */
 export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   const text = raw || "Unknown Skippe failure";
 
-  // Prefer security diagnosis when the failure is auth/RLS/schema exposure
+  const bug = diagnoseBug(text);
+  if (bug && bug.confidence >= 0.55) {
+    return {
+      title: bug.title,
+      why: bug.confirmed.statement,
+      where: bug.confirmed.location || bug.features.primaryFile || "skippe / runtime",
+      lines: `family=${bug.family} score=${bug.score} fp=${bug.fingerprint}`,
+      fix: bug.confirmed.fix,
+      message: text,
+    };
+  }
+
   const security = diagnoseSecurityRisk(text);
   if (security && /schema cache|row-level|permission denied|forbidden|401|403/i.test(text)) {
     return {
@@ -189,9 +216,9 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
     return {
       title: "Bulk / Fast Service fee table or column missing",
       why: "Skippe set_bulk_service_fee needs public.bulk_service_fees (and column fee_message). Those objects live in later migrations that may not be applied on Lovable Cloud.",
-      where: "src/lib/skippe.server.ts → set_bulk_service_fee · supabase/migrations/20260816000000_fix_bulk_service_fees.sql · bulk_fee_message.sql",
-      lines: "runSkippeTool case set_bulk_service_fee; select/upsert fee_type, fee_value, fee_message",
-      fix: "1) Create public.bulk_service_fees + bulk_service_eligible_chefs from the fix migration. 2) ALTER TABLE … ADD COLUMN fee_message text. 3) NOTIFY pgrst, 'reload schema'; 4) Retry in Skippe.",
+      where: "src/lib/skippe.server.ts → set_bulk_service_fee · supabase/migrations",
+      lines: "runSkippeTool case set_bulk_service_fee",
+      fix: "1) Create public.bulk_service_fees + bulk_service_eligible_chefs. 2) ADD COLUMN fee_message if needed. 3) NOTIFY pgrst, 'reload schema'; 4) Retry.",
       message: text,
     };
   }
@@ -199,10 +226,10 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   if (/schema cache|could not find the table.*discounts/i.test(text)) {
     return {
       title: "Discount table missing or wrong name",
-      why: "Skippe tried to read/write a discounts table that PostgREST does not know. The live table is public.chef_discounts (see supabase types + menu.functions.ts). If the code still says public.discounts, it will fail.",
-      where: "src/lib/skippe.server.ts → runSkippeTool → case \"create_discount\" / list_discounts / update_discount / end_discount",
-      lines: "Discount tool cases (search: from(\"chef_discounts\")). Types: src/integrations/supabase/types.ts → chef_discounts",
-      fix: "1) Confirm every discount query uses .from(\"chef_discounts\"). 2) In Supabase, ensure table public.chef_discounts exists and is exposed in the API schema. 3) Reload schema cache (Dashboard → Settings → API → reload) if you just created the table.",
+      why: "Skippe tried to read/write a discounts table that PostgREST does not know. Live table is public.chef_discounts.",
+      where: "src/lib/skippe.server.ts → create_discount / list_discounts",
+      lines: "from(\"chef_discounts\")",
+      fix: "Use .from(\"chef_discounts\"), ensure table exists, NOTIFY pgrst, 'reload schema';",
       message: text,
     };
   }
@@ -212,8 +239,8 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
       title: "Skippe cannot authenticate to Lovable AI gateway",
       why: "LOVABLE_API_KEY is missing or invalid in the server environment.",
       where: "src/lib/skippe.server.ts → gatewayKey()",
-      lines: "gatewayKey() near the transports section",
-      fix: "In Lovable: Cloud → Secrets → ensure LOVABLE_API_KEY exists (usually auto-injected). Redeploy after adding it.",
+      lines: "gatewayKey()",
+      fix: "Cloud → Secrets → ensure LOVABLE_API_KEY exists. Redeploy.",
       message: text,
     };
   }
@@ -222,9 +249,9 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
     return {
       title: "Wrong AI endpoint for this model",
       why: "/v1/responses only accepts OpenAI models. Gemini must use /v1/chat/completions.",
-      where: "src/lib/skippe.server.ts → runSkippeTurn / runGoogleTurn / runOpenAiTurn",
-      lines: "runSkippeTurn routes by MODEL_VENDOR; Google path must call /v1/chat/completions",
-      fix: "Ensure Google models call runGoogleTurn (chat/completions), OpenAI models call runOpenAiTurn (responses).",
+      where: "src/lib/skippe.server.ts → runGoogleTurn / runOpenAiTurn",
+      lines: "vendor routing",
+      fix: "Google → chat/completions; OpenAI → responses.",
       message: text,
     };
   }
@@ -232,10 +259,10 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   if (/404 page not found|skippe gateway 404/i.test(text)) {
     return {
       title: "AI gateway path not found",
-      why: "The request hit a URL Lovable's gateway does not serve (often the old Gemini :generateContent path).",
-      where: "src/lib/skippe.server.ts → fetch() inside runOpenAiTurn or runGoogleTurn",
+      why: "Request hit a URL the gateway does not serve.",
+      where: "src/lib/skippe.server.ts fetch paths",
       lines: "OpenAI: /v1/responses · Google: /v1/chat/completions",
-      fix: "Do not call /v1beta/models/…:generateContent. Use the two paths above only.",
+      fix: "Use only those two paths.",
       message: text,
     };
   }
@@ -243,10 +270,10 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   if (/zero tools|ran zero tools/i.test(text)) {
     return {
       title: "Model replied without calling any kitchen tools",
-      why: "The LLM answered in plain text and skipped function calls, so nothing changed in the database.",
-      where: "src/lib/skippe.server.ts → runGoogleTurn / runOpenAiTurn tool loop; fallback maybeRunIntentFallback",
-      lines: "Tool loop (max 2 rounds) and maybeRunIntentFallback after empty runs",
-      fix: "Retry with clearer wording (e.g. \"create an automatic 10% discount named test\"). Intent fallback should catch common discount shorthand. If it keeps happening, switch mode to GPT-5 Nano for stronger tool use.",
+      why: "LLM answered in plain text and skipped function calls.",
+      where: "src/lib/skippe.server.ts tool loop",
+      lines: "tool loop + maybeRunIntentFallback",
+      fix: "Retry with clearer action wording; try stronger tool-use model.",
       message: text,
     };
   }
@@ -254,10 +281,10 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   if (/empty reply/i.test(text)) {
     return {
       title: "Empty assistant reply after the model finished",
-      why: "The gateway returned no assistant text (and no usable tool summary).",
-      where: "src/lib/skippe.server.ts → end of runGoogleTurn / runOpenAiTurn; src/lib/panda.functions.ts reply assembly",
-      lines: "synthesizeReplyFromRuns() and pandaChat handler",
-      fix: "Check gateway status and model. Soft fallback should summarize tool runs when present.",
+      why: "Gateway returned no assistant text.",
+      where: "skippe.server.ts / panda.functions.ts",
+      lines: "synthesizeReplyFromRuns",
+      fix: "Check gateway status and model.",
       message: text,
     };
   }
@@ -265,10 +292,10 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   if (/create_discount failed|couldn't create the discount/i.test(text)) {
     return {
       title: "create_discount tool failed",
-      why: "The tool ran, but Supabase rejected the insert/update (permissions, schema, constraint, or RLS).",
-      where: "src/lib/skippe.server.ts → case \"create_discount\"",
-      lines: "Insert into public.chef_discounts inside runSkippeTool switch",
-      fix: "Read the supabase: … part of the message. Check RLS policies on chef_discounts for the chef role, required columns (name, owner_id, discount_type, value), and that the table is exposed to the API.",
+      why: "Supabase rejected insert/update (permissions, schema, constraint, or RLS).",
+      where: "src/lib/skippe.server.ts → create_discount",
+      lines: "Insert into chef_discounts",
+      fix: "Check RLS on chef_discounts and required columns.",
       message: text,
     };
   }
@@ -276,21 +303,20 @@ export function diagnoseSkippeFailure(raw: string): SkippeDiagnosis {
   if (/not assigned to you/i.test(text)) {
     return {
       title: "Order is not assigned to this chef",
-      why: "Skippe only mutates order_fulfillments rows where chef_id = the logged-in user.",
-      where: "src/lib/skippe.server.ts → ownFulfillment() / set_order_status / chat tools",
-      lines: "ownFulfillment helper and set_order_status case",
-      fix: "Use an order that appears under this chef in list_orders. Admins still cannot claim another chef's fulfillment unless assigned.",
+      why: "Skippe only mutates fulfillments where chef_id = logged-in user.",
+      where: "src/lib/skippe.server.ts → ownFulfillment",
+      lines: "ownFulfillment / set_order_status",
+      fix: "Use an order assigned to this chef.",
       message: text,
     };
   }
 
-  // Generic
   return {
     title: "Skippe reported a problem",
-    why: "A Skippe turn failed health checks (bad reply text, failed tools, or a thrown gateway error). See the raw message for the provider/DB detail.",
-    where: "src/routes/staff.panda.tsx (send) → src/lib/panda.functions.ts (pandaChat) → src/lib/skippe.server.ts",
-    lines: "staff.panda.tsx send(); detectSkippeProblem in lovable-error-reporting.ts",
-    fix: "Copy the full error card. Fix the underlying tool/gateway/DB issue named in the message, then retry.",
+    why: "Skippe turn failed health checks. See raw message.",
+    where: "staff.panda.tsx → panda.functions.ts → skippe.server.ts",
+    lines: "detectSkippeProblem",
+    fix: "Copy full error; fix underlying tool/gateway/DB issue; retry.",
     message: text,
   };
 }
