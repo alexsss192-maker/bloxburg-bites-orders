@@ -1362,7 +1362,7 @@ async function gatewayFetch(
   url: string,
   init: RequestInit,
   hint: string,
-  attempts = 3,
+  attempts = 2,
 ): Promise<Response> {
   let last: Response | null = null;
   for (let i = 0; i < attempts; i++) {
@@ -1371,13 +1371,13 @@ async function gatewayFetch(
     if (res.ok) return res;
     const retryable = res.status === 429 || res.status >= 500;
     if (!retryable || i === attempts - 1) return res;
-    // Read/discard body so the connection can close cleanly before retry
     try {
       await res.text();
     } catch {
       /* ignore */
     }
-    await new Promise((r) => setTimeout(r, 400 * (i + 1) * (i + 1)));
+    // Short backoff — long waits make Skippe feel stuck
+    await new Promise((r) => setTimeout(r, 250 * (i + 1)));
   }
   return last!;
 }
@@ -1458,14 +1458,14 @@ async function runOpenAiTurn(args: {
   const toolsEnabled = args.toolsEnabled !== false;
 
   // Keep context tight — less tokens = less latency.
-  const recent = args.history.slice(-8);
+  const recent = args.history.slice(-6);
 
   const input: Array<Record<string, unknown>> = recent.map((h) => ({
     role: h.role,
     content: [
       {
         type: h.role === "assistant" ? "output_text" : "input_text",
-        text: h.content.slice(0, 1200),
+        text: h.content.slice(0, 600),
       },
     ],
   }));
@@ -1516,7 +1516,7 @@ async function runOpenAiTurn(args: {
           store: false,
           // Faster OpenAI tier when available (falls back to standard if not).
           service_tier: "priority",
-          max_output_tokens: 1200,
+          max_output_tokens: 900,
           ...(toolDefs ? { tools: toolDefs } : {}),
         }),
       },
@@ -1643,9 +1643,9 @@ async function runGoogleTurn(args: {
       role: "system",
       content: args.instructions,
     },
-    ...args.history.map((h) => ({
+    ...args.history.slice(-6).map((h) => ({
       role: h.role,
-      content: h.content.slice(0, 2000),
+      content: h.content.slice(0, 600),
     })),
   ];
 
