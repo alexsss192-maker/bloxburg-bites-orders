@@ -90,7 +90,7 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   {
     name: "update_menu_item",
     description:
-      "Edit one of your own menu items (name, description, stock, category, active). You CANNOT change price — never try. Pass null for anything you are not changing.",
+      "Edit one of your own menu items (name, description, stock, category, active). You CANNOT change price — never try. Pass null for anything you are not changing. For fridge restock: set stock to sellable qty (physical fridge count minus reserved quantities on pending/preparing/ready orders unless the chef corrected that ready items were already pulled from the fridge).",
     parameters: obj({
       item_id: { type: "string" },
       name: nul("string"),
@@ -138,7 +138,7 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   {
     name: "list_orders",
     description:
-      "List the orders assigned to YOU (newest first). Use status null for all, or filter by pending / preparing / ready / delivered / cancelled. Pending = waiting to be claimed/started. This is how you see what you can work on.",
+      "List the orders assigned to YOU (newest first), including line-item names and quantities. Use status null for all open work, or filter by pending / preparing / ready / delivered / cancelled. CRITICAL for fridge restock: pending + preparing + ready orders still reserve ingredients — subtract those quantities from physical fridge counts before updating stock. Chefs may correct you: some already pulled items for 'ready' orders out of the fridge (stock already reduced); others still have ready-order items in the fridge. Ask once if ambiguous, then act.",
     parameters: obj({
       status: {
         type: ["string", "null"],
@@ -671,6 +671,43 @@ export async function runSkippeTool(
         ).map((o) => [o.id, o]),
       );
 
+      // Line items so fridge restock can subtract reserved quantities
+      const { data: orderItems } = ids.length
+        ? await ctx.supabase
+            .from("order_items")
+            .select("order_id,menu_item_id,name,quantity")
+            .in("order_id", ids)
+        : { data: [] };
+
+      const itemsByOrder = new Map<
+        string,
+        Array<{ menu_item_id: string | null; name: string; quantity: number }>
+      >();
+      for (const it of (orderItems ?? []) as Array<{
+        order_id: string;
+        menu_item_id: string | null;
+        name: string;
+        quantity: number;
+      }>) {
+        const arr = itemsByOrder.get(it.order_id) ?? [];
+        arr.push({
+          menu_item_id: it.menu_item_id,
+          name: it.name,
+          quantity: it.quantity,
+        });
+        itemsByOrder.set(it.order_id, arr);
+      }
+
+      // Aggregate reserved qty by item name for open statuses (pending/preparing/ready)
+      const reservedByName: Record<string, number> = {};
+      for (const r of rows) {
+        if (!["pending", "preparing", "ready"].includes(r.status)) continue;
+        for (const it of itemsByOrder.get(r.order_id) ?? []) {
+          const key = it.name.trim().toLowerCase();
+          reservedByName[key] = (reservedByName[key] ?? 0) + (it.quantity ?? 0);
+        }
+      }
+
       return done(`Read ${rows.length} of your orders`, {
         orders: rows.map((r) => ({
           order_id: r.order_id,
@@ -680,7 +717,17 @@ export async function runSkippeTool(
           status: r.status,
           total_bs: r.total_bs,
           created_at: r.created_at,
+          items: itemsByOrder.get(r.order_id) ?? [],
+          // Hint for restock math: open orders still need these items unless chef says otherwise
+          reserves_stock: ["pending", "preparing", "ready"].includes(r.status),
         })),
+        reserved_stock_by_item_name: reservedByName,
+        restock_notes: [
+          "Physical fridge count ≠ sellable stock when open orders exist.",
+          "Default: sellable_stock = fridge_count - reserved_for_pending_preparing_ready.",
+          "Chef may correct: some already removed 'ready' order items from fridge (do not subtract again).",
+          "Chef may correct: some still keep 'ready' items in fridge (do subtract).",
+        ],
       });
     }
 
@@ -1179,6 +1226,20 @@ export function buildSkippePrompt(args: { staffName: string; isAdmin: boolean })
     "- list / create / update / delete their own items (name, description, stock, category, active).",
     "- You CANNOT set or change menu item prices. New items always price_bs 0. Tell them to price in the staff menu UI.",
     "- Active + B$0 still shows as 'Price coming soon' to customers until a human prices it.",
+    "",
+    "FRIDGE SCAN / RESTOCK (video or screenshots of their Bloxburg fridge):",
+    "- Chefs scroll a live fridge share or send up to 2 short videos / several snaps. Read EVERY visible item and quantity you can actually see.",
+    "- Workflow: (1) list_menu_items for current stock ids, (2) list_orders for pending+preparing+ready (includes line items + reserved_stock_by_item_name), (3) compare fridge counts to menu, (4) create missing items or update_menu_item stock.",
+    "- RESTOCK MATH (critical):",
+    "  physical_fridge = what you count in the photos/video.",
+    "  reserved = quantities on THIS chef's orders still pending, preparing, or ready (from list_orders).",
+    "  default sellable stock to write = max(0, physical_fridge - reserved).",
+    "  Exception — chef correction: if they say ready-order items were ALREADY taken out of the fridge, do NOT subtract those ready quantities (only subtract pending+preparing).",
+    "  Exception — chef correction: if they say ready items are STILL in the fridge, DO subtract ready quantities.",
+    "  If unsure whether ready orders were pulled from the fridge, ask ONE short question, then act on their answer.",
+    "- When adding new items from a scan: create_menu_item with best-effort name, stock from sellable math, category seasonal or non_seasonal if obvious else non_seasonal, is_active true. Price stays B$0.",
+    "- When updating stock: update_menu_item with item_id + stock only. Never invent ids — list_menu_items first.",
+    "- After restock, give a tight summary: items created, stock changes, reserved quantities subtracted, and any order the chef corrected.",
     "",
     "PRIORITY (checkout speed tiers) — YOU DO HAVE ACCESS",
     "- Tools: list_priority_levels, upsert_priority_level, delete_priority_level.",
