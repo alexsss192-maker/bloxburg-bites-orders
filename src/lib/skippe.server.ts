@@ -422,44 +422,113 @@ export async function runSkippeTool(
     case "create_menu_item": {
       // Skippe is never allowed to set prices. Always create at B$0.
       // Chef prices the item in the staff UI; customers see "Price coming soon".
-      const payload = {
-        name: String(rawArgs.name ?? "")
-          .trim()
-          .slice(0, 100),
+      // If the chef already has an item with the same name (case-insensitive),
+      // update stock/description instead of inserting duplicates (Gemini often
+      // fires the same create_menu_item tool 3–4 times in one turn).
+      const name = String(rawArgs.name ?? "")
+        .trim()
+        .slice(0, 100);
 
-        description: String(rawArgs.description ?? "").slice(0, 500),
-
-        price_bs: 0,
-
-        stock: clampInt(rawArgs.stock, 0, 1_000_000, 0),
-
-        category: rawArgs.category === "seasonal" ? "seasonal" : "non_seasonal",
-
-        is_active: rawArgs.is_active !== false,
-
-        owner_id: ctx.userId,
-      };
-
-      if (!payload.name) {
+      if (!name) {
         return fail("A name is required");
       }
 
-      const { data, error } = await ctx.supabase.from("menu_items").insert(payload).select("id").single();
+      const description = String(rawArgs.description ?? "").slice(0, 500);
+      const stock = clampInt(rawArgs.stock, 0, 1_000_000, 0);
+      const category = rawArgs.category === "seasonal" ? "seasonal" : "non_seasonal";
+      const is_active = rawArgs.is_active !== false;
+
+      // Match existing owned item by name (case-insensitive) so repeated tool
+      // calls in the same turn become idempotent updates.
+      const { data: existingRows, error: findErr } = await ctx.supabase
+        .from("menu_items")
+        .select("id,name,stock")
+        .eq("owner_id", ctx.userId)
+        .ilike("name", name)
+        .limit(5);
+
+      if (findErr) return fail(findErr.message);
+
+      const existing = (existingRows as Array<{ id: string; name: string; stock: number }> | null)?.[0];
+
+      if (existing) {
+        const patch: Record<string, unknown> = {
+          stock,
+          is_active,
+          category,
+        };
+        if (description) patch.description = description;
+
+        const { error: updErr } = await ctx.supabase
+          .from("menu_items")
+          .update(patch)
+          .eq("id", existing.id)
+          .eq("owner_id", ctx.userId);
+
+        if (updErr) return fail(updErr.message);
+
+        await log("skippe_update_menu_item", "menu_item", existing.id, patch);
+        ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
+
+        return done(
+          `Updated ${existing.name}`,
+          { ok: true, item_id: existing.id, updated: true },
+          `Already on your menu — set stock to ${stock} · Price B$0 (set price in staff menu)`,
+        );
+      }
+
+      const payload = {
+        name,
+        description,
+        price_bs: 0,
+        stock,
+        category,
+        is_active,
+        owner_id: ctx.userId,
+      };
+
+      const { data, error } = await ctx.supabase
+        .from("menu_items")
+        .insert(payload)
+        .select("id")
+        .single();
 
       if (error) return fail(error.message);
 
-      const id = (data as { id: string }).id;
+      const id = (data as { id: string } | null)?.id;
+      if (!id) {
+        // Insert may have succeeded under RLS but SELECT on the same statement
+        // returned nothing — verify with a follow-up read.
+        const { data: verify, error: verifyErr } = await ctx.supabase
+          .from("menu_items")
+          .select("id")
+          .eq("owner_id", ctx.userId)
+          .ilike("name", name)
+          .limit(1)
+          .maybeSingle();
+        if (verifyErr || !verify) {
+          return fail(
+            verifyErr?.message ||
+              "Create appeared to succeed but the item is not visible on your menu. Try the staff Menu editor or re-sign in.",
+          );
+        }
+        const verifiedId = (verify as { id: string }).id;
+        await log("skippe_create_menu_item", "menu_item", verifiedId, payload);
+        ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
+        return done(
+          `Added ${name}`,
+          { ok: true, item_id: verifiedId },
+          `Price B$0 (you set the price in the staff menu) · stock ${stock}`,
+        );
+      }
 
       await log("skippe_create_menu_item", "menu_item", id, payload);
       ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
 
       return done(
-        `Added ${payload.name}`,
-        {
-          ok: true,
-          item_id: id,
-        },
-        `Price B$0 (you set the price in the staff menu) · stock ${payload.stock}`,
+        `Added ${name}`,
+        { ok: true, item_id: id },
+        `Price B$0 (you set the price in the staff menu) · stock ${stock}`,
       );
     }
 
@@ -1556,7 +1625,9 @@ async function runOpenAiTurn(args: {
 
     input.push(...output);
 
-    for (const call of calls.slice(0, 8)) {
+    const seenToolKeys = new Map<string, { result: unknown; run: SkippeToolRun }>();
+
+    for (const call of calls.slice(0, 6)) {
       let parsedArgs: Record<string, unknown> = {};
       try {
         parsedArgs = JSON.parse(String(call["arguments"] ?? "{}")) as Record<string, unknown>;
@@ -1564,7 +1635,22 @@ async function runOpenAiTurn(args: {
         parsedArgs = {};
       }
 
-      const { result, run } = await runSkippeTool(args.ctx, String(call["name"]), parsedArgs, args.staffName);
+      const toolName = String(call["name"] ?? "");
+      const dedupeKey = `${toolName}:${JSON.stringify(parsedArgs)}`;
+
+      let result: unknown;
+      let run: SkippeToolRun;
+
+      const prior = seenToolKeys.get(dedupeKey);
+      if (prior) {
+        result = prior.result;
+        run = { ...prior.run, summary: `${prior.run.summary} (duplicate call skipped)` };
+      } else {
+        const out = await runSkippeTool(args.ctx, toolName, parsedArgs, args.staffName);
+        result = out.result;
+        run = out.run;
+        seenToolKeys.set(dedupeKey, { result, run });
+      }
 
       runs.push(run);
 
@@ -1762,7 +1848,12 @@ async function runGoogleTurn(args: {
       })),
     });
 
-    for (const tc of toolCalls.slice(0, 8)) {
+    // Gemini often emits the same create/update call 3–4 times in one response.
+    // Run each unique (name + args) once; reuse the result for duplicates so the
+    // model still gets a tool output for every call_id without spamming the DB.
+    const seenToolKeys = new Map<string, { result: unknown; run: SkippeToolRun }>();
+
+    for (const tc of toolCalls.slice(0, 6)) {
       let parsedArgs: Record<string, unknown> = {};
       try {
         parsedArgs = JSON.parse(tc.function?.arguments ?? "{}") as Record<string, unknown>;
@@ -1770,12 +1861,22 @@ async function runGoogleTurn(args: {
         parsedArgs = {};
       }
 
-      const { result, run } = await runSkippeTool(
-        args.ctx,
-        String(tc.function?.name ?? ""),
-        parsedArgs,
-        args.staffName,
-      );
+      const toolName = String(tc.function?.name ?? "");
+      const dedupeKey = `${toolName}:${JSON.stringify(parsedArgs)}`;
+
+      let result: unknown;
+      let run: SkippeToolRun;
+
+      const prior = seenToolKeys.get(dedupeKey);
+      if (prior) {
+        result = prior.result;
+        run = { ...prior.run, summary: `${prior.run.summary} (duplicate call skipped)` };
+      } else {
+        const out = await runSkippeTool(args.ctx, toolName, parsedArgs, args.staffName);
+        result = out.result;
+        run = out.run;
+        seenToolKeys.set(dedupeKey, { result, run });
+      }
 
       runs.push(run);
 
