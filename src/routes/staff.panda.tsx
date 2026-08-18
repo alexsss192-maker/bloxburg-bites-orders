@@ -303,6 +303,12 @@ function PandaPage() {
     } catch {
       /* storage unavailable */
     }
+    // Vision tools only on lite_25 — drop any live share if they leave it
+    if (next !== "lite_25" && (sharing || splitScreen)) {
+      stopShare();
+      setSplitScreen(false);
+      toast.message("Fridge share closed — only available on Gemini 2.5 Flash Lite ($)");
+    }
   }
 
   async function clearChat() {
@@ -417,6 +423,7 @@ function PandaPage() {
       if (remaining <= 0) break;
 
       if (file.type.startsWith("video/")) {
+        if (!requireCheapVision()) return;
         toast.message(`Reading video frames from ${file.name}…`);
         try {
           const frames = await framesFromVideoFile(file, remaining);
@@ -506,6 +513,7 @@ function PandaPage() {
    * Prefer a *different* window than Skippe — capturing this tab often goes black.
    */
   async function captureScreenshot() {
+    if (!requireCheapVision()) return;
     if (images.length >= 9) {
       toast.error("Max 9 images — remove one first");
       return;
@@ -577,6 +585,7 @@ function PandaPage() {
    * Snap frames into the image tray — Skippe reads those on Send.
    */
   async function startFridgeShare() {
+    if (!requireCheapVision()) return;
     if (!navigator.mediaDevices?.getDisplayMedia) {
       toast.error("Screen share isn’t supported in this browser");
       return;
@@ -752,6 +761,16 @@ function PandaPage() {
 
   const activeModel = mode === "auto" ? "" : MODEL_BY_MODE[mode];
   const thinkingCapable = activeModel ? modelShowsThinking(activeModel) : false;
+  // Vision capture only on the cheapest fixed model (not Auto / 3.1 / GPT).
+  const visionCaptureAllowed = mode === "lite_25";
+
+  function requireCheapVision(): boolean {
+    if (visionCaptureAllowed) return true;
+    toast.message(
+      "Screenshot, fridge share & video frames only work on Gemini 2.5 Flash Lite ($)",
+    );
+    return false;
+  }
 
   return (
     <div
@@ -782,12 +801,17 @@ function PandaPage() {
                   void startFridgeShare();
                 }
               }}
-              className={`inline-flex h-11 items-center gap-2 rounded-2xl border px-3 text-xs font-bold transition ${
+              disabled={!visionCaptureAllowed && !splitScreen}
+              className={`inline-flex h-11 items-center gap-2 rounded-2xl border px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${
                 splitScreen
                   ? "border-cherry/40 bg-cherry/10 text-cherry"
                   : "border-ink/10 bg-card text-ink/70 hover:bg-petal"
               }`}
-              title="Split screen — share your Bloxburg fridge (or any window)"
+              title={
+                visionCaptureAllowed
+                  ? "Split screen — share your Bloxburg fridge (or any window)"
+                  : "Switch model to Gemini 2.5 Flash Lite ($) to use fridge share"
+              }
             >
               {sharing ? (
                 <MonitorOff className="h-4 w-4" />
@@ -913,10 +937,10 @@ function PandaPage() {
             <button
               type="button"
               onClick={() => {
+                if (!requireCheapVision()) return;
                 if (fileRef.current) {
                   fileRef.current.accept = "video/*";
                   fileRef.current.click();
-                  // restore so image+video still works next time
                   window.setTimeout(() => {
                     if (fileRef.current) {
                       fileRef.current.accept = "image/*,video/*";
@@ -924,18 +948,28 @@ function PandaPage() {
                   }, 500);
                 }
               }}
-              disabled={images.length >= 9}
+              disabled={!visionCaptureAllowed || images.length >= 9}
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
-              title="Upload a video — Skippe reads several frames"
+              title={
+                visionCaptureAllowed
+                  ? "Upload a video — Skippe reads several frames"
+                  : "Switch to Gemini 2.5 Flash Lite ($) for video frames"
+              }
             >
               <Film className="h-4 w-4" />
             </button>
             <button
               type="button"
               onClick={() => void captureScreenshot()}
-              disabled={images.length >= 9 || snapBusy}
+              disabled={
+                !visionCaptureAllowed || images.length >= 9 || snapBusy
+              }
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
-              title="Screenshot a tab/window/screen for Skippe"
+              title={
+                visionCaptureAllowed
+                  ? "Screenshot a window/screen for Skippe"
+                  : "Switch to Gemini 2.5 Flash Lite ($) for screenshots"
+              }
             >
               {snapBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -977,9 +1011,19 @@ function PandaPage() {
             </Button>
           </div>
           <p className="mt-2 text-[0.7rem] text-ink/45">
-            📷 Screenshot or 🖥️ Fridge share: pick the <b>Roblox/game window</b>{" "}
-            (not this Skippe tab — that often captures black). 🎬 Video upload
-            pulls several frames Skippe can read. Max 9 frames per message.
+            {visionCaptureAllowed ? (
+              <>
+                📷 Screenshot / 🖥️ Fridge share / 🎬 Video frames: only on{" "}
+                <b>Gemini 2.5 Flash Lite ($)</b>. Pick the{" "}
+                <b>Roblox/game window</b> (not this tab). Max 9 frames.
+              </>
+            ) : (
+              <>
+                Switch the model to <b>Gemini 2.5 Flash Lite ($)</b> to unlock
+                screenshot, fridge share, and video frames (keeps vision on the
+                cheapest path).
+              </>
+            )}
           </p>
         </div>
       </div>
