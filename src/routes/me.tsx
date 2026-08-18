@@ -307,20 +307,58 @@ function MemberPage() {
             <div className="text-5xl">🐼</div>
 
             <p className="mt-4 font-display text-2xl">
-              No Panda member yet
+              {(orders?.length ?? 0) > 0
+                ? "Profile is catching up"
+                : "No Panda member yet"}
             </p>
 
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-              We couldn't find a member profile for @{normalizedUsername}. Place your
-              first order and your Panda Rewards journey starts right away.
+              {(orders?.length ?? 0) > 0 ? (
+                <>
+                  We found {orders!.length} order
+                  {orders!.length === 1 ? "" : "s"} for @{normalizedUsername},
+                  but the rewards profile hasn&apos;t been linked yet. Open{" "}
+                  <Link to="/history" className="font-semibold text-cherry underline-offset-2 hover:underline">
+                    Orders
+                  </Link>{" "}
+                  anytime, or try again after the kitchen finishes linking your
+                  account.
+                </>
+              ) : (
+                <>
+                  We couldn&apos;t find a member profile for @{normalizedUsername}.
+                  Place your first order and your Panda Rewards journey starts
+                  right away.
+                </>
+              )}
             </p>
 
-            <Link
-              to="/menu"
-              className="mt-6 inline-flex rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry"
-            >
-              Browse menu
-            </Link>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              {(orders?.length ?? 0) > 0 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => refetchProfile()}
+                    className="inline-flex rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry"
+                  >
+                    Try linking again
+                  </button>
+                  <Link
+                    to="/history"
+                    className="inline-flex rounded-full border border-border bg-card px-6 py-3 text-sm font-semibold text-ink transition hover:bg-petal"
+                  >
+                    View orders
+                  </Link>
+                </>
+              ) : (
+                <Link
+                  to="/menu"
+                  className="inline-flex rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry"
+                >
+                  Browse menu
+                </Link>
+              )}
+            </div>
           </div>
         ) : (
           <div className="relative mt-8 space-y-6">
