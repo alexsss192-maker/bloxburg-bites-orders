@@ -1,17 +1,11 @@
 /**
- * bug-detector.ts — detection engine (not a reason dictionary)
+ * bug-detector.ts — confirmed-cause engine (zero DB)
  *
- * Pure client-side. No DB. No fetch.
- *
- * How detection actually works:
- *   1. Structural feature extraction from the Error object (name, cause chain,
- *      stack shape, own keys, PostgREST shape, React minified codes, etc.)
- *   2. Token + entity extraction from message/stack
- *   3. Independent scorers (each returns 0–100 + evidence)
- *   4. Rank by score; compound bonus when multiple families fire
- *   5. Build diagnosis from the winning scorer
- *
- * Security is a first-class scorer (imports security-risk).
+ * Pipeline:
+ *  1. Feature extraction (Error object, stack, PostgREST shape, tokens)
+ *  2. Scorers (0–100 each)
+ *  3. Confirmed-cause synthesizer → ONE primary why + ONE primary fix
+ *  4. Ranked diagnosis for UI
  */
 
 import {
@@ -19,8 +13,6 @@ import {
   formatSecurityDiagnosisForCopy,
   type SecurityDiagnosis,
 } from "./security-risk";
-
-/* ──────────────────────────── types ──────────────────────────── */
 
 export type BugLevel = "critical" | "high" | "medium" | "low" | "info";
 
@@ -38,16 +30,26 @@ export type BugFamily =
   | "stack_overflow"
   | "unknown";
 
+export type ConfirmedCause = {
+  /** Single sentence — the locked-in root cause */
+  statement: string;
+  /** Concrete next step */
+  fix: string;
+  /** Where in app code if known */
+  location: string | null;
+  /** Property / code / table that proved it */
+  anchor: string | null;
+  confidence: number;
+};
+
 export type BugDiagnosis = {
   isBug: true;
   level: BugLevel;
   family: BugFamily;
   title: string;
+  /** Confirmed single cause (use this in UI, not laundry lists) */
+  confirmed: ConfirmedCause;
   summary: string;
-  why: string;
-  where: string;
-  fix: string;
-  priorityAction: string;
   message: string;
   score: number;
   confidence: number;
@@ -60,8 +62,6 @@ export type BugDiagnosis = {
   sqlHints?: string[];
 };
 
-/* ──────────────────────────── feature extraction ──────────────────────────── */
-
 export type ErrorFeatures = {
   name: string;
   message: string;
@@ -71,10 +71,13 @@ export type ErrorFeatures = {
   appFrames: string[];
   libFrames: string[];
   minifiedFrames: string[];
+  /** Best guess at app file:line from stack */
+  primaryAppFrame: string | null;
+  primaryFile: string | null;
+  primaryLine: number | null;
   hasCause: boolean;
   causeNames: string[];
   ownKeys: string[];
-  /** Supabase / PostgREST error shape */
   isPostgrestShape: boolean;
   pgCode: string | null;
   pgDetails: string | null;
@@ -85,6 +88,9 @@ export type ErrorFeatures = {
   isSyntaxError: boolean;
   isAggregate: boolean;
   reactMinifiedCode: string | null;
+  /** e.g. "volume" from "reading 'volume'" */
+  nullProp: string | null;
+  nullBase: "null" | "undefined" | null;
   tokens: string[];
   tables: string[];
   functions: string[];
@@ -94,6 +100,14 @@ export type ErrorFeatures = {
   files: string[];
   components: string[];
   hooks: string[];
+};
+
+type ScorerResult = {
+  family: BugFamily;
+  level: BugLevel;
+  score: number;
+  evidence: string[];
+  titleHint: string;
 };
 
 function safeStr(v: unknown): string {
@@ -107,18 +121,12 @@ function safeStr(v: unknown): string {
   }
 }
 
-function extractTokens(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9_./@-]+/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 2)
-    .slice(0, 80);
-}
-
 function extractAll(text: string, re: RegExp): string[] {
   const out: string[] = [];
-  const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
+  const g = new RegExp(
+    re.source,
+    re.flags.includes("g") ? re.flags : re.flags + "g",
+  );
   let m: RegExpExecArray | null;
   while ((m = g.exec(text)) !== null) out.push((m[1] ?? m[0]).trim());
   return [...new Set(out.filter(Boolean))];
@@ -129,21 +137,55 @@ function parseStack(stack: string): {
   app: string[];
   lib: string[];
   minified: string[];
+  primaryApp: string | null;
+  primaryFile: string | null;
+  primaryLine: number | null;
 } {
-  const lines = stack.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = stack
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
   const app: string[] = [];
   const lib: string[] = [];
   const minified: string[] = [];
+  let primaryApp: string | null = null;
+  let primaryFile: string | null = null;
+  let primaryLine: number | null = null;
+
   for (const line of lines) {
-    if (/node_modules|webpack-internal|react-dom|scheduler|chunk/i.test(line)) {
-      lib.push(line.slice(0, 180));
-    } else if (/assets\/.+\.js:\d+|chunks\/.+\.js:\d+/i.test(line)) {
-      minified.push(line.slice(0, 180));
-    } else if (/src\/|routes\/|components\/|lib\//i.test(line)) {
-      app.push(line.slice(0, 180));
+    if (/node_modules|react-dom|scheduler|webpack-internal/i.test(line)) {
+      lib.push(line.slice(0, 200));
+      continue;
+    }
+    if (/assets\/.+\.js:\d+|chunks\/.+\.js:\d+/i.test(line)) {
+      minified.push(line.slice(0, 200));
+    }
+    // Prefer real src paths
+    const src =
+      line.match(
+        /((?:src|app|routes|components|lib)\/[a-zA-Z0-9_./\-]+\.(?:tsx?|jsx?)):(\d+)(?::(\d+))?/,
+      ) ||
+      line.match(
+        /((?:\.\.\/)+src\/[a-zA-Z0-9_./\-]+\.(?:tsx?|jsx?)):(\d+)/,
+      );
+    if (src) {
+      app.push(line.slice(0, 220));
+      if (!primaryApp) {
+        primaryApp = line.slice(0, 220);
+        primaryFile = src[1].replace(/^(\.\.\/)+/, "");
+        primaryLine = Number(src[2]);
+      }
     }
   }
-  return { depth: lines.length, app, lib, minified };
+  return {
+    depth: lines.length,
+    app,
+    lib,
+    minified,
+    primaryApp,
+    primaryFile,
+    primaryLine,
+  };
 }
 
 function readOwnKeys(err: unknown): string[] {
@@ -168,7 +210,6 @@ function readCauseChain(err: unknown): string[] {
   return names;
 }
 
-/** Extract a numeric HTTP status if present on the object or in text. */
 function readHttpStatus(err: unknown, text: string): number | null {
   if (err && typeof err === "object") {
     const o = err as Record<string, unknown>;
@@ -182,7 +223,6 @@ function readHttpStatus(err: unknown, text: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** Detect Supabase PostgrestError-like shape. */
 function readPostgrest(err: unknown): {
   shape: boolean;
   code: string | null;
@@ -206,6 +246,19 @@ function readPostgrest(err: unknown): {
   return { shape, code, details, hint };
 }
 
+function parseNullAccess(message: string): {
+  prop: string | null;
+  base: "null" | "undefined" | null;
+} {
+  const m = message.match(
+    /cannot read propert(?:y|ies) ['"]?([a-zA-Z0-9_$]+)['"]? of (null|undefined)/i,
+  );
+  if (m) {
+    return { prop: m[1], base: m[2].toLowerCase() as "null" | "undefined" };
+  }
+  return { prop: null, base: null };
+}
+
 export function extractFeatures(error: unknown): ErrorFeatures {
   const name =
     error instanceof Error
@@ -226,6 +279,7 @@ export function extractFeatures(error: unknown): ErrorFeatures {
   const parsed = parseStack(stack);
   const pg = readPostgrest(error);
   const reactMini = message.match(/minified react error #(\d+)/i);
+  const nullAccess = parseNullAccess(message);
 
   return {
     name,
@@ -236,6 +290,9 @@ export function extractFeatures(error: unknown): ErrorFeatures {
     appFrames: parsed.app,
     libFrames: parsed.lib,
     minifiedFrames: parsed.minified,
+    primaryAppFrame: parsed.primaryApp,
+    primaryFile: parsed.primaryFile,
+    primaryLine: parsed.primaryLine,
     hasCause: readCauseChain(error).length > 0,
     causeNames: readCauseChain(error),
     ownKeys: readOwnKeys(error),
@@ -249,7 +306,14 @@ export function extractFeatures(error: unknown): ErrorFeatures {
     isSyntaxError: name === "SyntaxError",
     isAggregate: name === "AggregateError",
     reactMinifiedCode: reactMini?.[1] ?? null,
-    tokens: extractTokens(fullText),
+    nullProp: nullAccess.prop,
+    nullBase: nullAccess.base,
+    tokens: fullText
+      .toLowerCase()
+      .replace(/[^a-z0-9_./@-]+/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 2)
+      .slice(0, 80),
     tables: extractAll(
       fullText,
       /(?:table|relation|from|into|update)\s+["']?(?:public\.)?([a-z][a-z0-9_]*)/gi,
@@ -278,17 +342,15 @@ export function extractFeatures(error: unknown): ErrorFeatures {
   };
 }
 
-/** Stable fingerprint for de-dupe / telemetry (not cryptographic). */
 export function fingerprintError(f: ErrorFeatures): string {
   const core = [
     f.name,
+    f.nullProp ?? "",
     f.pgCode ?? "",
     f.pgrstCodes[0] ?? "",
-    f.sqlstates[0] ?? "",
-    f.reactMinifiedCode ?? "",
-    f.tables[0] ?? "",
-    f.functions[0] ?? "",
-    f.message.slice(0, 80).toLowerCase().replace(/\d+/g, "#"),
+    f.primaryFile ?? "",
+    String(f.primaryLine ?? ""),
+    f.message.slice(0, 60).toLowerCase().replace(/\d+/g, "#"),
   ].join("|");
   let h = 0;
   for (let i = 0; i < core.length; i++) {
@@ -297,41 +359,41 @@ export function fingerprintError(f: ErrorFeatures): string {
   return `e_${(h >>> 0).toString(16)}`;
 }
 
-/* ──────────────────────────── scorers ──────────────────────────── */
-
-type ScorerResult = {
-  family: BugFamily;
-  level: BugLevel;
-  score: number; // 0–100
-  evidence: string[];
-  title: string;
-  summary: string;
-  why: string;
-  where: string;
-  fix: string;
-  priorityAction: string;
-  sqlHints?: string[];
-};
-
-type Scorer = (f: ErrorFeatures) => ScorerResult | null;
-
 const has = (f: ErrorFeatures, ...needles: string[]) => {
   const t = f.fullText.toLowerCase();
   return needles.some((n) => t.includes(n.toLowerCase()));
 };
 
-const tokenHas = (f: ErrorFeatures, ...needles: string[]) =>
-  needles.some((n) => f.tokens.includes(n.toLowerCase()));
+/* ── scorers (scores only; text comes from synthesizer) ── */
 
-/* --- individual scorers (detection logic lives here) --- */
+type Scorer = (f: ErrorFeatures) => ScorerResult | null;
+
+const scoreNullAccess: Scorer = (f) => {
+  if (!f.nullProp && !(f.isTypeError && has(f, "cannot read propert"))) {
+    return null;
+  }
+  const evidence = ["null-property"];
+  if (f.nullProp) evidence.push(`prop:${f.nullProp}`);
+  if (f.nullBase) evidence.push(`of:${f.nullBase}`);
+  if (f.primaryFile) evidence.push(`file:${f.primaryFile}`);
+  if (f.primaryLine != null) evidence.push(`line:${f.primaryLine}`);
+  return {
+    family: "type_null",
+    level: "medium",
+    score: f.nullProp && f.primaryFile ? 92 : f.nullProp ? 78 : 55,
+    evidence,
+    titleHint: f.nullProp
+      ? `Null access: reading '${f.nullProp}'`
+      : "Null/undefined property access",
+  };
+};
 
 const scorePostgrest: Scorer = (f) => {
   let score = 0;
   const evidence: string[] = [];
-
   if (f.isPostgrestShape) {
-    score += 35;
-    evidence.push("postgrest-error-shape");
+    score += 30;
+    evidence.push("postgrest-shape");
   }
   if (f.pgCode) {
     score += 25;
@@ -347,59 +409,21 @@ const scorePostgrest: Scorer = (f) => {
   }
   if (has(f, "schema cache", "could not find the table", "could not find the function")) {
     score += 40;
-    evidence.push("schema-cache-phrase");
+    evidence.push("schema-cache");
   }
   if (has(f, "row-level security", "42501", "permission denied for")) {
     score += 35;
-    evidence.push("rls-phrase");
+    evidence.push("rls");
   }
-  if (f.tables.length) {
-    score += 10;
-    evidence.push(...f.tables.map((t) => `table:${t}`));
-  }
-  if (f.functions.length) {
-    score += 10;
-    evidence.push(...f.functions.map((fn) => `fn:${fn}`));
-  }
-
-  if (score < 25) return null;
-
-  const isSchema = has(f, "schema cache") || f.pgrstCodes.some((c) => /204|202|205|116/.test(c));
-  const isRls = has(f, "row-level", "42501", "permission denied");
-  const target = f.tables[0] || f.functions[0] || f.pgCode || "object";
-
+  if (f.tables[0]) evidence.push(`table:${f.tables[0]}`);
+  if (f.functions[0]) evidence.push(`fn:${f.functions[0]}`);
+  if (score < 30) return null;
   return {
     family: "postgrest",
-    level: isRls || isSchema ? "high" : score >= 60 ? "high" : "medium",
+    level: score >= 60 ? "high" : "medium",
     score: Math.min(100, score),
     evidence,
-    title: isSchema
-      ? `Schema cache miss: ${target}`
-      : isRls
-        ? `RLS / permission denied (${target})`
-        : `PostgREST error (${target})`,
-    summary: isSchema
-      ? "PostgREST does not expose this table/function/column."
-      : isRls
-        ? "Postgres RLS or grants blocked the query."
-        : "Supabase/PostgREST returned a structured error.",
-    why: isSchema
-      ? "Migration not applied on live DB, or schema cache not reloaded."
-      : isRls
-        ? "No matching policy for this role/command, or missing GRANT."
-        : f.pgDetails || f.pgHint || "PostgREST error payload.",
-    where: `public.${target} · Cloud → SQL editor · pg_policies`,
-    fix: isSchema
-      ? `Create/alter ${target}, GRANT privileges, then NOTIFY pgrst, 'reload schema';`
-      : isRls
-        ? `Inspect pg_policies for ${target}, fix policy/role, reload schema.`
-        : "Read code/details/hint on the error object and fix the underlying constraint or query.",
-    priorityAction: isSchema
-      ? "Apply migration + NOTIFY pgrst, 'reload schema'"
-      : isRls
-        ? "Fix RLS policy for the named object"
-        : "Inspect PostgREST code/details/hint",
-    sqlHints: isSchema || isRls ? ["NOTIFY pgrst, 'reload schema';"] : undefined,
+    titleHint: f.tables[0] || f.functions[0] || f.pgCode || "PostgREST error",
   };
 };
 
@@ -414,119 +438,66 @@ const scoreAuth: Scorer = (f) => {
     score += 45;
     evidence.push("login-reject");
   }
-  if (has(f, "jwt expired", "invalid jwt", "invalid token", "session expired", "not authenticated")) {
+  if (has(f, "jwt expired", "invalid jwt", "session expired", "not authenticated")) {
     score += 40;
     evidence.push("jwt-session");
   }
-  if (has(f, "forbidden", "admin only", "staff only", "insufficient privilege")) {
-    score += 35;
-    evidence.push("rbac");
-  }
-  if (tokenHas(f, "unauthorized", "forbidden")) score += 15;
-
-  if (score < 30) return null;
-
+  if (score < 35) return null;
   return {
     family: "auth",
     level: score >= 55 ? "high" : "medium",
     score: Math.min(100, score),
     evidence,
-    title: "Auth / session / RBAC failure",
-    summary: "Login, JWT, session, or role check failed.",
-    why: "Bad credentials, expired session, missing user_roles, or admin-only path.",
-    where: "staff login · auth middleware · user_roles · auth.users",
-    fix: "Confirm @pandabites.local email, reset password if needed, ensure user_roles + email_confirmed_at.",
-    priorityAction: "Verify session + user_roles for this account",
-  };
-};
-
-const scoreReact: Scorer = (f) => {
-  let score = 0;
-  const evidence: string[] = [];
-
-  if (f.reactMinifiedCode) {
-    score += 50;
-    evidence.push(`react-minified#${f.reactMinifiedCode}`);
-  }
-  if (has(f, "invalid hook call", "rendered fewer hooks", "hooks can only be called")) {
-    score += 55;
-    evidence.push("rules-of-hooks");
-  }
-  if (has(f, "objects are not valid as a react child", "react.child")) {
-    score += 45;
-    evidence.push("invalid-child");
-  }
-  if (f.isTypeError && has(f, "cannot read propert", "undefined is not an object", "null is not an object")) {
-    score += 35;
-    evidence.push("null-property");
-  }
-  if (f.components.length) {
-    score += 10;
-    evidence.push(...f.components.slice(0, 3).map((c) => `component:${c}`));
-  }
-  if (f.hooks.length) {
-    score += 8;
-    evidence.push(...f.hooks.slice(0, 3).map((h) => `hook:${h}`));
-  }
-  if (f.libFrames.some((l) => /react-dom|scheduler/i.test(l))) {
-    score += 12;
-    evidence.push("react-dom-frame");
-  }
-
-  if (score < 30) return null;
-
-  const where =
-    f.appFrames[0] ||
-    f.files[0] ||
-    f.components[0] ||
-    "component tree";
-
-  return {
-    family: "react",
-    level: score >= 55 ? "high" : "medium",
-    score: Math.min(100, score),
-    evidence,
-    title: f.components[0]
-      ? `React crash near ${f.components[0]}`
-      : "React render / hooks crash",
-    summary: "Component threw while rendering or violated the Rules of Hooks.",
-    why: "Null access, hook order, invalid child, or minified React invariant.",
-    where,
-    fix: "Resolve sourcemap frame, guard nulls, keep hooks top-level and stable order, do not render raw objects.",
-    priorityAction: "Open likely source frame and guard the failing access",
+    titleHint: "Auth / session failure",
   };
 };
 
 const scoreHydration: Scorer = (f) => {
-  let score = 0;
-  const evidence: string[] = [];
-  if (has(f, "hydration", "text content does not match", "did not match server", "server html", "expected server html")) {
-    score += 60;
-    evidence.push("hydration-phrase");
+  if (
+    !has(
+      f,
+      "hydration",
+      "text content does not match",
+      "did not match server",
+      "expected server html",
+    )
+  ) {
+    return null;
   }
-  if (has(f, "client-side exception while loading")) {
-    score += 25;
-    evidence.push("client-exception-loading");
-  }
-  if (score < 40) return null;
   return {
     family: "hydration",
     level: "high",
-    score: Math.min(100, score),
-    evidence,
-    title: "React hydration mismatch",
-    summary: "Server HTML did not match the client’s first render.",
-    why: "Non-deterministic SSR (Date, random, window, auth-branching).",
-    where: f.files[0] || f.components[0] || "SSR/client boundary",
-    fix: "Move browser-only work to useEffect; keep first client render identical to server HTML.",
-    priorityAction: "Remove non-deterministic SSR output",
+    score: 88,
+    evidence: ["hydration-mismatch"],
+    titleHint: "React hydration mismatch",
+  };
+};
+
+const scoreHooks: Scorer = (f) => {
+  if (
+    !has(
+      f,
+      "invalid hook call",
+      "rendered fewer hooks",
+      "hooks can only be called",
+      "change in the order of hooks",
+    )
+  ) {
+    return null;
+  }
+  return {
+    family: "react",
+    level: "high",
+    score: 90,
+    evidence: ["rules-of-hooks"],
+    titleHint: "Rules of Hooks violation",
   };
 };
 
 const scoreNetwork: Scorer = (f) => {
   let score = 0;
   const evidence: string[] = [];
-  if (has(f, "failed to fetch", "networkerror", "net::", "load failed", "econnrefused", "etimedout", "err_connection")) {
+  if (has(f, "failed to fetch", "networkerror", "econnrefused", "err_connection")) {
     score += 45;
     evidence.push("network-failure");
   }
@@ -538,85 +509,13 @@ const scoreNetwork: Scorer = (f) => {
     score += 30;
     evidence.push(`http:${f.httpStatus}`);
   }
-  if (score < 30) return null;
+  if (score < 35) return null;
   return {
     family: "network",
     level: f.httpStatus && f.httpStatus >= 500 ? "high" : "medium",
     score: Math.min(100, score),
     evidence,
-    title: f.httpStatus ? `HTTP ${f.httpStatus} / network failure` : "Network or CORS failure",
-    summary: "Fetch did not complete or upstream returned an error status.",
-    why: "Offline, CORS, wrong origin, upstream down, or 4xx/5xx.",
-    where: "fetch / Supabase client · gateway · CORS config",
-    fix: "Inspect Network panel, fix CORS allow-list, handle 4xx, backoff on 5xx/429.",
-    priorityAction: "Inspect the failing request in Network panel",
-  };
-};
-
-const scoreTanstack: Scorer = (f) => {
-  let score = 0;
-  const evidence: string[] = [];
-  if (has(f, "usequery", "usesuspensequery", "queryclient", "react-query", "@tanstack/react-query")) {
-    score += 40;
-    evidence.push("query-api");
-  }
-  if (has(f, "createroute", "routetree", "@tanstack/react-router", "search params", "path params")) {
-    score += 35;
-    evidence.push("router-api");
-  }
-  if (has(f, "query failed", "loader failed", "notfoundcomponent")) {
-    score += 25;
-    evidence.push("query-or-loader-fail");
-  }
-  if (score < 35) return null;
-  return {
-    family: "tanstack",
-    level: "medium",
-    score: Math.min(100, score),
-    evidence,
-    title: "TanStack Query / Router failure",
-    summary: "Query, mutation, loader, or route param handling threw.",
-    why: "Rejected queryFn, missing suspense boundary, bad params, or aggressive refetch.",
-    where: f.files[0] || "useQuery / route loader",
-    fix: "Inspect queryFn error, validate params, raise staleTime, cap retries.",
-    priorityAction: "Inspect failed queryFn / loader",
-  };
-};
-
-const scoreTypeNull: Scorer = (f) => {
-  let score = 0;
-  const evidence: string[] = [];
-  if (f.isTypeError) {
-    score += 25;
-    evidence.push("TypeError");
-  }
-  if (f.isReferenceError) {
-    score += 30;
-    evidence.push("ReferenceError");
-  }
-  const prop = f.message.match(
-    /cannot read propert(?:y|ies) ['"]?([a-z0-9_]+)['"]? of (undefined|null)/i,
-  );
-  if (prop) {
-    score += 40;
-    evidence.push(`prop:${prop[1]}`, `of:${prop[2]}`);
-  }
-  if (has(f, "is not a function", "is not defined", "undefined is not")) {
-    score += 30;
-    evidence.push("not-a-function-or-defined");
-  }
-  if (score < 35) return null;
-  return {
-    family: "type_null",
-    level: "medium",
-    score: Math.min(100, score),
-    evidence,
-    title: prop ? `Null/undefined access (.${prop[1]})` : "Type / Reference error",
-    summary: "Runtime read/call on null, undefined, or missing binding.",
-    why: "Optional data not ready, wrong shape, or missing import.",
-    where: f.appFrames[0] || f.files[0] || f.components[0] || "runtime",
-    fix: "Optional chaining, early returns, align types with runtime data.",
-    priorityAction: "Guard the failing property/call",
+    titleHint: f.httpStatus ? `HTTP ${f.httpStatus}` : "Network failure",
   };
 };
 
@@ -627,13 +526,9 @@ const scoreConstraint: Scorer = (f) => {
     score += 45;
     evidence.push(...f.sqlstates.map((s) => `sqlstate:${s}`));
   }
-  if (has(f, "violates foreign key", "violates unique", "duplicate key", "violates check", "violates not-null")) {
+  if (has(f, "violates foreign key", "violates unique", "duplicate key", "user_id_fkey")) {
     score += 40;
-    evidence.push("constraint-phrase");
-  }
-  if (has(f, "is not present in table", "user_id_fkey")) {
-    score += 35;
-    evidence.push("fk-missing-parent");
+    evidence.push("constraint");
   }
   if (score < 35) return null;
   return {
@@ -641,195 +536,296 @@ const scoreConstraint: Scorer = (f) => {
     level: "medium",
     score: Math.min(100, score),
     evidence,
-    title: "Database constraint violation",
-    summary: "INSERT/UPDATE hit unique, FK, check, or not-null.",
-    why: "Missing parent row, duplicate key, or invalid value.",
-    where: f.tables[0] ? `public.${f.tables[0]}` : "table constraint",
-    fix: "Pre-validate, use real auth.users ids for FKs, ON CONFLICT where appropriate.",
-    priorityAction: "Fix the named constraint before retrying writes",
-    sqlHints: ["SELECT id, email FROM auth.users ORDER BY created_at DESC LIMIT 20;"],
+    titleHint: "Database constraint violation",
   };
 };
 
 const scoreGateway: Scorer = (f) => {
-  let score = 0;
-  const evidence: string[] = [];
-  if (has(f, "skippe", "lovable_api_key", "model is not supported", "/v1/responses", "/v1/chat/completions")) {
-    score += 45;
-    evidence.push("gateway-phrase");
+  if (
+    !has(
+      f,
+      "skippe",
+      "lovable_api_key",
+      "model is not supported",
+      "/v1/responses",
+      "/v1/chat/completions",
+    )
+  ) {
+    return null;
   }
-  if (has(f, "openai", "gemini", "anthropic") && has(f, "error", "fail", "401", "429")) {
-    score += 25;
-    evidence.push("model-vendor");
-  }
-  if (score < 40) return null;
   return {
     family: "gateway",
     level: "medium",
-    score: Math.min(100, score),
-    evidence,
-    title: "AI / Skippe gateway failure",
-    summary: "External model or Skippe gateway call failed.",
-    why: "Missing key, wrong vendor endpoint, or upstream rate limit.",
-    where: "skippe.server.ts · Cloud → Secrets",
-    fix: "Verify LOVABLE_API_KEY, correct /v1 path per vendor, backoff on 429.",
-    priorityAction: "Check gateway key + endpoint path",
+    score: 70,
+    evidence: ["gateway"],
+    titleHint: "AI / Skippe gateway failure",
   };
 };
 
 const scoreStackOverflow: Scorer = (f) => {
-  let score = 0;
-  const evidence: string[] = [];
-  if (has(f, "maximum call stack", "too much recursion", "rangeerror")) {
-    score += 55;
-    evidence.push("stack-overflow");
+  if (!has(f, "maximum call stack", "too much recursion") && f.stackDepth < 80) {
+    return null;
   }
-  if (f.stackDepth > 80) {
-    score += 20;
-    evidence.push(`depth:${f.stackDepth}`);
-  }
-  if (score < 50) return null;
   return {
     family: "stack_overflow",
     level: "high",
-    score: Math.min(100, score),
-    evidence,
-    title: "Stack overflow / excessive recursion",
-    summary: "Call stack exceeded limits.",
-    why: "Infinite recursion or pathological mutual calls.",
-    where: f.appFrames[0] || f.files[0] || "recursive path",
-    fix: "Find missing base case; break cycle; avoid recursive render paths.",
-    priorityAction: "Break the recursive path",
+    score: 85,
+    evidence: ["stack-overflow"],
+    titleHint: "Stack overflow / recursion",
   };
 };
 
 const ALL_SCORERS: Scorer[] = [
+  scoreNullAccess,
   scorePostgrest,
   scoreAuth,
-  scoreReact,
   scoreHydration,
+  scoreHooks,
   scoreNetwork,
-  scoreTanstack,
-  scoreTypeNull,
   scoreConstraint,
   scoreGateway,
   scoreStackOverflow,
 ];
 
-/* ──────────────────────────── main API ──────────────────────────── */
+/* ── ONE confirmed cause (this is the important part) ── */
+
+function synthesizeConfirmed(
+  f: ErrorFeatures,
+  top: ScorerResult | null,
+  security: SecurityDiagnosis | null,
+): ConfirmedCause {
+  const loc =
+    f.primaryFile && f.primaryLine != null
+      ? `${f.primaryFile}:${f.primaryLine}`
+      : f.primaryFile || f.appFrames[0] || null;
+
+  // Security wins when critical/high
+  if (security && (security.level === "critical" || security.level === "high")) {
+    return {
+      statement: security.why.split(".")[0] + ".",
+      fix: security.priorityAction || security.fix.split(".")[0] + ".",
+      location: loc,
+      anchor: security.evidence[0] ?? security.category,
+      confidence: security.confidence,
+    };
+  }
+
+  // Null property — most precise path
+  if (f.nullProp && f.nullBase) {
+    const where = loc ? ` at ${loc}` : "";
+    return {
+      statement: `Code read property '${f.nullProp}' on ${f.nullBase}${where}. The base value was ${f.nullBase} at runtime (often missing env/config, failed fetch, or optional data).`,
+      fix: loc
+        ? `In ${loc}, stop using non-null assertions on that value. Use optional chaining (?.${f.nullProp}) or a default before access.`
+        : `Use optional chaining (?.${f.nullProp}) or guard with an early return before reading '${f.nullProp}'.`,
+      location: loc,
+      anchor: f.nullProp,
+      confidence: loc ? 0.93 : 0.82,
+    };
+  }
+
+  // Schema cache
+  if (top?.evidence.includes("schema-cache") || has(f, "schema cache")) {
+    const target = f.tables[0] || f.functions[0] || "object";
+    return {
+      statement: `PostgREST schema cache does not expose '${target}'. Live DB is behind the app or cache was not reloaded.`,
+      fix: `In Cloud → SQL editor, create/alter public.${target} from migrations, GRANT privileges, then run: NOTIFY pgrst, 'reload schema';`,
+      location: loc,
+      anchor: target,
+      confidence: 0.9,
+    };
+  }
+
+  // RLS
+  if (top?.evidence.includes("rls") || has(f, "42501", "row-level security")) {
+    const target = f.tables[0] || "table";
+    return {
+      statement: `Postgres RLS or missing GRANT blocked access to '${target}'.`,
+      fix: `Inspect policies: SELECT * FROM pg_policies WHERE tablename = '${target}'; Add/fix policy for the current role, then NOTIFY pgrst, 'reload schema';`,
+      location: loc,
+      anchor: target,
+      confidence: 0.88,
+    };
+  }
+
+  // Hooks
+  if (top?.evidence.includes("rules-of-hooks")) {
+    return {
+      statement:
+        "React detected a Rules of Hooks violation (conditional hooks or changing order between renders).",
+      fix: loc
+        ? `In ${loc}, move all hooks to the top level of the component and keep call order identical every render.`
+        : "Move all hooks to the top level; never call hooks inside conditions or loops.",
+      location: loc,
+      anchor: "hooks",
+      confidence: 0.91,
+    };
+  }
+
+  // Hydration
+  if (top?.family === "hydration") {
+    return {
+      statement:
+        "Server-rendered HTML did not match the client’s first render (non-deterministic SSR).",
+      fix: loc
+        ? `In ${loc}, remove Date/random/window usage during render; move browser-only logic into useEffect.`
+        : "Keep the first client render identical to server HTML; defer browser APIs to useEffect.",
+      location: loc,
+      anchor: "hydration",
+      confidence: 0.9,
+    };
+  }
+
+  // Auth
+  if (top?.family === "auth") {
+    return {
+      statement:
+        "Authentication or session check failed (credentials, JWT, or role).",
+      fix: "Confirm auth.users email shape, reset password if needed, ensure user_roles row exists, sign in again.",
+      location: loc,
+      anchor: f.httpStatus ? `http:${f.httpStatus}` : "auth",
+      confidence: 0.8,
+    };
+  }
+
+  // Constraint
+  if (top?.family === "constraint") {
+    const st = f.sqlstates[0] || "constraint";
+    return {
+      statement: `Database rejected the write due to constraint (${st}).`,
+      fix: "Use a real auth.users id for FKs, handle ON CONFLICT for uniques, validate required fields before INSERT.",
+      location: loc,
+      anchor: st,
+      confidence: 0.85,
+    };
+  }
+
+  // Network
+  if (top?.family === "network") {
+    return {
+      statement: f.httpStatus
+        ? `Request failed with HTTP ${f.httpStatus}.`
+        : "Network request failed (fetch error or CORS).",
+      fix: "Open Network panel for the failing URL; fix CORS/origin or handle the status; backoff on 429/5xx.",
+      location: loc,
+      anchor: f.httpStatus ? String(f.httpStatus) : "network",
+      confidence: 0.75,
+    };
+  }
+
+  // Gateway
+  if (top?.family === "gateway") {
+    return {
+      statement: "Skippe / AI gateway call failed (key, path, or upstream).",
+      fix: "Verify LOVABLE_API_KEY in Cloud → Secrets and the correct vendor endpoint path.",
+      location: loc,
+      anchor: "gateway",
+      confidence: 0.78,
+    };
+  }
+
+  // Stack overflow
+  if (top?.family === "stack_overflow") {
+    return {
+      statement: "Call stack exceeded limits (infinite or deep recursion).",
+      fix: loc
+        ? `In ${loc}, add a base case or break the recursive cycle.`
+        : "Find the recursive path and add a terminating condition.",
+      location: loc,
+      anchor: "stack",
+      confidence: 0.87,
+    };
+  }
+
+  // Fallback — still one statement, not a list
+  return {
+    statement: f.message
+      ? `${f.name}: ${f.message.slice(0, 160)}`
+      : "Unclassified runtime failure.",
+    fix: loc
+      ? `Inspect ${loc}; reproduce with logging around that frame.`
+      : "Copy the stack, resolve sourcemaps, inspect the top app frame.",
+    location: loc,
+    anchor: f.name,
+    confidence: 0.4,
+  };
+}
+
+/* ── main API ── */
 
 export function diagnoseBug(error: unknown): BugDiagnosis | null {
   if (error == null) return null;
 
   const features = extractFeatures(error);
   const security = diagnoseSecurityRisk(error);
-  const scorerResults: ScorerResult[] = [];
+  const scorers: ScorerResult[] = [];
 
-  for (const scorer of ALL_SCORERS) {
+  for (const s of ALL_SCORERS) {
     try {
-      const r = scorer(features);
-      if (r && r.score >= 25) scorerResults.push(r);
+      const r = s(features);
+      if (r && r.score >= 30) scorers.push(r);
     } catch {
-      /* scorer must never throw */
+      /* never throw from scorer */
     }
   }
+  scorers.sort((a, b) => b.score - a.score);
 
-  scorerResults.sort((a, b) => b.score - a.score);
-
-  // Security critical/high wins primary slot
-  if (security && (security.level === "critical" || security.level === "high")) {
-    return {
-      isBug: true,
-      level: security.level,
-      family: "security",
-      title: security.title,
-      summary: security.risk,
-      why: security.why,
-      where: security.where,
-      fix: security.fix,
-      priorityAction: security.priorityAction,
-      message: security.message,
-      score: security.score,
-      confidence: security.confidence,
-      evidence: security.evidence,
-      features,
-      scorers: scorerResults,
-      security,
-      isSecurityRelated: true,
-      fingerprint: fingerprintError(features),
-      sqlHints: security.sqlHints,
-    };
-  }
-
-  if (scorerResults.length === 0 && !security) {
-    // Unknown — still return a minimal diagnosis so UI can show something
-    if (features.message.length < 2 && features.stackDepth === 0) return null;
-    return {
-      isBug: true,
-      level: "low",
-      family: "unknown",
-      title: `${features.name}: unclassified`,
-      summary: "No scorer reached confidence threshold.",
-      why: "New failure mode or truncated message.",
-      where: features.appFrames[0] || features.files[0] || "unknown",
-      fix: "Copy stack, resolve sourcemap, reproduce with logging.",
-      priorityAction: "Copy full stack and resolve top frame",
-      message: features.fullText.slice(0, 2500),
-      score: 15,
-      confidence: 0.25,
-      evidence: [features.name],
-      features,
-      scorers: [],
-      security,
-      isSecurityRelated: Boolean(security),
-      fingerprint: fingerprintError(features),
-    };
-  }
-
-  const top = scorerResults[0] ?? null;
-  const familyCount = new Set(scorerResults.map((s) => s.family)).size;
-
-  // Confidence from top score + agreement across scorers
-  let confidence = Math.min(0.97, 0.35 + (top?.score ?? 0) / 150 + Math.min(familyCount, 3) * 0.06);
-  if (security) confidence = Math.min(0.98, confidence + 0.04);
-
-  let level: BugLevel = top?.level ?? "low";
-  if (familyCount >= 3 && level !== "critical") {
-    const order: BugLevel[] = ["info", "low", "medium", "high", "critical"];
-    const i = order.indexOf(level);
-    if (i >= 0 && i < order.length - 1) level = order[i + 1];
-  }
-
-  const score = Math.min(
-    100,
-    Math.round((top?.score ?? 20) * confidence + familyCount * 3),
-  );
-
-  // If security exists but wasn't critical/high, attach it
-  if (!top) {
+  if (
+    scorers.length === 0 &&
+    !security &&
+    features.message.length < 2 &&
+    features.stackDepth === 0
+  ) {
     return null;
   }
+
+  const top = scorers[0] ?? null;
+  const confirmed = synthesizeConfirmed(features, top, security);
+
+  // Family / level
+  let family: BugFamily = top?.family ?? "unknown";
+  let level: BugLevel = top?.level ?? "low";
+  let score = top?.score ?? 20;
+
+  if (security && (security.level === "critical" || security.level === "high")) {
+    family = "security";
+    level = security.level;
+    score = security.score;
+  }
+
+  const confidence = Math.min(
+    0.97,
+    Math.max(confirmed.confidence, (top?.score ?? 20) / 120 + 0.35),
+  );
+
+  const title =
+    family === "security" && security
+      ? security.title
+      : top?.titleHint ||
+        (features.nullProp
+          ? `Null access: reading '${features.nullProp}'`
+          : `${features.name}`);
 
   return {
     isBug: true,
     level,
-    family: top.family,
-    title: top.title,
-    summary: top.summary,
-    why: top.why,
-    where: top.where,
-    fix: top.fix,
-    priorityAction: top.priorityAction,
+    family,
+    title,
+    confirmed,
+    summary: confirmed.statement,
     message: features.fullText.slice(0, 2500),
-    score,
+    score: Math.round(Math.min(100, score * confidence + 5)),
     confidence: Math.round(confidence * 100) / 100,
-    evidence: top.evidence,
+    evidence: top?.evidence ?? [features.name],
     features,
-    scorers: scorerResults,
+    scorers,
     security,
     isSecurityRelated: Boolean(security),
     fingerprint: fingerprintError(features),
-    sqlHints: top.sqlHints,
+    sqlHints:
+      top?.evidence.includes("schema-cache") || top?.evidence.includes("rls")
+        ? ["NOTIFY pgrst, 'reload schema';"]
+        : undefined,
   };
 }
 
@@ -842,40 +838,29 @@ export function formatBugDiagnosisForCopy(d: BugDiagnosis): string {
     `[BUG ${d.level.toUpperCase()} · ${d.family} · score ${d.score} · conf ${d.confidence} · fp ${d.fingerprint}]`,
     d.title,
     "",
-    `Priority: ${d.priorityAction}`,
-    `Summary: ${d.summary}`,
-    `Why: ${d.why}`,
-    `Where: ${d.where}`,
-    `Fix: ${d.fix}`,
+    "CONFIRMED CAUSE:",
+    d.confirmed.statement,
     "",
-    "Detection evidence:",
-    ...d.evidence.map((e) => `  - ${e}`),
+    "CONFIRMED FIX:",
+    d.confirmed.fix,
   ];
-
+  if (d.confirmed.location) {
+    lines.push("", `Location: ${d.confirmed.location}`);
+  }
+  if (d.confirmed.anchor) {
+    lines.push(`Anchor: ${d.confirmed.anchor}`);
+  }
+  lines.push("", "Evidence:", ...d.evidence.map((e) => `  - ${e}`));
   if (d.scorers.length > 1) {
-    lines.push("", "All scorers:");
-    for (const s of d.scorers) {
-      lines.push(`  - [${s.level}/${s.score}] ${s.family}: ${s.title}`);
-    }
+    lines.push(
+      "",
+      "Other scorers:",
+      ...d.scorers.slice(1).map((s) => `  - [${s.score}] ${s.family}: ${s.titleHint}`),
+    );
   }
-
-  const f = d.features;
-  lines.push(
-    "",
-    "Features:",
-    `  name=${f.name} postgrest=${f.isPostgrestShape} http=${f.httpStatus ?? "-"} stackDepth=${f.stackDepth}`,
-    `  tables=${f.tables.join(",") || "-"} fns=${f.functions.join(",") || "-"}`,
-    `  pgrst=${f.pgrstCodes.join(",") || "-"} sqlstate=${f.sqlstates.join(",") || "-"}`,
-  );
-
-  if (d.sqlHints?.length) {
-    lines.push("", "SQL hints:", ...d.sqlHints.map((q) => `  ${q}`));
-  }
-
   if (d.security) {
     lines.push("", "── Security ──", formatSecurityDiagnosisForCopy(d.security));
   }
-
   lines.push("", "Raw:", d.message);
   return lines.join("\n");
 }
