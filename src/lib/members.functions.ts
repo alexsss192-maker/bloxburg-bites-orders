@@ -43,11 +43,32 @@ export const getMemberProfile = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => usernameInput.parse(d))
   .handler(async ({ data }) => {
     const supabase = serverPublicClient();
-    const { data: rows, error } = await supabase.rpc("get_member_profile" as never, {
+
+    // Prefer open_or_get_member_profile: creates/links a members row when the
+    // username already has orders (fixes "No Panda member yet" while /history
+    // still shows orders). Falls back to get_member_profile if the new RPC
+    // is not deployed yet.
+    let rows: unknown = null;
+    let error: { message: string } | null = null;
+
+    const opened = await supabase.rpc("open_or_get_member_profile" as never, {
       _username: data.username,
     } as never);
+
+    if (opened.error) {
+      const legacy = await supabase.rpc("get_member_profile" as never, {
+        _username: data.username,
+      } as never);
+      rows = legacy.data;
+      error = legacy.error;
+    } else {
+      rows = opened.data;
+    }
+
     if (error) throw new Error(error.message);
-    const first = (Array.isArray(rows) ? rows[0] : rows) as unknown as MemberProfile | undefined;
+    const first = (Array.isArray(rows) ? rows[0] : rows) as unknown as
+      | MemberProfile
+      | undefined;
     return first ?? null;
   });
 
