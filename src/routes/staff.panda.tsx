@@ -252,7 +252,7 @@ function PandaPage() {
     error: Error;
     context?: Record<string, unknown>;
   } | null>(null);
-  const [mode, setMode] = useState<SkippeMode>("gpt5_nano");
+  const [mode, setMode] = useState<SkippeMode>("lite_25");
   const fileRef = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
 
@@ -334,7 +334,7 @@ function PandaPage() {
         ...m,
         {
           role: "assistant",
-          content: res.auto ? `${res.reply}\n\n_Answered by ${res.model_label}._` : res.reply,
+          content: `${res.reply}\n\n_Answered by ${res.model_label}._`,
           thinking: res.thinking || undefined,
           runs: res.runs?.length ? res.runs : undefined,
         },
