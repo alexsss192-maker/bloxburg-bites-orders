@@ -32,6 +32,7 @@ import {
   Brain,
   Camera,
   ChevronDown,
+  Film,
   ImagePlus,
   Loader2,
   Monitor,
@@ -310,22 +311,148 @@ function PandaPage() {
     toast.success("Conversation cleared");
   }
 
+  /** Grab one frame from a <video> → JPEG data URL. */
+  function frameFromVideo(video: HTMLVideoElement): string | null {
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (!w || !h) return null;
+    const canvas = document.createElement("canvas");
+    const max = 1280;
+    const scale = Math.min(1, max / Math.max(w, h));
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    try {
+      return canvas.toDataURL("image/jpeg", 0.85);
+    } catch {
+      // Tainted canvas (rare) — fail soft
+      return null;
+    }
+  }
+
+  /** Wait until video has real dimensions (or timeout). */
+  function waitForVideoReady(
+    video: HTMLVideoElement,
+    timeoutMs = 4000,
+  ): Promise<boolean> {
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - start > timeoutMs) {
+          resolve(false);
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      video.addEventListener("loadeddata", () => tick(), { once: true });
+      video.addEventListener("loadedmetadata", () => tick(), { once: true });
+      tick();
+    });
+  }
+
+  /** Pull evenly spaced frames from an uploaded video file. */
+  async function framesFromVideoFile(
+    file: File,
+    maxFrames: number,
+  ): Promise<string[]> {
+    const url = URL.createObjectURL(file);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.src = url;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("Couldn’t read that video"));
+      });
+
+      const duration =
+        Number.isFinite(video.duration) && video.duration > 0
+          ? video.duration
+          : 1;
+      const count = Math.max(1, Math.min(maxFrames, 9));
+      const out: string[] = [];
+
+      for (let i = 0; i < count; i++) {
+        const t = Math.min(duration * ((i + 0.5) / count), Math.max(0, duration - 0.05));
+        video.currentTime = t;
+        await new Promise<void>((resolve) => {
+          const onSeeked = () => {
+            video.removeEventListener("seeked", onSeeked);
+            resolve();
+          };
+          video.addEventListener("seeked", onSeeked);
+        });
+        const frame = frameFromVideo(video);
+        if (frame) out.push(frame);
+      }
+      return out;
+    } finally {
+      URL.revokeObjectURL(url);
+      video.src = "";
+    }
+  }
+
   async function addFiles(files: FileList | null) {
     if (!files) return;
-    const remaining = 9 - images.length;
-    const arr = Array.from(files).slice(0, remaining);
-    const results = await Promise.all(
-      arr.map(
-        (f) =>
-          new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(f);
-          }),
-      ),
-    );
-    setImages((prev) => [...prev, ...results].slice(0, 9));
+    let remaining = 9 - images.length;
+    if (remaining <= 0) {
+      toast.error("Max 9 images — remove one first");
+      return;
+    }
+
+    const next: string[] = [];
+    for (const file of Array.from(files)) {
+      if (remaining <= 0) break;
+
+      if (file.type.startsWith("video/")) {
+        toast.message(`Reading video frames from ${file.name}…`);
+        try {
+          const frames = await framesFromVideoFile(file, remaining);
+          next.push(...frames);
+          remaining -= frames.length;
+          if (frames.length === 0) {
+            toast.error("No frames could be read from that video");
+          } else {
+            toast.success(
+              `Added ${frames.length} frame${frames.length === 1 ? "" : "s"} from video`,
+            );
+          }
+        } catch (err) {
+          console.error(err);
+          toast.error(
+            err instanceof Error ? err.message : "Video read failed",
+          );
+        }
+        continue;
+      }
+
+      if (file.type.startsWith("image/") || file.type === "") {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        next.push(dataUrl);
+        remaining -= 1;
+      }
+    }
+
+    if (next.length > 0) {
+      setImages((prev) => [...prev, ...next].slice(0, 9));
+    }
   }
 
   function stopShare() {
@@ -343,33 +470,40 @@ function PandaPage() {
     };
   }, []);
 
-  // Attach stream when the split-screen video element mounts
+  // Keep <video> attached whenever share is live and the panel is open
   useEffect(() => {
-    if (!sharing || !shareStreamRef.current || !shareVideoRef.current) return;
-    shareVideoRef.current.srcObject = shareStreamRef.current;
-    void shareVideoRef.current.play().catch(() => {});
+    if (!sharing || !splitScreen || !shareStreamRef.current) return;
+    let cancelled = false;
+
+    const attach = async () => {
+      // Retry a few times — React may not have mounted the video yet
+      for (let i = 0; i < 20 && !cancelled; i++) {
+        const el = shareVideoRef.current;
+        if (el && shareStreamRef.current) {
+          if (el.srcObject !== shareStreamRef.current) {
+            el.srcObject = shareStreamRef.current;
+          }
+          try {
+            await el.play();
+          } catch {
+            /* autoplay policies — muted should allow it */
+          }
+          const ready = await waitForVideoReady(el, 1500);
+          if (ready) return;
+        }
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    };
+
+    void attach();
+    return () => {
+      cancelled = true;
+    };
   }, [sharing, splitScreen]);
 
-  /** Grab one frame from a live MediaStream → data URL. */
-  function frameFromVideo(video: HTMLVideoElement): string | null {
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    if (!w || !h) return null;
-    const canvas = document.createElement("canvas");
-    // Cap longest side so Skippe image payloads stay reasonable
-    const max = 1280;
-    const scale = Math.min(1, max / Math.max(w, h));
-    canvas.width = Math.round(w * scale);
-    canvas.height = Math.round(h * scale);
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.85);
-  }
-
   /**
-   * One-shot screenshot via the browser share picker (pick tab / window / screen).
-   * Use this to capture your Bloxburg fridge without a phone photo.
+   * One-shot screenshot via the browser share picker (pick window / screen).
+   * Prefer a *different* window than Skippe — capturing this tab often goes black.
    */
   async function captureScreenshot() {
     if (images.length >= 9) {
@@ -384,21 +518,43 @@ function PandaPage() {
     let stream: MediaStream | null = null;
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 5 },
+        video: {
+          // Prefer a window/monitor — not the Skippe tab itself
+          displaySurface: "window",
+          frameRate: 10,
+        } as MediaTrackConstraints,
         audio: false,
+        // @ts-expect-error — Chrome extension of getDisplayMedia options
+        preferCurrentTab: false,
+        // @ts-expect-error
+        selfBrowserSurface: "exclude",
+        // @ts-expect-error
+        surfaceSwitching: "include",
+        // @ts-expect-error
+        systemAudio: "exclude",
       });
       const video = document.createElement("video");
       video.muted = true;
       video.playsInline = true;
+      video.setAttribute("playsinline", "true");
       video.srcObject = stream;
       await video.play();
-      // Wait one frame so dimensions populate
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const ready = await waitForVideoReady(video, 5000);
+      if (!ready) {
+        toast.error(
+          "Capture stayed blank — pick your game window (not this Skippe tab)",
+        );
+        return;
+      }
+      // Extra paint so the first frame isn’t empty on some GPUs
+      await new Promise((r) => setTimeout(r, 120));
       const dataUrl = frameFromVideo(video);
       video.pause();
       video.srcObject = null;
       if (!dataUrl) {
-        toast.error("Couldn’t grab that frame — try again");
+        toast.error(
+          "Couldn’t grab that frame — try “Window” (Roblox) instead of “This tab”",
+        );
         return;
       }
       setImages((prev) => [...prev, dataUrl].slice(0, 9));
@@ -417,8 +573,8 @@ function PandaPage() {
   }
 
   /**
-   * Live split-screen share: keep a window/screen open (e.g. full fridge view)
-   * and snap frames into Skippe’s image tray whenever you want.
+   * Live split-screen share of another window (e.g. full Bloxburg fridge).
+   * Snap frames into the image tray — Skippe reads those on Send.
    */
   async function startFridgeShare() {
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -426,29 +582,63 @@ function PandaPage() {
       return;
     }
     try {
-      stopShare();
+      // Open the panel first so the <video> exists when the stream arrives
+      setSplitScreen(true);
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: 15 },
+        video: {
+          displaySurface: "window",
+          frameRate: 30,
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        } as MediaTrackConstraints,
         audio: false,
+        // @ts-expect-error Chrome options
+        preferCurrentTab: false,
+        // @ts-expect-error
+        selfBrowserSurface: "exclude",
+        // @ts-expect-error
+        surfaceSwitching: "include",
+        // @ts-expect-error
+        systemAudio: "exclude",
       });
+
+      // Stop any previous share after we successfully got a new one
+      shareStreamRef.current?.getTracks().forEach((t) => t.stop());
       shareStreamRef.current = stream;
-      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+
+      const track = stream.getVideoTracks()[0];
+      track?.addEventListener("ended", () => {
         stopShare();
         toast.message("Screen share ended");
       });
-      setSplitScreen(true);
+
       setSharing(true);
-      // Attach after state so the video element is mounted
-      requestAnimationFrame(() => {
-        if (shareVideoRef.current) {
-          shareVideoRef.current.srcObject = stream;
-          void shareVideoRef.current.play().catch(() => {});
+
+      // Immediate attach attempt
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      if (shareVideoRef.current) {
+        shareVideoRef.current.srcObject = stream;
+        try {
+          await shareVideoRef.current.play();
+        } catch {
+          /* muted autoplay should work */
         }
-      });
-      toast.success("Fridge share live — snap frames into Skippe anytime");
+        const ready = await waitForVideoReady(shareVideoRef.current, 5000);
+        if (!ready) {
+          toast.message(
+            "Share is connected but still loading — wait a second, then Snap",
+          );
+        } else {
+          toast.success("Fridge share live — Snap frames for Skippe anytime");
+        }
+      } else {
+        toast.success("Fridge share started");
+      }
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") {
         toast.message("Screen share cancelled");
+        if (!shareStreamRef.current) setSplitScreen(false);
       } else {
         toast.error("Couldn’t start screen share");
         console.error(err);
@@ -456,7 +646,7 @@ function PandaPage() {
     }
   }
 
-  function snapFromShare() {
+  async function snapFromShare() {
     if (images.length >= 9) {
       toast.error("Max 9 images — remove one first");
       return;
@@ -466,9 +656,18 @@ function PandaPage() {
       toast.error("Start fridge share first");
       return;
     }
+    if (video.videoWidth === 0) {
+      const ready = await waitForVideoReady(video, 3000);
+      if (!ready) {
+        toast.error(
+          "Share is still blank — pick the Roblox/Bloxburg window, not this tab",
+        );
+        return;
+      }
+    }
     const dataUrl = frameFromVideo(video);
     if (!dataUrl) {
-      toast.error("Wait a moment for the share to load");
+      toast.error("Couldn’t snap — try Resume share on the game window");
       return;
     }
     setImages((prev) => [...prev, dataUrl].slice(0, 9));
@@ -707,9 +906,29 @@ function PandaPage() {
               onClick={() => fileRef.current?.click()}
               disabled={images.length >= 9}
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
-              title="Upload image from device"
+              title="Upload images or a video (video → frames for Skippe)"
             >
               <ImagePlus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (fileRef.current) {
+                  fileRef.current.accept = "video/*";
+                  fileRef.current.click();
+                  // restore so image+video still works next time
+                  window.setTimeout(() => {
+                    if (fileRef.current) {
+                      fileRef.current.accept = "image/*,video/*";
+                    }
+                  }, 500);
+                }
+              }}
+              disabled={images.length >= 9}
+              className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
+              title="Upload a video — Skippe reads several frames"
+            >
+              <Film className="h-4 w-4" />
             </button>
             <button
               type="button"
@@ -727,11 +946,11 @@ function PandaPage() {
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               multiple
               hidden
               onChange={(e) => {
-                addFiles(e.target.files);
+                void addFiles(e.target.files);
                 if (fileRef.current) fileRef.current.value = "";
               }}
             />
@@ -758,9 +977,9 @@ function PandaPage() {
             </Button>
           </div>
           <p className="mt-2 text-[0.7rem] text-ink/45">
-            {thinkingCapable
-              ? "GPT-5 Nano shows its thinking above each reply. Camera = in-browser screenshot · Fridge share = live split view of another window."
-              : "Camera = screenshot a tab/window · Fridge share = split-screen live view (snap frames for Skippe)."}
+            📷 Screenshot or 🖥️ Fridge share: pick the <b>Roblox/game window</b>{" "}
+            (not this Skippe tab — that often captures black). 🎬 Video upload
+            pulls several frames Skippe can read. Max 9 frames per message.
           </p>
         </div>
       </div>
