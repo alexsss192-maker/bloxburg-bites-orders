@@ -6,6 +6,38 @@ import {
   SKIPPE_MODEL_LABELS,
 } from "@/lib/skippe-models";
 
+/**
+ * Kitchen tools stay ON when this matches (menu edit, discounts, orders, …).
+ * Tools turn OFF only for pure “look at this screenshot” chats (no action words)
+ * so vision scans skip the database. All create/update/delete tools still exist.
+ */
+const KITCHEN_ACTION_RE =
+  /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier|delete|update|price|fee|bulk|edit|change|rename|remove|put|save|enable|disable|activate|deactivate|prepare|ready|deliver|cancel|item|items|them)\b/i;
+
+/** Pull roles from JWT claims when present — avoids a user_roles table hit. */
+function rolesFromClaims(claims: unknown): string[] {
+  if (!claims || typeof claims !== "object") return [];
+  const c = claims as Record<string, unknown>;
+  const buckets: unknown[] = [
+    c.role,
+    c.roles,
+    (c.app_metadata as Record<string, unknown> | undefined)?.role,
+    (c.app_metadata as Record<string, unknown> | undefined)?.roles,
+    (c.user_metadata as Record<string, unknown> | undefined)?.role,
+    (c.user_metadata as Record<string, unknown> | undefined)?.roles,
+  ];
+  const out: string[] = [];
+  for (const b of buckets) {
+    if (typeof b === "string" && b.trim()) out.push(b.trim());
+    if (Array.isArray(b)) {
+      for (const x of b) {
+        if (typeof x === "string" && x.trim()) out.push(x.trim());
+      }
+    }
+  }
+  return Array.from(new Set(out));
+}
+
 export type { SkippeMode } from "@/lib/skippe-models";
 
 export {
@@ -87,30 +119,6 @@ export const pandaChat = createServerFn({
       runSkippeTurn,
     } = await import("@/lib/skippe.server");
 
-    const { data: roleRows } =
-      await context.supabase
-        .from("user_roles" as never)
-        .select("role")
-        .eq("user_id", context.userId);
-
-    const roles =
-      (
-        (roleRows as unknown as Array<{
-          role: string;
-        }> | null) ?? []
-      ).map((r) => r.role);
-
-    const isAdmin = roles.includes("admin");
-
-    if (
-      !roles.includes("chef") &&
-      !isAdmin
-    ) {
-      throw new Error(
-        "Chef or admin only",
-      );
-    }
-
     const actorEmail =
       (
         context.claims as
@@ -118,69 +126,59 @@ export const pandaChat = createServerFn({
           | undefined
       )?.email ?? null;
 
-    const { data: profile } =
-      await context.supabase
-        .from("staff_profiles" as never)
-        .select("username")
-        .eq(
-          "user_id",
-          context.userId,
-        )
-        .maybeSingle();
+    // Prefer roles from the JWT (0 table reads). Fall back to one user_roles query.
+    let roles = rolesFromClaims(context.claims);
+    if (roles.length === 0) {
+      const { data: roleRows } = await context.supabase
+        .from("user_roles" as never)
+        .select("role")
+        .eq("user_id", context.userId);
+      roles = (
+        (roleRows as unknown as Array<{ role: string }> | null) ?? []
+      ).map((r) => r.role);
+    }
 
-    const staffName =
-      (
-        profile as unknown as
-          | {
-              username?: string;
-            }
-          | null
-      )?.username ??
-      actorEmail?.split("@")[0] ??
-      "Chef";
+    const isAdmin = roles.includes("admin");
+    if (!roles.includes("chef") && !isAdmin) {
+      throw new Error("Chef or admin only");
+    }
 
-    // History comes from the browser (localStorage) — no skippe_messages read.
+    // No staff_profiles read — name from JWT email only (0 extra DB).
+    const staffName = actorEmail?.split("@")[0] || "Chef";
+
+    // History is browser localStorage only — never skippe_messages.
     const history = (data.history ?? []).slice(-16);
 
-    const {
-      model,
-      auto,
-    } = resolveModel(
+    // Pure vision (screenshots / fridge / video frames): no kitchen tools → no
+    // menu/order/discount/audit table hits. Only the AI gateway is used.
+    const visionOnly =
+      data.images.length > 0 &&
+      !KITCHEN_ACTION_RE.test(data.message || "");
+
+    const { model, auto } = resolveModel(
       data.mode,
       data.images.length,
       data.message,
     );
 
-    const turn =
-      await runSkippeTurn({
-        model,
-
-        instructions:
-          buildSkippePrompt({
-            staffName,
-            isAdmin,
-          }),
-
-        history,
-
-        userText: data.message,
-
-        images: data.images,
-
+    const turn = await runSkippeTurn({
+      model,
+      instructions: buildSkippePrompt({
         staffName,
-
-        ctx: {
-          supabase:
-            context.supabase as never,
-
-          userId:
-            context.userId,
-
-          isAdmin,
-
-          actorEmail,
-        },
-      });
+        isAdmin,
+      }),
+      history,
+      userText: data.message,
+      images: data.images,
+      staffName,
+      toolsEnabled: !visionOnly,
+      ctx: {
+        supabase: context.supabase as never,
+        userId: context.userId,
+        isAdmin,
+        actorEmail,
+      },
+    });
 
     const reply =
       turn.reply ||
