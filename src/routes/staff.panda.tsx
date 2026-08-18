@@ -531,7 +531,7 @@ function PandaPage() {
     const h = video.videoHeight;
     if (!w || !h) return null;
     const canvas = document.createElement("canvas");
-    const max = 1024; // keep payloads small to avoid gateway 520s
+    const max = 896; // smaller = faster gateway
     const scale = Math.min(1, max / Math.max(w, h));
     canvas.width = Math.round(w * scale);
     canvas.height = Math.round(h * scale);
@@ -539,7 +539,7 @@ function PandaPage() {
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     try {
-      return canvas.toDataURL("image/jpeg", 0.72);
+      return canvas.toDataURL("image/jpeg", 0.65);
     } catch {
       // Tainted canvas (rare) — fail soft
       return null;
@@ -718,18 +718,18 @@ function PandaPage() {
     if (!sharing || !splitScreen) return;
     let cancelled = false;
     // Cap auto-frames at 6 to keep gateway payloads reliable (520s on huge batches)
-    const intervalMs = 1800;
+    const intervalMs = 2500;
     const id = window.setInterval(() => {
       if (cancelled) return;
       const video = shareVideoRef.current;
       if (!video || video.videoWidth === 0) return;
       setImages((prev) => {
-        if (prev.length >= 6) return prev;
+        if (prev.length >= 4) return prev;
         const dataUrl = frameFromVideo(video);
         if (!dataUrl) return prev;
         // Skip exact duplicate of the last frame (user not scrolling)
         if (prev.length > 0 && prev[prev.length - 1] === dataUrl) return prev;
-        return [...prev, dataUrl].slice(0, 6);
+        return [...prev, dataUrl].slice(0, 4);
       });
     }, intervalMs);
     return () => {
@@ -947,16 +947,24 @@ function PandaPage() {
 
   async function send() {
     if (!input.trim() && images.length === 0) return;
-    const userMsg: Msg = { role: "user", content: input.trim() || "(scan these images)", images: [...images] };
+    // Cap frames per send so the request stays fast/reliable
+    const sendImages = images.slice(0, 4);
+    const userMsg: Msg = {
+      role: "user",
+      content: input.trim() || "(scan these images)",
+      images: [...sendImages],
+    };
     setMessages((m) => [...m, userMsg]);
     setLoading(true);
+    // Short history keeps gateway fast — even shorter when images are attached
+    const historyWindow = sendImages.length > 0 ? 4 : 8;
     const history = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .slice(-16)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .slice(-historyWindow)
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 800) }));
     const payload = {
       message: input.trim(),
-      images: images.map((d) => ({ data_url: d })),
+      images: sendImages.map((d) => ({ data_url: d })),
       mode,
       history,
     };
@@ -1406,3 +1414,4 @@ function PandaPage() {
     </div>
   );
 }
+c
