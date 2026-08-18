@@ -697,29 +697,38 @@ export const createStaffUser = createServerFn({ method: "POST" })
     if (!isAdmin) throw new Error("Admin only");
 
     const normalized = normalizeStaffUsername(data.username);
-    if (normalized.length < 2) throw new Error("Username must have at least 2 letters or numbers");
+    if (normalized.length < 2) {
+      throw new Error("Username must have at least 2 letters or numbers");
+    }
     const email = staffUsernameToEmail(data.username);
+    const password = data.password;
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Create the auth user without a password first, then set the password
-    // via updateUserById — the same call resetStaffPassword uses. Setting the
-    // password directly in createUser was leaving accounts unable to sign in;
-    // this two-step version is the path that's proven to work.
+    // Set password + email_confirm in one shot, then force the password again.
+    // Staff list can show "active" from user_roles/staff_profiles while
+    // auth.users still has no usable password — that is the "wrong password" bug.
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email,
+      password,
       email_confirm: true,
-      user_metadata: { staff_username: data.username.trim() },
+      user_metadata: {
+        staff_username: data.username.trim(),
+        staff_username_normalized: normalized,
+      },
     });
     if (error) {
       throw new Error(
-        /already/i.test(error.message) ? `The username "${data.username.trim()}" is already taken` : error.message,
+        /already/i.test(error.message)
+          ? `The username "${data.username.trim()}" is already taken`
+          : error.message,
       );
     }
     const uid = created.user!.id;
 
     const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(uid, {
-      password: data.password,
+      password,
+      email_confirm: true,
     });
     if (pwErr) throw new Error(pwErr.message);
 
@@ -730,10 +739,18 @@ export const createStaffUser = createServerFn({ method: "POST" })
 
     const { error: perr } = await context.supabase
       .from("staff_profiles" as any)
-      .upsert({ user_id: uid, username: data.username.trim() }, { onConflict: "user_id" });
+      .upsert(
+        { user_id: uid, username: data.username.trim() },
+        { onConflict: "user_id" },
+      );
     if (perr) throw new Error(perr.message);
 
-    return { id: uid, username: data.username.trim(), sign_in_username: normalized };
+    return {
+      id: uid,
+      username: data.username.trim(),
+      sign_in_username: normalized,
+      sign_in_email: email,
+    };
   });
 
 export const resetStaffPassword = createServerFn({ method: "POST" })
@@ -745,7 +762,10 @@ export const resetStaffPassword = createServerFn({ method: "POST" })
     const { isAdmin } = await assertStaff(context);
     if (!isAdmin) throw new Error("Admin only");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, {
+      password: data.password,
+      email_confirm: true,
+    });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
