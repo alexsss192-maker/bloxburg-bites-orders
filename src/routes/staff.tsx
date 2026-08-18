@@ -14,6 +14,7 @@ import { getMyRoles } from "@/lib/menu.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useTheme } from "@/hooks/use-theme";
 import pandaMascot from "@/assets/panda-mascot.png";
 
 import {
@@ -124,26 +125,14 @@ function StaffLayout() {
   const [isBulkChef, setIsBulkChef] = useState(false);
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+
+  const { resolvedTheme, toggleTheme } = useTheme();
+  const darkMode = resolvedTheme === "dark";
 
   const getRoles = useServerFn(getMyRoles);
 
   const navigate = useNavigate();
   const location = useLocation();
-
-  /* ============================================================
-     THEME
-  ============================================================ */
-
-  useEffect(() => {
-    const savedTheme =
-      window.localStorage.getItem("panda-staff-theme");
-
-    if (savedTheme === "dark") {
-      setDarkMode(true);
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
 
   /* ============================================================
      AUTH
@@ -243,22 +232,6 @@ function StaffLayout() {
       to: "/staff",
       replace: true,
     });
-  }
-
-  function toggleTheme() {
-    const next = !darkMode;
-
-    setDarkMode(next);
-
-    document.documentElement.classList.toggle(
-      "dark",
-      next,
-    );
-
-    window.localStorage.setItem(
-      "panda-staff-theme",
-      next ? "dark" : "light",
-    );
   }
 
   /* ============================================================
