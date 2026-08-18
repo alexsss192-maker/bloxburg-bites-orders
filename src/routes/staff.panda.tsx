@@ -28,7 +28,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Brain, ChevronDown, ImagePlus, Loader2, Send, Sparkles, Trash2, X } from "lucide-react";
+import {
+  Brain,
+  Camera,
+  ChevronDown,
+  ImagePlus,
+  Loader2,
+  Monitor,
+  MonitorOff,
+  Send,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 
 export const Route = createFileRoute("/staff/panda")({
   head: () => ({
@@ -253,8 +265,13 @@ function PandaPage() {
     context?: Record<string, unknown>;
   } | null>(null);
   const [mode, setMode] = useState<SkippeMode>("lite_25");
+  const [splitScreen, setSplitScreen] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const [snapBusy, setSnapBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
+  const shareVideoRef = useRef<HTMLVideoElement>(null);
+  const shareStreamRef = useRef<MediaStream | null>(null);
 
   // Hydrate chat + mode from localStorage (no server history).
   useEffect(() => {
@@ -309,6 +326,153 @@ function PandaPage() {
       ),
     );
     setImages((prev) => [...prev, ...results].slice(0, 9));
+  }
+
+  function stopShare() {
+    shareStreamRef.current?.getTracks().forEach((t) => t.stop());
+    shareStreamRef.current = null;
+    if (shareVideoRef.current) {
+      shareVideoRef.current.srcObject = null;
+    }
+    setSharing(false);
+  }
+
+  useEffect(() => {
+    return () => {
+      shareStreamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  // Attach stream when the split-screen video element mounts
+  useEffect(() => {
+    if (!sharing || !shareStreamRef.current || !shareVideoRef.current) return;
+    shareVideoRef.current.srcObject = shareStreamRef.current;
+    void shareVideoRef.current.play().catch(() => {});
+  }, [sharing, splitScreen]);
+
+  /** Grab one frame from a live MediaStream → data URL. */
+  function frameFromVideo(video: HTMLVideoElement): string | null {
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (!w || !h) return null;
+    const canvas = document.createElement("canvas");
+    // Cap longest side so Skippe image payloads stay reasonable
+    const max = 1280;
+    const scale = Math.min(1, max / Math.max(w, h));
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.85);
+  }
+
+  /**
+   * One-shot screenshot via the browser share picker (pick tab / window / screen).
+   * Use this to capture your Bloxburg fridge without a phone photo.
+   */
+  async function captureScreenshot() {
+    if (images.length >= 9) {
+      toast.error("Max 9 images — remove one first");
+      return;
+    }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      toast.error("Screen capture isn’t supported in this browser");
+      return;
+    }
+    setSnapBusy(true);
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 5 },
+        audio: false,
+      });
+      const video = document.createElement("video");
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = stream;
+      await video.play();
+      // Wait one frame so dimensions populate
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const dataUrl = frameFromVideo(video);
+      video.pause();
+      video.srcObject = null;
+      if (!dataUrl) {
+        toast.error("Couldn’t grab that frame — try again");
+        return;
+      }
+      setImages((prev) => [...prev, dataUrl].slice(0, 9));
+      toast.success("Screenshot added for Skippe");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        toast.message("Screen capture cancelled");
+      } else {
+        toast.error("Screenshot failed");
+        console.error(err);
+      }
+    } finally {
+      stream?.getTracks().forEach((t) => t.stop());
+      setSnapBusy(false);
+    }
+  }
+
+  /**
+   * Live split-screen share: keep a window/screen open (e.g. full fridge view)
+   * and snap frames into Skippe’s image tray whenever you want.
+   */
+  async function startFridgeShare() {
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      toast.error("Screen share isn’t supported in this browser");
+      return;
+    }
+    try {
+      stopShare();
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 15 },
+        audio: false,
+      });
+      shareStreamRef.current = stream;
+      stream.getVideoTracks()[0]?.addEventListener("ended", () => {
+        stopShare();
+        toast.message("Screen share ended");
+      });
+      setSplitScreen(true);
+      setSharing(true);
+      // Attach after state so the video element is mounted
+      requestAnimationFrame(() => {
+        if (shareVideoRef.current) {
+          shareVideoRef.current.srcObject = stream;
+          void shareVideoRef.current.play().catch(() => {});
+        }
+      });
+      toast.success("Fridge share live — snap frames into Skippe anytime");
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "NotAllowedError") {
+        toast.message("Screen share cancelled");
+      } else {
+        toast.error("Couldn’t start screen share");
+        console.error(err);
+      }
+    }
+  }
+
+  function snapFromShare() {
+    if (images.length >= 9) {
+      toast.error("Max 9 images — remove one first");
+      return;
+    }
+    const video = shareVideoRef.current;
+    if (!video || !sharing) {
+      toast.error("Start fridge share first");
+      return;
+    }
+    const dataUrl = frameFromVideo(video);
+    if (!dataUrl) {
+      toast.error("Wait a moment for the share to load");
+      return;
+    }
+    setImages((prev) => [...prev, dataUrl].slice(0, 9));
+    toast.success("Frame snapped for Skippe");
   }
 
   async function send() {
@@ -391,8 +555,14 @@ function PandaPage() {
   const thinkingCapable = activeModel ? modelShowsThinking(activeModel) : false;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-      <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-3xl border border-border/60 bg-white shadow-sm">
+    <div
+      className={`grid gap-6 ${
+        splitScreen
+          ? "lg:grid-cols-[1.15fr_0.95fr_0.85fr]"
+          : "lg:grid-cols-[1.4fr_1fr]"
+      }`}
+    >
+      <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-gradient-to-r from-blossom to-petal px-6 py-4">
           <div>
             <p className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-cherry">
@@ -400,7 +570,35 @@ function PandaPage() {
             </p>
             <h1 className="mt-1 font-display text-2xl">Ask me to run your kitchen.</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (splitScreen && sharing) {
+                  stopShare();
+                  setSplitScreen(false);
+                } else if (splitScreen) {
+                  setSplitScreen(false);
+                } else {
+                  void startFridgeShare();
+                }
+              }}
+              className={`inline-flex h-11 items-center gap-2 rounded-2xl border px-3 text-xs font-bold transition ${
+                splitScreen
+                  ? "border-cherry/40 bg-cherry/10 text-cherry"
+                  : "border-ink/10 bg-card text-ink/70 hover:bg-petal"
+              }`}
+              title="Split screen — share your Bloxburg fridge (or any window)"
+            >
+              {sharing ? (
+                <MonitorOff className="h-4 w-4" />
+              ) : (
+                <Monitor className="h-4 w-4" />
+              )}
+              <span className="hidden sm:inline">
+                {sharing ? "Stop share" : "Fridge share"}
+              </span>
+            </button>
             <Select value={mode} onValueChange={(v) => pickMode(v as SkippeMode)}>
               <SelectTrigger className="h-11 w-[16.5rem] rounded-2xl border-ink/10 bg-white text-left text-sm font-semibold">
                 <SelectValue />
@@ -508,10 +706,23 @@ function PandaPage() {
             <button
               onClick={() => fileRef.current?.click()}
               disabled={images.length >= 9}
-              className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-white text-ink hover:bg-blossom disabled:opacity-40"
-              title="Add image"
+              className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
+              title="Upload image from device"
             >
               <ImagePlus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void captureScreenshot()}
+              disabled={images.length >= 9 || snapBusy}
+              className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
+              title="Screenshot a tab/window/screen for Skippe"
+            >
+              {snapBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Camera className="h-4 w-4" />
+              )}
             </button>
             <input
               ref={fileRef}
@@ -548,13 +759,83 @@ function PandaPage() {
           </div>
           <p className="mt-2 text-[0.7rem] text-ink/45">
             {thinkingCapable
-              ? "GPT-5 Nano shows its thinking above each reply. Images are read at low detail to keep costs flat."
-              : "Pick GPT-5 Nano to see Skippe's thinking. Images are read at low detail to keep costs flat."}
+              ? "GPT-5 Nano shows its thinking above each reply. Camera = in-browser screenshot · Fridge share = live split view of another window."
+              : "Camera = screenshot a tab/window · Fridge share = split-screen live view (snap frames for Skippe)."}
           </p>
         </div>
       </div>
 
-      <aside className="h-[calc(100vh-9rem)] overflow-y-auto rounded-3xl border border-border/60 bg-white p-5 shadow-sm">
+      {/* Live split-screen share (Bloxburg fridge / any window) */}
+      {splitScreen && (
+        <aside className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-3xl border border-border/60 bg-ink text-cream shadow-sm">
+          <div className="flex items-center justify-between gap-2 border-b border-cream/10 px-4 py-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-cherry">
+                Live share
+              </p>
+              <p className="mt-0.5 text-sm font-semibold">
+                {sharing ? "Fridge / screen feed" : "Share paused"}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {sharing ? (
+                <button
+                  type="button"
+                  onClick={snapFromShare}
+                  disabled={images.length >= 9}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cherry px-3 text-xs font-bold text-cream hover:bg-cherry/90 disabled:opacity-40"
+                >
+                  <Camera className="h-3.5 w-3.5" />
+                  Snap for Skippe
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void startFridgeShare()}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cream/10 px-3 text-xs font-bold text-cream hover:bg-cream/15"
+                >
+                  <Monitor className="h-3.5 w-3.5" />
+                  Resume
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  stopShare();
+                  setSplitScreen(false);
+                }}
+                className="grid h-9 w-9 place-items-center rounded-xl bg-cream/10 text-cream/80 hover:bg-cream/15"
+                aria-label="Close split screen"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div className="relative flex min-h-0 flex-1 items-center justify-center bg-black/40 p-2">
+            {sharing ? (
+              <video
+                ref={shareVideoRef}
+                muted
+                playsInline
+                autoPlay
+                className="max-h-full max-w-full rounded-xl object-contain"
+              />
+            ) : (
+              <p className="px-6 text-center text-sm text-cream/50">
+                Share ended. Hit <b>Resume</b> or <b>Fridge share</b> to pick a
+                window again (e.g. full Bloxburg fridge).
+              </p>
+            )}
+          </div>
+          <p className="border-t border-cream/10 px-4 py-2 text-[11px] text-cream/45">
+            Browser will ask which tab/window/screen to share. Pick your game
+            window so Skippe can read the fridge from snaps — nothing is
+            uploaded until you send a chat message.
+          </p>
+        </aside>
+      )}
+
+      <aside className="h-[calc(100vh-9rem)] overflow-y-auto rounded-3xl border border-border/60 bg-card p-5 shadow-sm">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-cherry">Changes this session</p>
