@@ -17,9 +17,10 @@ import {
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import {
-  diagnoseSecurityRisk,
-  formatSecurityDiagnosisForCopy,
-} from "../lib/security-risk";
+  diagnoseBug,
+  formatBugDiagnosisForCopy,
+  type BugDiagnosis,
+} from "../lib/bug-detector";
 import {
   parseErrorStack,
   findLikelySourceFrame,
@@ -38,15 +39,12 @@ function NotFoundComponent() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-7xl font-bold text-foreground">404</h1>
-
         <h2 className="mt-4 text-xl font-semibold text-foreground">
           Page not found
         </h2>
-
         <p className="mt-2 text-sm text-muted-foreground">
-          The page you're looking for doesn't exist or has been moved.
+          The page you&apos;re looking for doesn&apos;t exist or has been moved.
         </p>
-
         <div className="mt-6">
           <Link
             to="/"
@@ -60,6 +58,23 @@ function NotFoundComponent() {
   );
 }
 
+function levelStyles(level: BugDiagnosis["level"] | null, isSecurity: boolean) {
+  if (isSecurity || level === "critical" || level === "high") {
+    return {
+      shell: "rounded-lg border border-amber-500/40 bg-amber-500/5",
+      head: "border-b border-amber-500/40 px-5 py-4",
+      label: "text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400",
+      section: "border-b border-amber-500/40 px-5 py-4 text-sm space-y-3",
+    };
+  }
+  return {
+    shell: "rounded-lg border border-destructive/30 bg-destructive/5",
+    head: "border-b border-destructive/30 px-5 py-4",
+    label: "text-xs font-semibold uppercase tracking-wide text-destructive",
+    section: "border-b border-destructive/30 px-5 py-4 text-sm space-y-3",
+  };
+}
+
 function ErrorComponent({
   error,
   reset,
@@ -70,27 +85,28 @@ function ErrorComponent({
   console.error(error);
 
   const router = useRouter();
-
   const [copied, setCopied] = useState(false);
   const [resolvedFrames, setResolvedFrames] = useState<
     ResolvedStackFrame[] | null
   >(null);
 
+  const bug = diagnoseBug(error);
+
   useEffect(() => {
     reportLovableError(error, {
       boundary: "tanstack_root_error_component",
+      bug_family: bug?.family ?? null,
+      bug_score: bug?.score ?? null,
+      bug_fingerprint: bug?.fingerprint ?? null,
+      security_risk: bug?.isSecurityRelated ?? false,
     });
-  }, [error]);
+  }, [error, bug?.family, bug?.score, bug?.fingerprint, bug?.isSecurityRelated]);
 
   const frames: ParsedStackFrame[] = parseErrorStack(error);
   const minifiedSourceFrame = findLikelySourceFrame(frames);
 
-  // Resolve minified assets/*.js:line:col frames back to the real
-  // src/*.tsx file/line using the build's sourcemaps (client-only —
-  // fetches the .map file next to each bundle).
   useEffect(() => {
     let active = true;
-
     resolveStackFrames(frames)
       .then((resolved) => {
         if (active) setResolvedFrames(resolved);
@@ -98,7 +114,6 @@ function ErrorComponent({
       .catch(() => {
         if (active) setResolvedFrames(null);
       });
-
     return () => {
       active = false;
     };
@@ -127,9 +142,11 @@ function ErrorComponent({
     null;
   const isRealSource = Boolean(resolvedSourceFrame?.originalFile);
 
-  const security = diagnoseSecurityRisk(error);
-  const copyText = security
-    ? `${formatSecurityDiagnosisForCopy(security)}\n\n${formatErrorForCopy(error, frames)}`
+  const isSecurity = Boolean(bug?.isSecurityRelated);
+  const styles = levelStyles(bug?.level ?? null, isSecurity);
+
+  const copyText = bug
+    ? formatBugDiagnosisForCopy(bug)
     : formatErrorForCopy(error, frames);
 
   function handleCopy() {
@@ -139,78 +156,100 @@ function ErrorComponent({
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       })
-      .catch(() => {
-        setCopied(false);
-      });
+      .catch(() => setCopied(false));
   }
 
   return (
     <div className="flex min-h-screen items-start justify-center overflow-y-auto bg-background px-4 py-10">
       <div className="w-full max-w-2xl">
-        <div
-          className={
-            security
-              ? "rounded-lg border border-amber-500/40 bg-amber-500/5"
-              : "rounded-lg border border-destructive/30 bg-destructive/5"
-          }
-        >
-          <div
-            className={
-              security
-                ? "border-b border-amber-500/40 px-5 py-4"
-                : "border-b border-destructive/30 px-5 py-4"
-            }
-          >
-            <p
-              className={
-                security
-                  ? "text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400"
-                  : "text-xs font-semibold uppercase tracking-wide text-destructive"
-              }
-            >
-              {security
-                ? `Security risk · ${security.level}`
+        <div className={styles.shell}>
+          <div className={styles.head}>
+            <p className={styles.label}>
+              {bug
+                ? isSecurity
+                  ? `Security · ${bug.level} · score ${bug.score}`
+                  : `Bug · ${bug.family} · ${bug.level} · score ${bug.score}`
                 : "This page crashed"}
             </p>
 
             <h1 className="mt-1 text-lg font-semibold text-foreground">
-              {security
-                ? security.title
+              {bug
+                ? bug.title
                 : `${error.name || "Error"}: ${error.message || "Unknown error"}`}
             </h1>
 
-            {security ? (
-              <p className="mt-2 text-sm text-foreground/80">{security.risk}</p>
+            {bug ? (
+              <p className="mt-2 text-sm text-foreground/80">{bug.summary}</p>
+            ) : null}
+
+            {bug ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                confidence {bug.confidence}
+                {bug.fingerprint ? ` · ${bug.fingerprint}` : ""}
+                {bug.scorers.length > 1
+                  ? ` · ${bug.scorers.length} scorers matched`
+                  : ""}
+              </p>
             ) : null}
           </div>
 
-          {security ? (
-            <div className="space-y-3 border-b border-amber-500/40 px-5 py-4 text-sm">
+          {bug ? (
+            <div className={styles.section}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Priority
+                </p>
+                <p className="mt-1 font-medium text-foreground">
+                  {bug.priorityAction}
+                </p>
+              </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Why
                 </p>
-                <p className="mt-1 text-foreground/90">{security.why}</p>
+                <p className="mt-1 text-foreground/90">{bug.why}</p>
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Where
                 </p>
                 <p className="mt-1 font-mono text-xs text-foreground/90">
-                  {security.where}
+                  {bug.where}
                 </p>
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Fix
                 </p>
-                <p className="mt-1 text-foreground/90">{security.fix}</p>
+                <p className="mt-1 text-foreground/90">{bug.fix}</p>
               </div>
+              {bug.evidence.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Detection evidence
+                  </p>
+                  <ul className="mt-1 list-inside list-disc font-mono text-xs text-foreground/80">
+                    {bug.evidence.slice(0, 8).map((e) => (
+                      <li key={e}>{e}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {bug.sqlHints?.length ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    SQL hints (run manually)
+                  </p>
+                  <pre className="mt-1 max-h-24 overflow-auto rounded-md bg-muted p-2 font-mono text-xs">
+                    {bug.sqlHints.join("\n")}
+                  </pre>
+                </div>
+              ) : null}
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Raw error
                 </p>
-                <pre className="mt-1 max-h-32 overflow-auto rounded-md bg-muted p-2 font-mono text-xs">
+                <pre className="mt-1 max-h-28 overflow-auto rounded-md bg-muted p-2 font-mono text-xs">
                   {error.name || "Error"}: {error.message || "Unknown error"}
                 </pre>
               </div>
@@ -223,20 +262,17 @@ function ErrorComponent({
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Likely source
                 </p>
-
                 {resolvedFrames === null && (
                   <p className="text-xs text-muted-foreground">
                     Resolving original source…
                   </p>
                 )}
-
                 {resolvedFrames !== null && !isRealSource && (
                   <p className="text-xs text-muted-foreground">
                     Minified location (sourcemap unavailable)
                   </p>
                 )}
               </div>
-
               <p className="mt-1 break-all font-mono text-sm text-foreground">
                 {displayFile}
                 {displayLine != null && (
@@ -245,7 +281,6 @@ function ErrorComponent({
                   </span>
                 )}
               </p>
-
               {displayFnName && (
                 <p className="mt-1 text-xs text-muted-foreground">
                   in {displayFnName}()
@@ -259,22 +294,19 @@ function ErrorComponent({
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Full stack trace
               </p>
-
               <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-muted p-3 font-mono text-xs leading-5 text-foreground">
                 {displayFrames
-                  .map((f) => {
+                  .map((fr) => {
                     const resolved =
-                      "originalFile" in f
-                        ? (f as ResolvedStackFrame)
+                      "originalFile" in fr
+                        ? (fr as ResolvedStackFrame)
                         : null;
-
                     if (resolved?.originalFile) {
                       return `at ${resolved.originalName ?? resolved.functionName ?? "(anonymous)"} — ${resolved.originalFile}:${resolved.originalLine}:${resolved.originalColumn}`;
                     }
-
-                    return f.file
-                      ? `at ${f.functionName ?? "(anonymous)"} — ${f.file}:${f.line}:${f.column}`
-                      : f.raw;
+                    return fr.file
+                      ? `at ${fr.functionName ?? "(anonymous)"} — ${fr.file}:${fr.line}:${fr.column}`
+                      : fr.raw;
                   })
                   .join("\n")}
               </pre>
@@ -288,7 +320,6 @@ function ErrorComponent({
             >
               {copied ? "Copied!" : "Copy error details"}
             </button>
-
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => {
@@ -299,7 +330,6 @@ function ErrorComponent({
               >
                 Try again
               </button>
-
               <a
                 href="/"
                 className="inline-flex items-center justify-center rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
@@ -314,77 +344,66 @@ function ErrorComponent({
   );
 }
 
-export const Route =
-  createRootRouteWithContext<{ queryClient: QueryClient }>()({
-    head: () => ({
-      meta: [
-        { charSet: "utf-8" },
-        {
-          name: "viewport",
-          content: "width=device-width, initial-scale=1",
-        },
-        {
-          title: "Panda Bites — Bloxburg food shop",
-        },
-        {
-          name: "description",
-          content:
-            "Order non-seasonal Bloxburg foods from the Panda Bites Discord shop. Pay in B$, delivered in-game by our chefs.",
-        },
-        {
-          name: "author",
-          content: "Panda Bites",
-        },
-        {
-          property: "og:title",
-          content: "Panda Bites — Bloxburg food shop",
-        },
-        {
-          property: "og:description",
-          content:
-            "Order non-seasonal Bloxburg foods. Pay in B$ inside Panda Bites Discord.",
-        },
-        {
-          property: "og:type",
-          content: "website",
-        },
-        {
-          name: "twitter:card",
-          content: "summary_large_image",
-        },
-      ],
-
-      links: [
-        {
-          rel: "stylesheet",
-          href: appCss,
-        },
-        {
-          rel: "icon",
-          href: "/favicon.ico",
-          type: "image/x-icon",
-        },
-        {
-          rel: "preconnect",
-          href: "https://fonts.googleapis.com",
-        },
-        {
-          rel: "preconnect",
-          href: "https://fonts.gstatic.com",
-          crossOrigin: "anonymous",
-        },
-        {
-          rel: "stylesheet",
-          href: "https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
-        },
-      ],
-    }),
-
-    shellComponent: RootShell,
-    component: RootComponent,
-    notFoundComponent: NotFoundComponent,
-    errorComponent: ErrorComponent,
-  });
+export const Route = createRootRouteWithContext<{
+  queryClient: QueryClient;
+}>()({
+  head: () => ({
+    meta: [
+      { charSet: "utf-8" },
+      {
+        name: "viewport",
+        content: "width=device-width, initial-scale=1",
+      },
+      {
+        title: "Panda Bites — Bloxburg food shop",
+      },
+      {
+        name: "description",
+        content:
+          "Order non-seasonal Bloxburg foods from the Panda Bites Discord shop. Pay in B$, delivered in-game by our chefs.",
+      },
+      {
+        name: "author",
+        content: "Panda Bites",
+      },
+      {
+        property: "og:title",
+        content: "Panda Bites — Bloxburg food shop",
+      },
+      {
+        property: "og:description",
+        content:
+          "Order non-seasonal Bloxburg foods. Pay in B$ inside Panda Bites Discord.",
+      },
+      {
+        property: "og:type",
+        content: "website",
+      },
+      {
+        name: "twitter:card",
+        content: "summary_large_image",
+      },
+    ],
+    links: [
+      { rel: "stylesheet", href: appCss },
+      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      {
+        rel: "preconnect",
+        href: "https://fonts.gstatic.com",
+        crossOrigin: "anonymous",
+      },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Syne:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap",
+      },
+    ],
+  }),
+  shellComponent: RootShell,
+  component: RootComponent,
+  notFoundComponent: NotFoundComponent,
+  errorComponent: ErrorComponent,
+});
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
@@ -392,7 +411,6 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-
       <body>
         {children}
         <Scripts />
@@ -403,29 +421,18 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-
   const [RewardPopup, setRewardPopup] =
     useState<ComponentType | null>(null);
 
-  /*
-   * RewardPopup uses browser storage and server functions.
-   *
-   * Load it only after hydration so an error in this optional feature
-   * cannot crash the entire public website during SSR.
-   */
   useEffect(() => {
     let active = true;
-
     import("../components/reward-popup")
       .then((module) => {
-        if (active) {
-          setRewardPopup(() => module.RewardPopup);
-        }
+        if (active) setRewardPopup(() => module.RewardPopup);
       })
-      .catch((error) => {
-        console.error("Failed to load reward popup:", error);
+      .catch((err) => {
+        console.error("Failed to load reward popup:", err);
       });
-
     return () => {
       active = false;
     };
@@ -433,16 +440,9 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. */}
       <Outlet />
-
       {RewardPopup ? <RewardPopup /> : null}
-
-      <Toaster
-        position="top-right"
-        richColors
-        closeButton
-      />
+      <Toaster position="top-right" richColors closeButton />
     </QueryClientProvider>
   );
 }
