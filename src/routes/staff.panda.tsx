@@ -347,6 +347,20 @@ function saveRuns(list: ToolRun[]) {
   }
 }
 
+/**
+ * Screen-share stream lives OUTSIDE React so a tab blur / layout remount
+ * doesn’t kill the MediaStream. Browsers may still end the track themselves
+ * when the surface is closed — we can’t override that — but we must not
+ * call track.stop() on every component unmount.
+ */
+let persistentShareStream: MediaStream | null = null;
+let persistentSplitOpen = false;
+
+function isShareStreamLive(stream: MediaStream | null | undefined): boolean {
+  if (!stream) return false;
+  return stream.getVideoTracks().some((t) => t.readyState === "live");
+}
+
 function PandaPage() {
   const chatFn = useServerFn(pandaChat);
   const qc = useQueryClient();
@@ -383,13 +397,18 @@ function PandaPage() {
     }
     return "lite_25";
   });
-  const [splitScreen, setSplitScreen] = useState(false);
-  const [sharing, setSharing] = useState(false);
+  const [splitScreen, setSplitScreen] = useState(
+    () => persistentSplitOpen || isShareStreamLive(persistentShareStream),
+  );
+  const [sharing, setSharing] = useState(() =>
+    isShareStreamLive(persistentShareStream),
+  );
   const [snapBusy, setSnapBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const shareVideoRef = useRef<HTMLVideoElement>(null);
-  const shareStreamRef = useRef<MediaStream | null>(null);
+  // Always mirror the module-level stream so remounts pick it up
+  const shareStreamRef = useRef<MediaStream | null>(persistentShareStream);
 
   // Persist chat, draft images, runs, input — survives tab blur / soft remounts
   useEffect(() => {
@@ -414,29 +433,59 @@ function PandaPage() {
     }
   }, [input]);
 
-  // Re-hydrate if the page soft-reloads while hidden (bfcache / staff layout)
+  // On mount: reattach any still-live share stream (survived remount)
   useEffect(() => {
-    const onShow = () => {
-      // Don’t clobber in-progress typing; only restore if state was wiped
+    shareStreamRef.current = persistentShareStream;
+    if (isShareStreamLive(persistentShareStream)) {
+      setSplitScreen(true);
+      setSharing(true);
+      persistentSplitOpen = true;
+      const el = shareVideoRef.current;
+      if (el && persistentShareStream) {
+        el.srcObject = persistentShareStream;
+        void el.play().catch(() => {});
+      }
+    }
+  }, []);
+
+  // Re-bind video when returning to the tab — never stop tracks on hide
+  useEffect(() => {
+    const rebindShare = () => {
+      if (document.visibilityState === "hidden") return;
+
       setMessages((prev) => (prev.length <= 1 ? loadSkippeChat() : prev));
       setImages((prev) => (prev.length === 0 ? loadDraftImages() : prev));
       setRuns((prev) => (prev.length === 0 ? loadRuns() : prev));
-      // Re-bind live share video if the stream is still active
-      if (shareStreamRef.current && shareVideoRef.current) {
-        const track = shareStreamRef.current.getVideoTracks()[0];
-        if (track && track.readyState === "live") {
-          shareVideoRef.current.srcObject = shareStreamRef.current;
-          void shareVideoRef.current.play().catch(() => {});
-          setSharing(true);
-          setSplitScreen(true);
+
+      const stream = persistentShareStream;
+      shareStreamRef.current = stream;
+
+      if (isShareStreamLive(stream)) {
+        setSplitScreen(true);
+        setSharing(true);
+        persistentSplitOpen = true;
+        const el = shareVideoRef.current;
+        if (el && stream) {
+          if (el.srcObject !== stream) el.srcObject = stream;
+          void el.play().catch(() => {});
         }
+      } else if (stream) {
+        // Track died while we were away (browser policy) — keep panel for Resume
+        persistentShareStream = null;
+        shareStreamRef.current = null;
+        setSharing(false);
+        if (persistentSplitOpen) setSplitScreen(true);
       }
     };
-    document.addEventListener("visibilitychange", onShow);
-    window.addEventListener("pageshow", onShow);
+
+    document.addEventListener("visibilitychange", rebindShare);
+    window.addEventListener("pageshow", rebindShare);
+    window.addEventListener("focus", rebindShare);
     return () => {
-      document.removeEventListener("visibilitychange", onShow);
-      window.removeEventListener("pageshow", onShow);
+      document.removeEventListener("visibilitychange", rebindShare);
+      window.removeEventListener("pageshow", rebindShare);
+      window.removeEventListener("focus", rebindShare);
+      // Do NOT stop tracks here — remount must not kill the share
     };
   }, []);
 
@@ -622,7 +671,8 @@ function PandaPage() {
   }
 
   function stopShare() {
-    shareStreamRef.current?.getTracks().forEach((t) => t.stop());
+    persistentShareStream?.getTracks().forEach((t) => t.stop());
+    persistentShareStream = null;
     shareStreamRef.current = null;
     if (shareVideoRef.current) {
       shareVideoRef.current.srcObject = null;
@@ -630,29 +680,23 @@ function PandaPage() {
     setSharing(false);
   }
 
-  useEffect(() => {
-    return () => {
-      shareStreamRef.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
-
   // Keep <video> attached whenever share is live and the panel is open
   useEffect(() => {
-    if (!sharing || !splitScreen || !shareStreamRef.current) return;
+    const stream = persistentShareStream ?? shareStreamRef.current;
+    if (!sharing || !splitScreen || !isShareStreamLive(stream)) return;
     let cancelled = false;
 
     const attach = async () => {
-      // Retry a few times — React may not have mounted the video yet
-      for (let i = 0; i < 20 && !cancelled; i++) {
+      for (let i = 0; i < 30 && !cancelled; i++) {
         const el = shareVideoRef.current;
-        if (el && shareStreamRef.current) {
-          if (el.srcObject !== shareStreamRef.current) {
-            el.srcObject = shareStreamRef.current;
+        if (el && stream) {
+          if (el.srcObject !== stream) {
+            el.srcObject = stream;
           }
           try {
             await el.play();
           } catch {
-            /* autoplay policies — muted should allow it */
+            /* muted autoplay */
           }
           const ready = await waitForVideoReady(el, 1500);
           if (ready) return;
@@ -752,6 +796,7 @@ function PandaPage() {
     try {
       // Open the panel first so the <video> exists when the stream arrives
       setSplitScreen(true);
+      persistentSplitOpen = true;
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
@@ -771,32 +816,52 @@ function PandaPage() {
         systemAudio: "exclude",
       });
 
-      // Stop any previous share after we successfully got a new one
-      shareStreamRef.current?.getTracks().forEach((t) => t.stop());
+      // Replace previous share only after we got a new one
+      if (persistentShareStream && persistentShareStream !== stream) {
+        persistentShareStream.getTracks().forEach((t) => t.stop());
+      }
+      persistentShareStream = stream;
       shareStreamRef.current = stream;
 
       const track = stream.getVideoTracks()[0];
       track?.addEventListener("ended", () => {
-        // Browser often ends capture when you leave the tab — keep chat/images.
+        // Browser ended the surface (user clicked Stop sharing, or closed window).
+        // Do not treat this as “clear chat” — only clear the live stream.
+        if (persistentShareStream === stream) {
+          persistentShareStream = null;
+        }
         shareStreamRef.current = null;
         if (shareVideoRef.current) shareVideoRef.current.srcObject = null;
         setSharing(false);
-        // Keep splitScreen open so Resume is one click
+        persistentSplitOpen = true;
+        setSplitScreen(true);
         toast.message(
-          "Share paused (tab change). Chat & snaps stayed — hit Resume for the game window.",
+          "Live share stopped. Chat & snaps are kept — hit Resume and pick the game window again.",
         );
+      });
+
+      // Some browsers fire mute while the tab is hidden — don’t kill the stream
+      track?.addEventListener("mute", () => {
+        /* expected while backgrounded */
+      });
+      track?.addEventListener("unmute", () => {
+        const el = shareVideoRef.current;
+        if (el && persistentShareStream) {
+          el.srcObject = persistentShareStream;
+          void el.play().catch(() => {});
+        }
+        setSharing(true);
       });
 
       setSharing(true);
 
-      // Immediate attach attempt
       await new Promise((r) => requestAnimationFrame(() => r(null)));
       if (shareVideoRef.current) {
         shareVideoRef.current.srcObject = stream;
         try {
           await shareVideoRef.current.play();
         } catch {
-          /* muted autoplay should work */
+          /* muted autoplay */
         }
         const ready = await waitForVideoReady(shareVideoRef.current, 5000);
         if (!ready) {
@@ -804,7 +869,9 @@ function PandaPage() {
             "Share is connected but still loading — wait a second, then Snap",
           );
         } else {
-          toast.success("Fridge share live — Snap frames for Skippe anytime");
+          toast.success(
+            "Fridge share live — leave this tab if needed; stream stays until you Stop",
+          );
         }
       } else {
         toast.success("Fridge share started");
@@ -812,7 +879,10 @@ function PandaPage() {
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") {
         toast.message("Screen share cancelled");
-        if (!shareStreamRef.current) setSplitScreen(false);
+        if (!isShareStreamLive(persistentShareStream)) {
+          setSplitScreen(false);
+          persistentSplitOpen = false;
+        }
       } else {
         toast.error("Couldn’t start screen share");
         console.error(err);
@@ -960,8 +1030,10 @@ function PandaPage() {
                 if (splitScreen && sharing) {
                   stopShare();
                   setSplitScreen(false);
+                  persistentSplitOpen = false;
                 } else if (splitScreen) {
                   setSplitScreen(false);
+                  persistentSplitOpen = false;
                 } else {
                   void startFridgeShare();
                 }
@@ -1231,6 +1303,7 @@ function PandaPage() {
                 onClick={() => {
                   stopShare();
                   setSplitScreen(false);
+                  persistentSplitOpen = false;
                 }}
                 className="grid h-9 w-9 place-items-center rounded-xl bg-cream/10 text-cream/80 hover:bg-cream/15"
                 aria-label="Close split screen"
