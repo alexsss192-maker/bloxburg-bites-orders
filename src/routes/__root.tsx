@@ -19,6 +19,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import {
   diagnoseBug,
   formatBugDiagnosisForCopy,
+  installGlobalBugDetector,
   type BugDiagnosis,
 } from "../lib/bug-detector";
 import {
@@ -63,15 +64,16 @@ function levelStyles(level: BugDiagnosis["level"] | null, isSecurity: boolean) {
     return {
       shell: "rounded-lg border border-amber-500/40 bg-amber-500/5",
       head: "border-b border-amber-500/40 px-5 py-4",
-      label: "text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400",
-      section: "border-b border-amber-500/40 px-5 py-4 text-sm space-y-3",
+      label:
+        "text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400",
+      section: "space-y-3 border-b border-amber-500/40 px-5 py-4 text-sm",
     };
   }
   return {
     shell: "rounded-lg border border-destructive/30 bg-destructive/5",
     head: "border-b border-destructive/30 px-5 py-4",
     label: "text-xs font-semibold uppercase tracking-wide text-destructive",
-    section: "border-b border-destructive/30 px-5 py-4 text-sm space-y-3",
+    section: "space-y-3 border-b border-destructive/30 px-5 py-4 text-sm",
   };
 }
 
@@ -98,9 +100,19 @@ function ErrorComponent({
       bug_family: bug?.family ?? null,
       bug_score: bug?.score ?? null,
       bug_fingerprint: bug?.fingerprint ?? null,
+      confirmed_cause: bug?.confirmed.statement ?? null,
+      confirmed_fix: bug?.confirmed.fix ?? null,
       security_risk: bug?.isSecurityRelated ?? false,
     });
-  }, [error, bug?.family, bug?.score, bug?.fingerprint, bug?.isSecurityRelated]);
+  }, [
+    error,
+    bug?.family,
+    bug?.score,
+    bug?.fingerprint,
+    bug?.isSecurityRelated,
+    bug?.confirmed.statement,
+    bug?.confirmed.fix,
+  ]);
 
   const frames: ParsedStackFrame[] = parseErrorStack(error);
   const minifiedSourceFrame = findLikelySourceFrame(frames);
@@ -131,16 +143,20 @@ function ErrorComponent({
       : null;
 
   const displayFile =
-    resolvedSourceFrame?.originalFile ?? sourceFrame?.file ?? null;
+    resolvedSourceFrame?.originalFile ??
+    bug?.confirmed.location?.split(":")[0] ??
+    sourceFrame?.file ??
+    null;
   const displayLine =
-    resolvedSourceFrame?.originalLine ?? sourceFrame?.line ?? null;
+    resolvedSourceFrame?.originalLine ??
+    (bug?.features.primaryLine ?? sourceFrame?.line ?? null);
   const displayColumn =
     resolvedSourceFrame?.originalColumn ?? sourceFrame?.column ?? null;
   const displayFnName =
-    resolvedSourceFrame?.originalName ??
-    sourceFrame?.functionName ??
-    null;
-  const isRealSource = Boolean(resolvedSourceFrame?.originalFile);
+    resolvedSourceFrame?.originalName ?? sourceFrame?.functionName ?? null;
+  const isRealSource = Boolean(
+    resolvedSourceFrame?.originalFile || bug?.features.primaryFile,
+  );
 
   const isSecurity = Boolean(bug?.isSecurityRelated);
   const styles = levelStyles(bug?.level ?? null, isSecurity);
@@ -179,16 +195,9 @@ function ErrorComponent({
             </h1>
 
             {bug ? (
-              <p className="mt-2 text-sm text-foreground/80">{bug.summary}</p>
-            ) : null}
-
-            {bug ? (
               <p className="mt-1 text-xs text-muted-foreground">
                 confidence {bug.confidence}
                 {bug.fingerprint ? ` · ${bug.fingerprint}` : ""}
-                {bug.scorers.length > 1
-                  ? ` · ${bug.scorers.length} scorers matched`
-                  : ""}
               </p>
             ) : null}
           </div>
@@ -197,32 +206,30 @@ function ErrorComponent({
             <div className={styles.section}>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Priority
+                  Confirmed cause
+                </p>
+                <p className="mt-1 text-foreground/90">
+                  {bug.confirmed.statement}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Confirmed fix
                 </p>
                 <p className="mt-1 font-medium text-foreground">
-                  {bug.priorityAction}
+                  {bug.confirmed.fix}
                 </p>
               </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Why
-                </p>
-                <p className="mt-1 text-foreground/90">{bug.why}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Where
-                </p>
-                <p className="mt-1 font-mono text-xs text-foreground/90">
-                  {bug.where}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Fix
-                </p>
-                <p className="mt-1 text-foreground/90">{bug.fix}</p>
-              </div>
+              {bug.confirmed.location ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Location
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-foreground/90">
+                    {bug.confirmed.location}
+                  </p>
+                </div>
+              ) : null}
               {bug.evidence.length > 0 ? (
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -423,6 +430,11 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   const [RewardPopup, setRewardPopup] =
     useState<ComponentType | null>(null);
+
+  // GLOBAL — every file, no per-route edits
+  useEffect(() => {
+    return installGlobalBugDetector();
+  }, []);
 
   useEffect(() => {
     let active = true;
