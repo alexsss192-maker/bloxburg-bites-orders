@@ -226,6 +226,9 @@ function SkippeIssueCard({
 
 
 const SKIPPE_CHAT_KEY = "pb_skippe_chat_v1";
+const SKIPPE_DRAFT_IMAGES_KEY = "pb_skippe_draft_images_v1";
+const SKIPPE_RUNS_KEY = "pb_skippe_runs_v1";
+const SKIPPE_INPUT_KEY = "pb_skippe_draft_input_v1";
 
 function loadSkippeChat(): Msg[] {
   try {
@@ -233,39 +236,153 @@ function loadSkippeChat(): Msg[] {
     if (!raw) return [GREETING];
     const parsed = JSON.parse(raw) as Msg[];
     if (!Array.isArray(parsed) || parsed.length === 0) return [GREETING];
-    return parsed.slice(-40);
+    return parsed.slice(-40).map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: typeof m.content === "string" ? m.content : "",
+      thinking: typeof m.thinking === "string" ? m.thinking : undefined,
+      runs: Array.isArray(m.runs) ? m.runs : undefined,
+      images: Array.isArray(m.images)
+        ? m.images.filter((x): x is string => typeof x === "string").slice(0, 9)
+        : undefined,
+    }));
   } catch {
     return [GREETING];
   }
 }
 
 function saveSkippeChat(msgs: Msg[]) {
-  try {
-    const slim = msgs.slice(-40).map((m) => ({
+  // Keep recent messages + images so switching tabs doesn’t wipe the thread.
+  // localStorage is ~5MB — keep last 30 msgs, images only on the last few user turns.
+  const recent = msgs.slice(-30);
+  const slim = recent.map((m, i) => {
+    const nearEnd = i >= recent.length - 8;
+    return {
       role: m.role,
       content: m.content,
       thinking: m.thinking,
       runs: m.runs,
-    }));
+      images:
+        nearEnd && m.images && m.images.length > 0
+          ? m.images.slice(0, 6)
+          : undefined,
+    };
+  });
+  try {
     window.localStorage.setItem(SKIPPE_CHAT_KEY, JSON.stringify(slim));
   } catch {
-    /* quota / private mode */
+    // Quota exceeded — retry without image payloads
+    try {
+      const noImg = slim.map(({ images: _i, ...rest }) => rest);
+      window.localStorage.setItem(SKIPPE_CHAT_KEY, JSON.stringify(noImg));
+    } catch {
+      /* private mode */
+    }
+  }
+}
+
+function loadDraftImages(): string[] {
+  try {
+    const raw = window.sessionStorage.getItem(SKIPPE_DRAFT_IMAGES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((x): x is string => typeof x === "string" && x.startsWith("data:"))
+      .slice(0, 9);
+  } catch {
+    return [];
+  }
+}
+
+function saveDraftImages(imgs: string[]) {
+  try {
+    if (imgs.length === 0) {
+      window.sessionStorage.removeItem(SKIPPE_DRAFT_IMAGES_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(
+      SKIPPE_DRAFT_IMAGES_KEY,
+      JSON.stringify(imgs.slice(0, 9)),
+    );
+  } catch {
+    // Quota — drop oldest until it fits
+    try {
+      for (let n = imgs.length - 1; n >= 1; n--) {
+        try {
+          window.sessionStorage.setItem(
+            SKIPPE_DRAFT_IMAGES_KEY,
+            JSON.stringify(imgs.slice(-n)),
+          );
+          return;
+        } catch {
+          /* keep shrinking */
+        }
+      }
+      window.sessionStorage.removeItem(SKIPPE_DRAFT_IMAGES_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function loadRuns(): ToolRun[] {
+  try {
+    const raw = window.sessionStorage.getItem(SKIPPE_RUNS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ToolRun[];
+    return Array.isArray(parsed) ? parsed.slice(0, 40) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRuns(list: ToolRun[]) {
+  try {
+    window.sessionStorage.setItem(
+      SKIPPE_RUNS_KEY,
+      JSON.stringify(list.slice(0, 40)),
+    );
+  } catch {
+    /* ignore */
   }
 }
 
 function PandaPage() {
   const chatFn = useServerFn(pandaChat);
   const qc = useQueryClient();
-  const [messages, setMessages] = useState<Msg[]>([GREETING]);
-  const [runs, setRuns] = useState<ToolRun[]>([]);
-  const [input, setInput] = useState("");
-  const [images, setImages] = useState<string[]>([]);
+  // Lazy init from storage so a tab-switch remount doesn’t flash empty state
+  const [messages, setMessages] = useState<Msg[]>(() =>
+    typeof window !== "undefined" ? loadSkippeChat() : [GREETING],
+  );
+  const [runs, setRuns] = useState<ToolRun[]>(() =>
+    typeof window !== "undefined" ? loadRuns() : [],
+  );
+  const [input, setInput] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return window.sessionStorage.getItem(SKIPPE_INPUT_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [images, setImages] = useState<string[]>(() =>
+    typeof window !== "undefined" ? loadDraftImages() : [],
+  );
   const [loading, setLoading] = useState(false);
   const [issue, setIssue] = useState<{
     error: Error;
     context?: Record<string, unknown>;
   } | null>(null);
-  const [mode, setMode] = useState<SkippeMode>("lite_25");
+  const [mode, setMode] = useState<SkippeMode>(() => {
+    if (typeof window === "undefined") return "lite_25";
+    try {
+      const stored = window.localStorage.getItem("pb_skippe_mode") as SkippeMode | null;
+      if (stored && SKIPPE_MODE_OPTIONS.some((o) => o.value === stored)) return stored;
+    } catch {
+      /* ignore */
+    }
+    return "lite_25";
+  });
   const [splitScreen, setSplitScreen] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [snapBusy, setSnapBusy] = useState(false);
@@ -274,22 +391,54 @@ function PandaPage() {
   const shareVideoRef = useRef<HTMLVideoElement>(null);
   const shareStreamRef = useRef<MediaStream | null>(null);
 
-  // Hydrate chat + mode from localStorage (no server history).
-  useEffect(() => {
-    setMessages(loadSkippeChat());
-    try {
-      const stored = window.localStorage.getItem("pb_skippe_mode") as SkippeMode | null;
-      if (stored && SKIPPE_MODE_OPTIONS.some((o) => o.value === stored)) setMode(stored);
-    } catch {
-      /* storage unavailable */
-    }
-  }, []);
-
-  // Persist chat locally whenever it changes.
+  // Persist chat, draft images, runs, input — survives tab blur / soft remounts
   useEffect(() => {
     if (messages.length === 0) return;
     saveSkippeChat(messages);
   }, [messages]);
+
+  useEffect(() => {
+    saveDraftImages(images);
+  }, [images]);
+
+  useEffect(() => {
+    saveRuns(runs);
+  }, [runs]);
+
+  useEffect(() => {
+    try {
+      if (input) window.sessionStorage.setItem(SKIPPE_INPUT_KEY, input);
+      else window.sessionStorage.removeItem(SKIPPE_INPUT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, [input]);
+
+  // Re-hydrate if the page soft-reloads while hidden (bfcache / staff layout)
+  useEffect(() => {
+    const onShow = () => {
+      // Don’t clobber in-progress typing; only restore if state was wiped
+      setMessages((prev) => (prev.length <= 1 ? loadSkippeChat() : prev));
+      setImages((prev) => (prev.length === 0 ? loadDraftImages() : prev));
+      setRuns((prev) => (prev.length === 0 ? loadRuns() : prev));
+      // Re-bind live share video if the stream is still active
+      if (shareStreamRef.current && shareVideoRef.current) {
+        const track = shareStreamRef.current.getVideoTracks()[0];
+        if (track && track.readyState === "live") {
+          shareVideoRef.current.srcObject = shareStreamRef.current;
+          void shareVideoRef.current.play().catch(() => {});
+          setSharing(true);
+          setSplitScreen(true);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onShow);
+    window.addEventListener("pageshow", onShow);
+    return () => {
+      document.removeEventListener("visibilitychange", onShow);
+      window.removeEventListener("pageshow", onShow);
+    };
+  }, []);
 
   useEffect(() => {
     const el = scroller.current;
@@ -314,6 +463,16 @@ function PandaPage() {
   async function clearChat() {
     setMessages([GREETING]);
     saveSkippeChat([GREETING]);
+    setImages([]);
+    saveDraftImages([]);
+    setRuns([]);
+    saveRuns([]);
+    setInput("");
+    try {
+      window.sessionStorage.removeItem(SKIPPE_INPUT_KEY);
+    } catch {
+      /* ignore */
+    }
     toast.success("Conversation cleared");
   }
 
@@ -618,8 +777,14 @@ function PandaPage() {
 
       const track = stream.getVideoTracks()[0];
       track?.addEventListener("ended", () => {
-        stopShare();
-        toast.message("Screen share ended");
+        // Browser often ends capture when you leave the tab — keep chat/images.
+        shareStreamRef.current = null;
+        if (shareVideoRef.current) shareVideoRef.current.srcObject = null;
+        setSharing(false);
+        // Keep splitScreen open so Resume is one click
+        toast.message(
+          "Share paused (tab change). Chat & snaps stayed — hit Resume for the game window.",
+        );
       });
 
       setSharing(true);
