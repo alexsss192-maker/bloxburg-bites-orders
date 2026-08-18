@@ -135,9 +135,10 @@ export const pandaChat = createServerFn({
           | undefined
       )?.email ?? null;
 
-    // Prefer chef/admin from JWT when present; otherwise read user_roles (required).
+    // Always verify staff via user_roles (same as rest of staff portal).
+    // JWT claim shortcuts only count if they are exactly chef/admin.
     let roles = staffRolesFromClaims(context.claims);
-    if (roles.length === 0) {
+    if (!roles.includes("chef") && !roles.includes("admin")) {
       const { data: roleRows, error: roleError } = await context.supabase
         .from("user_roles" as never)
         .select("role")
@@ -149,9 +150,7 @@ export const pandaChat = createServerFn({
       }
       roles = (
         (roleRows as unknown as Array<{ role: string }> | null) ?? []
-      )
-        .map((r) => String(r.role || "").toLowerCase())
-        .filter((r) => STAFF_ROLES.has(r));
+      ).map((r) => String(r.role || "").toLowerCase());
     }
 
     const isAdmin = roles.includes("admin");
