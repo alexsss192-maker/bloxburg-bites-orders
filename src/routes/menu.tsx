@@ -272,7 +272,7 @@ function MenuGrid({
             <p className="text-xs uppercase tracking-[0.3em] text-cherry">
               {category === "seasonal" ? "Seasonal drop" : "Year-round"}
             </p>
-            <h2 className="mt-2 font-display text-4xl leading-tight">
+            <h2 className="mt-2 font-display text-2xl sm:text-4xl leading-tight">
               {featured.name}
             </h2>
             <p className="mt-3 text-ink/70">{featured.description}</p>
@@ -309,7 +309,7 @@ function MenuGrid({
         </section>
       )}
 
-      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {rest.map((item, i) => {
           const inCart =
             cartItems.find((c) => c.menu_item_id === item.id)?.quantity ?? 0;
@@ -364,7 +364,7 @@ function MenuGrid({
 
               <div className="flex flex-1 flex-col p-5">
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="font-display text-2xl leading-tight">
+                  <h3 className="font-display text-xl sm:text-2xl leading-tight">
                     {item.name}
                   </h3>
                   <span className="whitespace-nowrap font-display text-xl text-cherry">
