@@ -125,17 +125,21 @@ export const pandaChat = createServerFn({
     const staffName = actorEmail?.split("@")[0] || "Chef";
 
     // History is browser localStorage only — never skippe_messages.
+    // Keep short — long threads slow the gateway and cause tool-call mismatches.
     const history = (data.history ?? []).slice(-6);
+
+    // Hard cap images: 9 frames = slow + often fails. 3 is enough for fridge scans.
+    const images = (data.images ?? []).slice(0, 3);
 
     // Pure vision (screenshots / fridge / video frames): no kitchen tools → no
     // menu/order/discount/audit table hits. Only the AI gateway is used.
     const visionOnly =
-      data.images.length > 0 &&
+      images.length > 0 &&
       !KITCHEN_ACTION_RE.test(data.message || "");
 
     const { model, auto } = resolveModel(
       data.mode,
-      data.images.length,
+      images.length,
       data.message,
     );
 
@@ -147,7 +151,7 @@ export const pandaChat = createServerFn({
       }),
       history,
       userText: data.message,
-      images: data.images,
+      images,
       staffName,
       toolsEnabled: !visionOnly,
       ctx: {
