@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 
 export const Route = createFileRoute("/staff/panda")({
+  ssr: false,
   head: () => ({
     meta: [
       { title: "Skippe AI — Panda Bites Staff" },
