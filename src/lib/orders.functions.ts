@@ -61,15 +61,30 @@ export const placeOrder = createServerFn({ method: "POST" })
         items: itemsSchema,
         promo_code: z.string().trim().max(32).optional().nullable(),
         priority: prioritySchema,
+        /** Optional tip — stored only in the order note (no DB tip columns). */
+        tip_bs: z.number().int().min(0).max(100_000_000).optional().default(0),
+        tip_label: z.string().trim().max(80).optional().nullable(),
       })
       .parse(d),
   )
   .handler(async ({ data }) => {
     const supabase = await anonClient();
     const rpcItems = expandItemsForRpc(data.items);
+
+    // Tip jar is no-DB: fold the tip into the existing note field only.
+    let note = data.note ?? null;
+    const tipBs = Number(data.tip_bs ?? 0) || 0;
+    if (tipBs > 0) {
+      const tipLine = `Tip: B$${tipBs.toLocaleString()}${
+        data.tip_label ? ` (${data.tip_label})` : ""
+      }`;
+      note = note ? `${note}\n${tipLine}` : tipLine;
+      if (note.length > 500) note = note.slice(0, 500);
+    }
+
     const { data: orderId, error } = await supabase.rpc("place_order" as never, {
       _discord_username: data.discord_username,
-      _note: data.note ?? null,
+      _note: note,
       _items: rpcItems,
       _promo_code: data.promo_code ?? null,
       _priority: data.priority ?? [],
