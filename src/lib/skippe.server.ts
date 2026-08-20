@@ -1223,7 +1223,81 @@ export async function runSkippeTool(
   }
 }
 
-export function buildSkippePrompt(args: { staffName: string; isAdmin: boolean }) {
+/** Only tools relevant to this message — smaller payload = cheaper + fewer bad calls. */
+export function selectToolsForMessage(userText: string, imageCount: number): ToolDef[] {
+  const msg = (userText || "").toLowerCase();
+  const want = new Set<string>();
+
+  if (imageCount > 0) {
+    // Fridge / photo scans need menu + order tools only
+    for (const n of [
+      "list_menu_items",
+      "create_menu_item",
+      "update_menu_item",
+      "list_orders",
+    ]) {
+      want.add(n);
+    }
+    return SKIPPE_TOOLS.filter((t) => want.has(t.name));
+  }
+
+  if (/\bpriorit|\bpriort|\b(low|mid|high)\s+(tier|level|to|at)\b/.test(msg)) {
+    want.add("list_priority_levels");
+    want.add("upsert_priority_level");
+    want.add("delete_priority_level");
+  }
+  if (/\bdiscount|\bpromo|\b% off\b/.test(msg)) {
+    want.add("list_discounts");
+    want.add("create_discount");
+    want.add("update_discount");
+    want.add("end_discount");
+  }
+  if (/\b(menu|item|dish|stock|restock)\b/.test(msg)) {
+    want.add("list_menu_items");
+    want.add("create_menu_item");
+    want.add("update_menu_item");
+    want.add("delete_menu_item");
+  }
+  if (/\border\b/.test(msg)) {
+    want.add("list_orders");
+    want.add("set_order_status");
+    want.add("get_order_details");
+  }
+  if (/\bbulk\b/.test(msg) && /\b(fee|service)\b/.test(msg)) {
+    want.add("get_bulk_service_fee");
+    want.add("set_bulk_service_fee");
+  }
+
+  // Unknown intent → tiny read-only set (cheap)
+  if (want.size === 0) {
+    for (const n of ["list_menu_items", "list_orders", "list_priority_levels"]) {
+      want.add(n);
+    }
+  }
+
+  return SKIPPE_TOOLS.filter((t) => want.has(t.name));
+}
+
+/** Short prompt for text-only turns (big token saver). */
+export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolean }) {
+  return [
+    `Skippe — Panda Bites kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). Currency B$.`,
+    "USE TOOLS to finish the job. Reply in short plain English. Never invent success without ok:true tool results.",
+    "Cannot set menu prices (always B$0 on create). Priority: list/upsert/delete tiers. Discounts: create/list/end. Menu: list/create/update stock. Orders: list/set status.",
+    "Be brief. Prefer tools over explanations.",
+  ].join("\n");
+}
+
+export function buildSkippePrompt(args: {
+  staffName: string;
+  isAdmin: boolean;
+  /** When true, include fridge/restock guidance (images attached). */
+  withVision?: boolean;
+}) {
+  if (!args.withVision) {
+    return buildSkippePromptLite(args);
+  }
+
   return [
     "You are Skippe — an extremely capable AI kitchen manager inside the Panda Bites staff portal (Bloxburg food shop, currency B$).",
     `You are working with ${args.staffName} (${
@@ -1464,7 +1538,7 @@ async function runOpenAiTurn(args: {
   const toolsEnabled = args.toolsEnabled !== false;
 
   // Keep context tight — less tokens = less latency.
-  const recent = args.history.slice(-6);
+  const recent = args.history.slice(-3);
 
   const input: Array<Record<string, unknown>> = recent.map((h) => ({
     role: h.role,
@@ -1491,9 +1565,13 @@ async function runOpenAiTurn(args: {
     ],
   });
 
-  const maxRounds = toolsEnabled ? 2 : 1;
+  // 1 round keeps cost low; instant path already handled clear kitchen intents.
+  const maxRounds = 1;
+  const selected = toolsEnabled
+    ? selectToolsForMessage(args.userText, args.images.length)
+    : [];
   const toolDefs = toolsEnabled
-    ? SKIPPE_TOOLS.map((t) => ({
+    ? selected.map((t) => ({
         type: "function",
         name: t.name,
         description: t.description,
@@ -1520,9 +1598,9 @@ async function runOpenAiTurn(args: {
           // Non-stream is faster for tool-agent loops (UI waits for full reply anyway).
           stream: false,
           store: false,
-          // Faster OpenAI tier when available (falls back to standard if not).
-          service_tier: "priority",
-          max_output_tokens: 900,
+          // Prefer standard tier — cheaper; speed comes from instant path + small payloads.
+          service_tier: "auto",
+          max_output_tokens: 350,
           ...(toolDefs ? { tools: toolDefs } : {}),
         }),
       },
@@ -1649,7 +1727,7 @@ async function runGoogleTurn(args: {
       role: "system",
       content: args.instructions,
     },
-    ...args.history.slice(-6).map((h) => ({
+    ...args.history.slice(-3).map((h) => ({
       role: h.role,
       content: h.content.slice(0, 600),
     })),
@@ -1675,8 +1753,11 @@ async function runGoogleTurn(args: {
   });
 
   const toolsEnabled = args.toolsEnabled !== false;
+  const selected = toolsEnabled
+    ? selectToolsForMessage(args.userText, args.images.length)
+    : [];
   const tools = toolsEnabled
-    ? SKIPPE_TOOLS.map((t) => ({
+    ? selected.map((t) => ({
         type: "function",
         function: {
           name: t.name,
@@ -1686,8 +1767,8 @@ async function runGoogleTurn(args: {
       }))
     : undefined;
 
-  // Vision-only / chat-only: single round, no tools → no kitchen table access.
-  const maxRounds = toolsEnabled ? 2 : 1;
+  // Single round — cheaper & faster. Instant path + intent fallback cover misses.
+  const maxRounds = 1;
 
   for (let round = 0; round < maxRounds; round += 1) {
     const res = await gatewayFetch(
@@ -1706,8 +1787,7 @@ async function runGoogleTurn(args: {
           ...(tools ? { tools } : {}),
           ...(tools
             ? {
-                // Prefer tools when the chef is clearly asking for kitchen work.
-                tool_choice: /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier)\b/i.test(
+                tool_choice: /\b(discount|order|claim|menu|stock|list|create|make|add|mark|set|priority|tier|restock)\b/i.test(
                   args.userText,
                 )
                   ? "required"
@@ -1715,6 +1795,8 @@ async function runGoogleTurn(args: {
               }
             : {}),
           stream: false,
+          temperature: 0.2,
+          max_tokens: 350,
         }),
       },
       `model=${args.model} path=/v1/chat/completions`,
