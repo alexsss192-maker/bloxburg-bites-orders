@@ -1079,6 +1079,38 @@ function PandaPage() {
           : "lg:grid-cols-[1.4fr_1fr]"
       }`}
     >
+      {/* Shine status — pure CSS, no LLM credits */}
+      <style>{`
+        @keyframes skippe-shine {
+          0% { background-position: 200% center; }
+          100% { background-position: -200% center; }
+        }
+        .skippe-shine {
+          display: inline-block;
+          background-image: linear-gradient(
+            110deg,
+            rgba(40, 30, 35, 0.45) 0%,
+            rgba(40, 30, 35, 0.45) 35%,
+            rgba(255, 255, 255, 0.95) 50%,
+            rgba(40, 30, 35, 0.45) 65%,
+            rgba(40, 30, 35, 0.45) 100%
+          );
+          background-size: 200% 100%;
+          background-clip: text;
+          -webkit-background-clip: text;
+          color: transparent;
+          -webkit-text-fill-color: transparent;
+          animation: skippe-shine 2s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .skippe-shine {
+            animation: none;
+            color: rgba(40, 30, 35, 0.65);
+            -webkit-text-fill-color: rgba(40, 30, 35, 0.65);
+            background: none;
+          }
+        }
+      `}</style>
       <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-gradient-to-r from-blossom to-petal px-6 py-4">
           <div>
@@ -1193,36 +1225,12 @@ function PandaPage() {
                 </div>
               </motion.div>
             ))}
-                  <style>{`
-        .skippe-shine {
-          position: relative;
-          display: inline-block;
-          background: linear-gradient(
-            90deg,
-            rgba(30, 30, 30, 0.55) 0%,
-            rgba(30, 30, 30, 0.55) 40%,
-            rgba(255, 255, 255, 0.95) 50%,
-            rgba(30, 30, 30, 0.55) 60%,
-            rgba(30, 30, 30, 0.55) 100%
-          );
-          background-size: 200% 100%;
-          -webkit-background-clip: text;
-          background-clip: text;
-          color: transparent;
-          animation: skippe-shine 2.2s ease-in-out infinite;
-        }
-        @keyframes skippe-shine {
-          0% { background-position: 100% 0; }
-          100% { background-position: -100% 0; }
-        }
-      `}</style>
-
             {loading && (
-              <div className="flex items-center gap-3 py-1">
+              <div className="flex items-center gap-3 py-1" aria-live="polite">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cherry" />
                 <span
                   key={liveActivities[activityIndex]?.id ?? "on-it"}
-                  className="skippe-shine text-sm font-medium text-ink/70"
+                  className="skippe-shine text-sm font-medium"
                 >
                   {liveActivities[activityIndex]?.label ?? "Skippe is on it"}
                 </span>
