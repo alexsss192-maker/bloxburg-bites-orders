@@ -95,11 +95,25 @@ export const pandaChat = createServerFn({
      * so importing skippe.server.ts at the top of this file
      * can affect SSR for unrelated public routes.
      */
-    const {
-      buildSkippePrompt,
-      resolveModel,
-      runSkippeTurn,
-    } = await import("@/lib/skippe.server");
+    let buildSkippePrompt: any;
+    let resolveModel: any;
+    let runSkippeTurn: any;
+    try {
+      const mod = await import("@/lib/skippe.server");
+      buildSkippePrompt = mod.buildSkippePrompt;
+      resolveModel = mod.resolveModel;
+      runSkippeTurn = mod.runSkippeTurn;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        reply: `⚠️ Skippe module failed to load: ${msg}`,
+        thinking: "",
+        runs: [],
+        model: "none",
+        model_label: "Skippe",
+        auto: false,
+      };
+    }
 
     const actorEmail =
       (
@@ -114,9 +128,14 @@ export const pandaChat = createServerFn({
       .select("role")
       .eq("user_id", context.userId);
     if (roleError) {
-      throw new Error(
-        roleError.message || "Could not verify staff role — try signing in again",
-      );
+      return {
+        reply: `⚠️ Could not verify staff role: ${roleError.message || "sign in again"}`,
+        thinking: "",
+        runs: [],
+        model: "none",
+        model_label: "Skippe",
+        auto: false,
+      };
     }
     const roles =
       (roleRows as unknown as Array<{ role: string }> | null)?.map((r) => r.role) ??
@@ -124,7 +143,14 @@ export const pandaChat = createServerFn({
     const isAdmin = roles.includes("admin");
     const isChef = roles.includes("chef");
     if (!isAdmin && !isChef) {
-      throw new Error("Chef or admin only");
+      return {
+        reply: "⚠️ Chef or admin only — Skippe is for staff.",
+        thinking: "",
+        runs: [],
+        model: "none",
+        model_label: "Skippe",
+        auto: false,
+      };
     }
 
     // No staff_profiles read — name from JWT email only (0 extra DB).
@@ -255,13 +281,12 @@ export const clearSkippeChat =
         );
 
       if (error) {
-        throw new Error(
-          error.message,
-        );
+        // Don't 500 — chat clear is best-effort (table may be missing)
+        return { ok: false as const, error: error.message };
       }
 
       return {
-        ok: true,
+        ok: true as const,
       };
     });
 
