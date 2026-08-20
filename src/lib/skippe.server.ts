@@ -1598,9 +1598,8 @@ async function runOpenAiTurn(args: {
           // Non-stream is faster for tool-agent loops (UI waits for full reply anyway).
           stream: false,
           store: false,
-          // Prefer standard tier — cheaper; speed comes from instant path + small payloads.
-          service_tier: "auto",
-          max_output_tokens: 350,
+          // Do not send service_tier — Lovable gateway may 500 on unsupported values.
+          max_output_tokens: 400,
           ...(toolDefs ? { tools: toolDefs } : {}),
         }),
       },
