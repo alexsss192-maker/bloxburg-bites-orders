@@ -126,7 +126,7 @@ export const pandaChat = createServerFn({
 
     // History is browser localStorage only — never skippe_messages.
     // Keep short — long threads slow the gateway and cause tool-call mismatches.
-    const history = (data.history ?? []).slice(-6);
+    const history = (data.history ?? []).slice(-3);
 
     // Hard cap images: 9 frames = slow + often fails. 3 is enough for fridge scans.
     const images = (data.images ?? []).slice(0, 3);
@@ -148,6 +148,7 @@ export const pandaChat = createServerFn({
       instructions: buildSkippePrompt({
         staffName,
         isAdmin,
+        withVision: images.length > 0,
       }),
       history,
       userText: data.message,
