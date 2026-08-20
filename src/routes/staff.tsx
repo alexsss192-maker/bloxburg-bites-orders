@@ -36,6 +36,7 @@ import {
   EyeOff,
   LockKeyhole,
   CircleCheck,
+  Heart,
 } from "lucide-react";
 
 export const Route = createFileRoute("/staff")({
@@ -64,6 +65,7 @@ type NavItem = {
     | "/staff/menu"
     | "/staff/discounts"
     | "/staff/priority"
+    | "/staff/tips"
     | "/staff/panda"
     | "/staff/audit"
     | "/staff/users";
@@ -93,6 +95,11 @@ const NAV_ITEMS: NavItem[] = [
     to: "/staff/priority",
     label: "Priority",
     icon: Zap,
+  },
+  {
+    to: "/staff/tips",
+    label: "Tip jar",
+    icon: Heart,
   },
   {
     to: "/staff/panda",
