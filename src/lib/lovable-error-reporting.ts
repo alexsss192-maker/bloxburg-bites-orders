@@ -52,6 +52,7 @@ export function reportLovableError(
 
   const security = diagnoseSecurityRisk(error);
   const bug = diagnoseBug(error);
+  const handled = Boolean(context.handled);
 
   window.__lovableEvents?.captureException?.(
     error,
@@ -72,8 +73,10 @@ export function reportLovableError(
     {
       mechanism: security?.isSecurityRisk
         ? "security_risk"
-        : "react_error_boundary",
-      handled: Boolean(context.handled),
+        : handled
+          ? "manual"
+          : "react_error_boundary",
+      handled,
       severity: "error",
     },
   );
@@ -87,6 +90,39 @@ export function reportLovableError(
       bug.confirmed.fix,
     );
   }
+
+  return { bug, security };
+}
+
+/**
+ * Zero-DB path for handled UI failures (mutations, forms, toasts).
+ * Always runs bug-detector + security-risk, reports via Lovable, then returns
+ * a user-facing message so callers can toast without swallowing diagnosis.
+ */
+export function reportHandledError(
+  error: unknown,
+  source: string,
+  fallbackMessage = "Something went wrong",
+): {
+  message: string;
+  fix: string | null;
+  isSecurity: boolean;
+} {
+  const err =
+    error instanceof Error
+      ? error
+      : new Error(typeof error === "string" ? error : fallbackMessage);
+
+  const { bug, security } = reportLovableError(err, {
+    source,
+    handled: true,
+  }) ?? { bug: null, security: null };
+
+  return {
+    message: err.message || fallbackMessage,
+    fix: bug?.confirmed.fix ?? security?.fix ?? null,
+    isSecurity: Boolean(security?.isSecurityRisk ?? bug?.isSecurityRelated),
+  };
 }
 
 export function reportSecurityRisk(
