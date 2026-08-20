@@ -5,15 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { placeOrder, previewOrder } from "@/lib/orders.functions";
 import { getPriorityLevels, getCartChefs, type PriorityLevel } from "@/lib/members.functions";
-import {
-  type TipOption,
-  activeTipOptions,
-  computeTipBs,
-  formatTipOption,
-  loadTipOptions,
-} from "@/lib/tips";
 import { useQuery } from "@tanstack/react-query";
-import { Zap, Heart } from "lucide-react";
+import { Zap } from "lucide-react";
 import { useCart } from "@/lib/cart-store";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -129,14 +122,6 @@ function CheckoutPage() {
     Record<string, "low" | "mid" | "high">
   >({});
 
-  /** Tip jar — no DB; presets from localStorage / code defaults. */
-  const [tipOptions, setTipOptions] = useState<TipOption[]>([]);
-  const [selectedTipId, setSelectedTipId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setTipOptions(loadTipOptions());
-  }, []);
-
   const [pricingLoading, setPricingLoading] = useState(items.length > 0);
 
   const [submitting, setSubmitting] =
@@ -144,6 +129,14 @@ function CheckoutPage() {
 
   const [orderId, setOrderId] =
     useState<string | null>(null);
+
+  /** Snapshot for Discord copy — cart is cleared after place order. */
+  const [receipt, setReceipt] = useState<{
+    discord: string;
+    note: string;
+    total_bs: number;
+    lines: Array<{ name: string; quantity: number; price_bs: number }>;
+  } | null>(null);
 
   const navigate = useNavigate();
 
@@ -204,23 +197,10 @@ function CheckoutPage() {
     [priorityPicks],
   );
 
-  const foodTotal = pickTotal(pricing, total);
-
-  const liveTipOptions = useMemo(
-    () => activeTipOptions(tipOptions),
-    [tipOptions],
+  const displayTotal = pickTotal(
+    pricing,
+    total,
   );
-
-  const selectedTip = useMemo(
-    () => liveTipOptions.find((t) => t.id === selectedTipId) ?? null,
-    [liveTipOptions, selectedTipId],
-  );
-
-  const tipBs = selectedTip
-    ? computeTipBs(selectedTip.tip_type, selectedTip.tip_value, foodTotal)
-    : 0;
-
-  const displayTotal = foodTotal + tipBs;
 
   const displayDiscount =
     pricing &&
@@ -366,6 +346,17 @@ function CheckoutPage() {
     setSubmitting(true);
 
     try {
+      const snapshot = {
+        discord: discord.trim(),
+        note: note.trim(),
+        total_bs: displayTotal,
+        lines: items.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          price_bs: i.price_bs,
+        })),
+      };
+
       const res =
         await placeOrderFn({
           data: {
@@ -388,14 +379,10 @@ function CheckoutPage() {
 
             priority:
               prioritySelection,
-
-            tip_bs: tipBs,
-            tip_label: selectedTip
-              ? formatTipOption(selectedTip)
-              : null,
           },
         });
 
+      setReceipt(snapshot);
       setOrderId(res.order_id);
 
       try {
@@ -431,6 +418,7 @@ function CheckoutPage() {
     return (
       <SuccessPanel
         orderId={orderId}
+        receipt={receipt}
         onView={() =>
           navigate({
             to: "/order/$id",
@@ -480,11 +468,6 @@ function CheckoutPage() {
                         priorityPicks={priorityPicks}
                         setPriorityPicks={setPriorityPicks}
                         displayTotal={displayTotal}
-                        foodTotal={foodTotal}
-                        tipOptions={liveTipOptions}
-                        selectedTipId={selectedTipId}
-                        setSelectedTipId={setSelectedTipId}
-                        tipBs={tipBs}
                       />
 
                       <StepFooter
@@ -802,11 +785,6 @@ function ReviewStep({
   priorityPicks,
   setPriorityPicks,
   displayTotal,
-  foodTotal,
-  tipOptions,
-  selectedTipId,
-  setSelectedTipId,
-  tipBs,
 }: {
   promoCode: string;
   setPromoCode: (value: string) => void;
@@ -816,11 +794,6 @@ function ReviewStep({
   priorityPicks: Record<string, "low" | "mid" | "high">;
   setPriorityPicks: (next: Record<string, "low" | "mid" | "high">) => void;
   displayTotal: number;
-  foodTotal: number;
-  tipOptions: TipOption[];
-  selectedTipId: string | null;
-  setSelectedTipId: (id: string | null) => void;
-  tipBs: number;
 }) {
   const items = useCart(
     (s) => s.items,
@@ -921,64 +894,6 @@ function ReviewStep({
             0
           ).toLocaleString()}
         </p>
-      )}
-
-      {tipOptions.length > 0 && (
-        <div className="mt-5">
-          <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
-            <Heart className="h-4 w-4 text-cherry" />
-            Tip the chef
-          </p>
-          <p className="mt-1 text-xs text-ink/55">
-            Optional — shown on your order note so the kitchen knows what to collect in-game.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setSelectedTipId(null)}
-              className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                selectedTipId === null
-                  ? "border-ink bg-ink text-cream"
-                  : "border-border bg-white text-ink hover:border-ink/40"
-              }`}
-            >
-              No tip
-            </button>
-            {tipOptions.map((opt) => {
-              const amount = computeTipBs(
-                opt.tip_type,
-                opt.tip_value,
-                foodTotal,
-              );
-              const selected = selectedTipId === opt.id;
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => setSelectedTipId(opt.id)}
-                  className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                    selected
-                      ? "border-cherry bg-cherry text-cream"
-                      : "border-border bg-white text-ink hover:border-cherry/50"
-                  }`}
-                >
-                  {formatTipOption(opt)}
-                  {foodTotal > 0 ? (
-                    <span className={selected ? "opacity-90" : "text-ink/50"}>
-                      {" "}
-                      · B${amount.toLocaleString()}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-          {tipBs > 0 && (
-            <p className="mt-2 text-sm text-cherry">
-              Tip: +B${tipBs.toLocaleString()}
-            </p>
-          )}
-        </div>
       )}
 
       {bulkServiceFee > 0 && (
@@ -1457,46 +1372,99 @@ function BasketSummary({
   );
 }
 
+function buildDiscordOrderMessage(args: {
+  orderId: string;
+  link: string;
+  receipt: {
+    discord: string;
+    note: string;
+    total_bs: number;
+    lines: Array<{ name: string; quantity: number; price_bs: number }>;
+  } | null;
+}): string {
+  const shortId = args.orderId.slice(0, 8);
+  const lines = args.receipt?.lines ?? [];
+  const itemLines =
+    lines.length > 0
+      ? lines
+          .map(
+            (l) =>
+              `• ${l.name} × ${l.quantity}${
+                l.price_bs > 0
+                  ? ` — B$${(l.price_bs * l.quantity).toLocaleString()}`
+                  : ""
+              }`,
+          )
+          .join("\n")
+      : "• (see order link for items)";
+
+  const total =
+    args.receipt && args.receipt.total_bs > 0
+      ? `B$${args.receipt.total_bs.toLocaleString()}`
+      : "see receipt";
+
+  const note =
+    args.receipt?.note?.trim()
+      ? `\nNote: ${args.receipt.note.trim()}`
+      : "";
+
+  const who = args.receipt?.discord?.trim() || "member";
+
+  return [
+    `Hi! New Panda Bites order 🐼`,
+    `Order #${shortId}`,
+    `Discord: ${who}`,
+    ``,
+    itemLines,
+    ``,
+    `Total: ${total}`,
+    note,
+    args.link ? `\nReceipt: ${args.link}` : "",
+    ``,
+    `Ready to pay in B$ — thanks!`,
+  ]
+    .filter((line, i, arr) => !(line === "" && arr[i - 1] === ""))
+    .join("\n")
+    .trim();
+}
+
 function SuccessPanel({
   orderId,
+  receipt,
   onView,
 }: {
   orderId: string;
+  receipt: {
+    discord: string;
+    note: string;
+    total_bs: number;
+    lines: Array<{ name: string; quantity: number; price_bs: number }>;
+  } | null;
   onView: () => void;
 }) {
-  const [copied, setCopied] =
-    useState(false);
+  const [copied, setCopied] = useState<"link" | "discord" | null>(null);
 
   const link = useMemo(
     () =>
-      typeof window !==
-      "undefined"
+      typeof window !== "undefined"
         ? `${window.location.origin}/order/${orderId}`
         : `/order/${orderId}`,
     [orderId],
   );
 
-  async function copy() {
+  const discordMessage = useMemo(
+    () => buildDiscordOrderMessage({ orderId, link, receipt }),
+    [orderId, link, receipt],
+  );
+
+  async function copyText(text: string, kind: "link" | "discord") {
     try {
-      await navigator.clipboard.writeText(
-        link,
-      );
-
-      setCopied(true);
-
-      toast.success(
-        "Link copied",
-      );
-
-      setTimeout(
-        () =>
-          setCopied(false),
-        1600,
-      );
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      toast.success(kind === "discord" ? "Discord message copied" : "Link copied");
+      setTimeout(() => setCopied(null), 1600);
     } catch {
-      toast.error(
-        "Couldn't copy — long-press to copy manually",
-      );
+      toast.error("Couldn't copy — long-press to copy manually");
     }
   }
 
@@ -1548,7 +1516,7 @@ function SuccessPanel({
           </h1>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            A chef will DM you in Discord to confirm payment and delivery.
+            Copy the Discord message below and paste it to your chef to confirm payment and delivery.
           </p>
 
           <div className="mt-6 rounded-2xl bg-blossom/60 px-4 py-3 text-left">
@@ -1561,7 +1529,28 @@ function SuccessPanel({
             </p>
           </div>
 
+          <div className="mt-4 rounded-2xl border border-ink/10 bg-ink/[0.03] px-4 py-3 text-left">
+            <p className="text-[0.65rem] uppercase tracking-widest text-ink/50">
+              Discord message
+            </p>
+            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-ink/80">
+              {discordMessage}
+            </pre>
+          </div>
+
           <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <button
+              onClick={() => copyText(discordMessage, "discord")}
+              className="inline-flex items-center gap-1.5 rounded-full bg-cherry px-6 py-3 text-sm font-semibold text-cream hover:bg-ink"
+            >
+              {copied === "discord" ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+              {copied === "discord" ? "Copied!" : "Copy for Discord"}
+            </button>
+
             <button
               onClick={onView}
               className="rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream hover:bg-cherry"
@@ -1570,18 +1559,15 @@ function SuccessPanel({
             </button>
 
             <button
-              onClick={copy}
+              onClick={() => copyText(link, "link")}
               className="inline-flex items-center gap-1.5 rounded-full border border-ink/10 bg-white px-6 py-3 text-sm font-semibold text-ink hover:bg-blossom"
             >
-              {copied ? (
+              {copied === "link" ? (
                 <Check className="h-4 w-4" />
               ) : (
                 <Copy className="h-4 w-4" />
               )}
-
-              {copied
-                ? "Copied!"
-                : "Copy link"}
+              {copied === "link" ? "Copied!" : "Copy link"}
             </button>
           </div>
 
