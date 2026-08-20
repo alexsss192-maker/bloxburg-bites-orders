@@ -242,7 +242,7 @@ function loadSkippeChat(): Msg[] {
       thinking: typeof m.thinking === "string" ? m.thinking : undefined,
       runs: Array.isArray(m.runs) ? m.runs : undefined,
       images: Array.isArray(m.images)
-        ? m.images.filter((x): x is string => typeof x === "string").slice(0, 9)
+        ? m.images.filter((x): x is string => typeof x === "string").slice(0, 3)
         : undefined,
     }));
   } catch {
@@ -263,7 +263,7 @@ function saveSkippeChat(msgs: Msg[]) {
       runs: m.runs,
       images:
         nearEnd && m.images && m.images.length > 0
-          ? m.images.slice(0, 6)
+          ? m.images.slice(0, 3)
           : undefined,
     };
   });
@@ -288,7 +288,7 @@ function loadDraftImages(): string[] {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .filter((x): x is string => typeof x === "string" && x.startsWith("data:"))
-      .slice(0, 9);
+      .slice(0, 3);
   } catch {
     return [];
   }
@@ -302,7 +302,7 @@ function saveDraftImages(imgs: string[]) {
     }
     window.sessionStorage.setItem(
       SKIPPE_DRAFT_IMAGES_KEY,
-      JSON.stringify(imgs.slice(0, 9)),
+      JSON.stringify(imgs.slice(0, 3)),
     );
   } catch {
     // Quota — drop oldest until it fits
@@ -622,7 +622,7 @@ function PandaPage() {
     if (!files) return;
     let remaining = 9 - images.length;
     if (remaining <= 0) {
-      toast.error("Max 9 images — remove one first");
+      toast.error("Max 3 images — remove one first");
       return;
     }
 
@@ -666,7 +666,7 @@ function PandaPage() {
     }
 
     if (next.length > 0) {
-      setImages((prev) => [...prev, ...next].slice(0, 9));
+      setImages((prev) => [...prev, ...next].slice(0, 3));
     }
   }
 
@@ -729,7 +729,7 @@ function PandaPage() {
         if (!dataUrl) return prev;
         // Skip exact duplicate of the last frame (user not scrolling)
         if (prev.length > 0 && prev[prev.length - 1] === dataUrl) return prev;
-        return [...prev, dataUrl].slice(0, 4);
+        return [...prev, dataUrl].slice(0, 3);
       });
     }, intervalMs);
     return () => {
@@ -745,7 +745,7 @@ function PandaPage() {
   async function captureScreenshot() {
     if (!requireCheapVision()) return;
     if (images.length >= 9) {
-      toast.error("Max 9 images — remove one first");
+      toast.error("Max 3 images — remove one first");
       return;
     }
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -795,7 +795,7 @@ function PandaPage() {
         );
         return;
       }
-      setImages((prev) => [...prev, dataUrl].slice(0, 9));
+      setImages((prev) => [...prev, dataUrl].slice(0, 3));
       toast.success("Screenshot added for Skippe");
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") {
@@ -919,7 +919,7 @@ function PandaPage() {
 
   async function snapFromShare() {
     if (images.length >= 9) {
-      toast.error("Max 9 images — remove one first");
+      toast.error("Max 3 images — remove one first");
       return;
     }
     const video = shareVideoRef.current;
@@ -941,14 +941,14 @@ function PandaPage() {
       toast.error("Couldn’t snap — try Resume share on the game window");
       return;
     }
-    setImages((prev) => [...prev, dataUrl].slice(0, 9));
+    setImages((prev) => [...prev, dataUrl].slice(0, 3));
     toast.success("Frame snapped for Skippe");
   }
 
   async function send() {
     if (!input.trim() && images.length === 0) return;
     // Cap frames per send so the request stays fast/reliable
-    const sendImages = images.slice(0, 4);
+    const sendImages = images.slice(0, 3);
     const userMsg: Msg = {
       role: "user",
       content: input.trim() || "(scan these images)",
@@ -956,12 +956,12 @@ function PandaPage() {
     };
     setMessages((m) => [...m, userMsg]);
     setLoading(true);
-    // Tiny history = much faster gateway (tokens dominate latency).
-    const historyWindow = sendImages.length > 0 ? 3 : 2;
+    // Short history keeps gateway fast — even shorter when images are attached
+    const historyWindow = sendImages.length > 0 ? 4 : 8;
     const history = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .slice(-historyWindow)
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 400) }));
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 800) }));
     const payload = {
       message: input.trim(),
       images: sendImages.map((d) => ({ data_url: d })),
@@ -1365,7 +1365,7 @@ function PandaPage() {
           </div>
           <p className="border-t border-cream/10 px-4 py-2 text-[11px] text-cream/45">
             Share your Roblox/Bloxburg window, then scroll the fridge — frames
-            auto-capture every ~1.6s (max 9). Snap still works for a manual
+            auto-capture every ~1.6s (max 3). Snap still works for a manual
             frame. Nothing is uploaded until you Send. For restock, say e.g.
             “update stock from this scan” so I also check open orders.
           </p>
@@ -1414,3 +1414,4 @@ function PandaPage() {
     </div>
   );
 }
+c
