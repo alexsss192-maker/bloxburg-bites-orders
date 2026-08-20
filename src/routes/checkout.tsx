@@ -5,8 +5,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import { toast } from "sonner";
 import { placeOrder, previewOrder } from "@/lib/orders.functions";
 import { getPriorityLevels, getCartChefs, type PriorityLevel } from "@/lib/members.functions";
+import {
+  type TipOption,
+  activeTipOptions,
+  computeTipBs,
+  formatTipOption,
+  loadTipOptions,
+} from "@/lib/tips";
 import { useQuery } from "@tanstack/react-query";
-import { Zap } from "lucide-react";
+import { Zap, Heart } from "lucide-react";
 import { useCart } from "@/lib/cart-store";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -122,6 +129,14 @@ function CheckoutPage() {
     Record<string, "low" | "mid" | "high">
   >({});
 
+  /** Tip jar — no DB; presets from localStorage / code defaults. */
+  const [tipOptions, setTipOptions] = useState<TipOption[]>([]);
+  const [selectedTipId, setSelectedTipId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTipOptions(loadTipOptions());
+  }, []);
+
   const [pricingLoading, setPricingLoading] = useState(items.length > 0);
 
   const [submitting, setSubmitting] =
@@ -189,10 +204,23 @@ function CheckoutPage() {
     [priorityPicks],
   );
 
-  const displayTotal = pickTotal(
-    pricing,
-    total,
+  const foodTotal = pickTotal(pricing, total);
+
+  const liveTipOptions = useMemo(
+    () => activeTipOptions(tipOptions),
+    [tipOptions],
   );
+
+  const selectedTip = useMemo(
+    () => liveTipOptions.find((t) => t.id === selectedTipId) ?? null,
+    [liveTipOptions, selectedTipId],
+  );
+
+  const tipBs = selectedTip
+    ? computeTipBs(selectedTip.tip_type, selectedTip.tip_value, foodTotal)
+    : 0;
+
+  const displayTotal = foodTotal + tipBs;
 
   const displayDiscount =
     pricing &&
@@ -360,6 +388,11 @@ function CheckoutPage() {
 
             priority:
               prioritySelection,
+
+            tip_bs: tipBs,
+            tip_label: selectedTip
+              ? formatTipOption(selectedTip)
+              : null,
           },
         });
 
@@ -447,6 +480,11 @@ function CheckoutPage() {
                         priorityPicks={priorityPicks}
                         setPriorityPicks={setPriorityPicks}
                         displayTotal={displayTotal}
+                        foodTotal={foodTotal}
+                        tipOptions={liveTipOptions}
+                        selectedTipId={selectedTipId}
+                        setSelectedTipId={setSelectedTipId}
+                        tipBs={tipBs}
                       />
 
                       <StepFooter
@@ -764,6 +802,11 @@ function ReviewStep({
   priorityPicks,
   setPriorityPicks,
   displayTotal,
+  foodTotal,
+  tipOptions,
+  selectedTipId,
+  setSelectedTipId,
+  tipBs,
 }: {
   promoCode: string;
   setPromoCode: (value: string) => void;
@@ -773,6 +816,11 @@ function ReviewStep({
   priorityPicks: Record<string, "low" | "mid" | "high">;
   setPriorityPicks: (next: Record<string, "low" | "mid" | "high">) => void;
   displayTotal: number;
+  foodTotal: number;
+  tipOptions: TipOption[];
+  selectedTipId: string | null;
+  setSelectedTipId: (id: string | null) => void;
+  tipBs: number;
 }) {
   const items = useCart(
     (s) => s.items,
@@ -873,6 +921,64 @@ function ReviewStep({
             0
           ).toLocaleString()}
         </p>
+      )}
+
+      {tipOptions.length > 0 && (
+        <div className="mt-5">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+            <Heart className="h-4 w-4 text-cherry" />
+            Tip the chef
+          </p>
+          <p className="mt-1 text-xs text-ink/55">
+            Optional — shown on your order note so the kitchen knows what to collect in-game.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedTipId(null)}
+              className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                selectedTipId === null
+                  ? "border-ink bg-ink text-cream"
+                  : "border-border bg-white text-ink hover:border-ink/40"
+              }`}
+            >
+              No tip
+            </button>
+            {tipOptions.map((opt) => {
+              const amount = computeTipBs(
+                opt.tip_type,
+                opt.tip_value,
+                foodTotal,
+              );
+              const selected = selectedTipId === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setSelectedTipId(opt.id)}
+                  className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                    selected
+                      ? "border-cherry bg-cherry text-cream"
+                      : "border-border bg-white text-ink hover:border-cherry/50"
+                  }`}
+                >
+                  {formatTipOption(opt)}
+                  {foodTotal > 0 ? (
+                    <span className={selected ? "opacity-90" : "text-ink/50"}>
+                      {" "}
+                      · B${amount.toLocaleString()}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {tipBs > 0 && (
+            <p className="mt-2 text-sm text-cherry">
+              Tip: +B${tipBs.toLocaleString()}
+            </p>
+          )}
+        </div>
       )}
 
       {bulkServiceFee > 0 && (
