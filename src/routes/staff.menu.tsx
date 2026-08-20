@@ -48,7 +48,6 @@ type Item = {
   image_url: string | null;
   category: "non_seasonal" | "seasonal";
   is_active: boolean;
-  low_stock_threshold?: number;
   owner_id?: string | null;
 };
 
@@ -60,7 +59,6 @@ const emptyItem: Partial<Item> = {
   image_url: "",
   category: "non_seasonal",
   is_active: true,
-  low_stock_threshold: 5,
 };
 
 function MenuEditor() {
@@ -86,7 +84,6 @@ function MenuEditor() {
           image_url: v.image_url || null,
           category: v.category ?? "non_seasonal",
           is_active: v.is_active ?? true,
-          low_stock_threshold: Number(v.low_stock_threshold ?? 5) || 0,
         },
       }),
     onSuccess: () => {
@@ -331,24 +328,6 @@ function MenuEditor() {
                     className="mt-2"
                   />
                 </div>
-              </div>
-              <div>
-                <Label>Low-stock alert threshold</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={editing.low_stock_threshold ?? 5}
-                  onChange={(e) =>
-                    setEditing({
-                      ...editing,
-                      low_stock_threshold: Number(e.target.value),
-                    })
-                  }
-                  className="mt-2"
-                />
-                <p className="mt-1 text-xs text-ink/50">
-                  We alert you as soon as stock drops to this number or lower.
-                </p>
               </div>
               <div>
                 <Label>Image URL</Label>
