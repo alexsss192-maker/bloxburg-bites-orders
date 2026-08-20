@@ -51,20 +51,18 @@ export const Route = createFileRoute("/menu")({
 
 type Tab = "non_seasonal" | "seasonal";
 
-const PRICE_FILTERS: Array<{ label: string; max: number | null }> = [
-  { label: "Any price", max: null },
-  { label: "Under B$1k", max: 1000 },
-  { label: "Under B$5k", max: 5000 },
-  { label: "Under B$15k", max: 15000 },
-  { label: "Under B$50k", max: 50000 },
-];
-
 function MenuPage() {
   const [tab, setTab] = useState<Tab>("non_seasonal");
   const { data: chefs } = useSuspenseQuery(chefsQuery);
   const [chefId, setChefId] = useState<string>(() => chefs[0]?.owner_id ?? "");
   const [search, setSearch] = useState("");
-  const [maxPrice, setMaxPrice] = useState<number | null>(null);
+  /** Typeable max B$ (e.g. 100) — empty = no filter. Client-only. */
+  const [maxPriceText, setMaxPriceText] = useState("");
+  const maxPrice = useMemo(() => {
+    const n = Number(String(maxPriceText).replace(/[,_\s]/g, ""));
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.floor(n);
+  }, [maxPriceText]);
   const activeChef =
     chefs.find((c) => c.owner_id === chefId) ?? chefs[0] ?? null;
 
@@ -80,13 +78,13 @@ function MenuPage() {
               active={tab === "non_seasonal"}
               onClick={() => setTab("non_seasonal")}
             >
-              Everyday
+              Non-seasonals
             </TabButton>
             <TabButton
               active={tab === "seasonal"}
               onClick={() => setTab("seasonal")}
             >
-              Seasonal
+              Seasonals
             </TabButton>
           </div>
         </div>
@@ -114,20 +112,22 @@ function MenuPage() {
               </button>
             )}
           </div>
-          <select
-            value={maxPrice ?? ""}
-            onChange={(e) =>
-              setMaxPrice(e.target.value === "" ? null : Number(e.target.value))
-            }
-            className="h-10 shrink-0 rounded-full border border-ink/10 bg-white px-3 text-sm text-ink/80"
-            aria-label="Max price"
-          >
-            {PRICE_FILTERS.map((f) => (
-              <option key={f.label} value={f.max ?? ""}>
-                {f.label}
-              </option>
-            ))}
-          </select>
+          <div className="relative shrink-0">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-ink/40">
+              Under B$
+            </span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={maxPriceText}
+              onChange={(e) =>
+                setMaxPriceText(e.target.value.replace(/[^\d]/g, ""))
+              }
+              placeholder="100"
+              className="h-10 w-36 rounded-full border border-ink/10 bg-white py-2 pl-[4.25rem] pr-3 text-sm tabular-nums outline-none placeholder:text-ink/30 focus:border-ink/25"
+              aria-label="Show items under this B$ amount"
+            />
+          </div>
         </div>
 
         {chefs.length > 1 && (
@@ -226,93 +226,184 @@ function MenuGrid({
     [items, category, ownerId, maxPrice, q],
   );
 
+  const featured = filtered[0];
+  const rest = filtered.slice(1);
+
   if (filtered.length === 0) {
     const hasFilters = Boolean(q) || maxPrice != null;
     return (
-      <p className="py-16 text-center text-sm text-ink/50">
-        {hasFilters
-          ? "No matches — try another search or price."
-          : "Nothing on this shelf yet."}
-      </p>
+      <div className="rounded-3xl border border-dashed border-ink/20 bg-white p-16 text-center">
+        <p className="font-display text-3xl">
+          {hasFilters
+            ? "No matches"
+            : `No ${category === "non_seasonal" ? "non-seasonal" : "seasonal"} items yet`}
+        </p>
+        <p className="mt-2 text-muted-foreground">
+          {hasFilters
+            ? "Try a different search or price."
+            : "Our chefs are prepping this shelf. Check back soon!"}
+        </p>
+      </div>
     );
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {filtered.map((item) => {
-        const inCart =
-          cartItems.find((c) => c.menu_item_id === item.id)?.quantity ?? 0;
-        const remaining = item.stock - inCart;
-        const soldOut = item.stock <= 0;
-        const unpriced = item.price_bs <= 0;
-        const canAdd = !unpriced && !soldOut && remaining > 0;
+    <div className="space-y-8">
+      {featured && (
+        <section className="grid gap-6 md:grid-cols-[1.2fr_1fr]">
+          <div className="relative overflow-hidden rounded-3xl border border-border/60 bg-card">
+            {featured.image_url ? (
+              <img
+                src={featured.image_url}
+                alt={featured.name}
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="grid h-80 w-full place-items-center bg-muted text-8xl">
+                {category === "seasonal" ? "🍁" : "🍰"}
+              </div>
+            )}
+            <div className="absolute left-4 top-4 rounded-full bg-cream/95 px-3 py-1 text-xs font-semibold uppercase tracking-widest text-ink">
+              Featured
+            </div>
+          </div>
 
-        return (
-          <article
-            key={item.id}
-            className="flex flex-col overflow-hidden rounded-2xl border border-ink/10 bg-white"
-          >
-            <div className="relative aspect-[5/3] bg-ink/5">
-              {item.image_url ? (
-                <img
-                  src={item.image_url}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="grid h-full place-items-center text-3xl opacity-40">
-                  {category === "seasonal" ? "🍁" : "🍰"}
+          <div className="flex flex-col justify-center rounded-3xl border border-border/60 bg-white p-8">
+            <p className="text-xs uppercase tracking-[0.3em] text-cherry">
+              {category === "seasonal" ? "Seasonal drop" : "Year-round"}
+            </p>
+            <h2 className="mt-2 font-display text-4xl leading-tight">
+              {featured.name}
+            </h2>
+            <p className="mt-3 text-ink/70">{featured.description}</p>
+            <div className="mt-6 flex items-center justify-between">
+              <span className="font-display text-3xl text-cherry">
+                {featured.price_bs > 0
+                  ? `B$${featured.price_bs.toLocaleString()}`
+                  : "Price coming soon"}
+              </span>
+              <span className="text-sm text-ink/60">Stock: {featured.stock}</span>
+            </div>
+            <button
+              onClick={() => {
+                add({
+                  menu_item_id: featured.id,
+                  name: featured.name,
+                  price_bs: featured.price_bs,
+                  image_url: featured.image_url,
+                  max_stock: featured.stock,
+                });
+                toast.success(`${featured.name} added to basket`);
+              }}
+              disabled={featured.stock <= 0 || featured.price_bs <= 0}
+              className="mt-6 inline-flex items-center justify-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry disabled:cursor-not-allowed disabled:bg-ink/40"
+            >
+              {featured.price_bs > 0 && <Plus className="h-4 w-4" />}
+              {featured.price_bs <= 0
+                ? "Chef is setting the price"
+                : featured.stock <= 0
+                  ? "Unavailable"
+                  : "Add to basket"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {rest.map((item, i) => {
+          const inCart =
+            cartItems.find((c) => c.menu_item_id === item.id)?.quantity ?? 0;
+          const remaining = item.stock - inCart;
+          const soldOut = item.stock <= 0;
+          const unpriced = item.price_bs <= 0;
+
+          return (
+            <motion.article
+              key={item.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+              whileHover={{ y: -4 }}
+              className={`group flex flex-col overflow-hidden rounded-3xl border border-border bg-white transition-shadow hover:shadow-lg ${
+                unpriced ? "opacity-80" : ""
+              }`}
+            >
+              <div
+                className={`relative aspect-[4/3] overflow-hidden bg-muted ${
+                  unpriced ? "grayscale" : ""
+                }`}
+              >
+                {item.image_url ? (
+                  <img
+                    src={item.image_url}
+                    alt={item.name}
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-6xl">
+                    {category === "seasonal" ? "🍁" : "🍰"}
+                  </div>
+                )}
+                {unpriced ? (
+                  <div className="absolute inset-0 grid place-items-center bg-ink/45 backdrop-blur-sm">
+                    <span className="rounded-full bg-cream px-4 py-1 text-xs font-semibold uppercase tracking-widest text-ink">
+                      Price coming soon
+                    </span>
+                  </div>
+                ) : soldOut ? (
+                  <div className="absolute inset-0 grid place-items-center bg-ink/60 backdrop-blur-sm">
+                    <span className="rounded-full bg-cherry px-4 py-1 text-xs font-semibold uppercase tracking-widest text-cream">
+                      Sold out
+                    </span>
+                  </div>
+                ) : null}
+                <div className="absolute left-3 top-3 rounded-full bg-cream/95 px-3 py-1 text-xs font-semibold text-ink">
+                  Stock: {item.stock}
                 </div>
-              )}
-              {(soldOut || unpriced) && (
-                <div className="absolute inset-0 grid place-items-center bg-ink/50">
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-ink">
-                    {unpriced ? "Price soon" : "Sold out"}
+              </div>
+
+              <div className="flex flex-1 flex-col p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-display text-2xl leading-tight">
+                    {item.name}
+                  </h3>
+                  <span className="whitespace-nowrap font-display text-xl text-cherry">
+                    {unpriced ? "—" : `B$${item.price_bs.toLocaleString()}`}
                   </span>
                 </div>
-              )}
-            </div>
-
-            <div className="flex flex-1 flex-col p-4">
-              <div className="flex items-baseline justify-between gap-2">
-                <h3 className="font-display text-lg leading-snug">{item.name}</h3>
-                <span className="shrink-0 text-sm font-medium tabular-nums text-cherry">
-                  {unpriced ? "—" : `B$${item.price_bs.toLocaleString()}`}
-                </span>
+                {item.description && (
+                  <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
+                    {item.description}
+                  </p>
+                )}
+                <button
+                  onClick={() => {
+                    add({
+                      menu_item_id: item.id,
+                      name: item.name,
+                      price_bs: item.price_bs,
+                      image_url: item.image_url,
+                      max_stock: item.stock,
+                    });
+                    toast.success(`${item.name} added to basket`);
+                  }}
+                  disabled={unpriced || soldOut || remaining <= 0}
+                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-cream transition hover:bg-cherry disabled:cursor-not-allowed disabled:bg-ink/40"
+                >
+                  {!unpriced && <Plus className="h-4 w-4" />}
+                  {unpriced
+                    ? "Chef is setting the price"
+                    : soldOut
+                      ? "Unavailable"
+                      : remaining <= 0
+                        ? "Max in basket"
+                        : "Add to basket"}
+                </button>
               </div>
-              {item.description ? (
-                <p className="mt-1 line-clamp-2 text-xs text-ink/50">
-                  {item.description}
-                </p>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => {
-                  add({
-                    menu_item_id: item.id,
-                    name: item.name,
-                    price_bs: item.price_bs,
-                    image_url: item.image_url,
-                    max_stock: item.stock,
-                  });
-                  toast.success(`Added ${item.name}`);
-                }}
-                disabled={!canAdd}
-                className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-full bg-ink px-4 py-2 text-sm font-medium text-cream hover:bg-cherry disabled:cursor-not-allowed disabled:bg-ink/30"
-              >
-                {canAdd && <Plus className="h-3.5 w-3.5" />}
-                {unpriced
-                  ? "Unavailable"
-                  : soldOut
-                    ? "Sold out"
-                    : remaining <= 0
-                      ? "In cart"
-                      : "Add"}
-              </button>
-            </div>
-          </article>
-        );
-      })}
+            </motion.article>
+          );
+        })}
+      </div>
     </div>
   );
 }
