@@ -143,26 +143,32 @@ export const pandaChat = createServerFn({
       data.message,
     );
 
-    const turn = await runSkippeTurn({
-      model,
-      instructions: buildSkippePrompt({
+    let turn;
+    try {
+      turn = await runSkippeTurn({
+        model,
+        instructions: buildSkippePrompt({
+          staffName,
+          isAdmin,
+          withVision: images.length > 0,
+        }),
+        history,
+        userText: data.message,
+        images,
         staffName,
-        isAdmin,
-        withVision: images.length > 0,
-      }),
-      history,
-      userText: data.message,
-      images,
-      staffName,
-      toolsEnabled: !visionOnly,
-      ctx: {
-        supabase: context.supabase as never,
-        userId: context.userId,
-        isAdmin,
-        actorEmail,
-        _cache: new Map(),
-      },
-    });
+        toolsEnabled: !visionOnly,
+        ctx: {
+          supabase: context.supabase as never,
+          userId: context.userId,
+          isAdmin,
+          actorEmail,
+          _cache: new Map(),
+        },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(msg.startsWith("Skippe") ? msg : `Skippe failed: ${msg}`);
+    }
 
     const reply =
       turn.reply ||
