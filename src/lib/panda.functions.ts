@@ -78,23 +78,104 @@ const pandaInput = z.object({
     .default([]),
 });
 
+/**
+ * Soft reply helper — pandaChat must NEVER throw (throws become bare HTTP 500).
+ */
+function skippeFail(reply: string, model = "none"): SkippeReply {
+  return {
+    reply,
+    thinking: "",
+    runs: [],
+    model,
+    model_label: SKIPPE_MODEL_LABELS[model] ?? "Skippe",
+    auto: false,
+  };
+}
+
+/**
+ * pandaChat — no auth middleware, no zod throw.
+ * Auth + validation run inside and always return SkippeReply.
+ */
 export const pandaChat = createServerFn({
   method: "POST",
-})
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    pandaInput.parse(d),
-  )
-  .handler(async ({ context, data }): Promise<SkippeReply> => {
-    /*
-     * IMPORTANT:
-     * Keep Skippe's server-only implementation out of the
-     * module-level import graph.
-     *
-     * staff.panda.tsx is part of the generated route tree,
-     * so importing skippe.server.ts at the top of this file
-     * can affect SSR for unrelated public routes.
-     */
+}).handler(async (ctx): Promise<SkippeReply> => {
+  try {
+    // ── 1) Soft-parse input (never throw Zod errors as HTTP 500) ──
+    const parsed = pandaInput.safeParse(
+      // TanStack may pass { data: payload } or payload directly
+      (ctx as { data?: unknown }).data ?? ctx,
+    );
+    if (!parsed.success) {
+      return skippeFail(
+        `⚠️ Bad Skippe request: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
+      );
+    }
+    const data = parsed.data;
+
+    // ── 2) Soft auth (copy of requireSupabaseAuth, but returns reply on fail) ──
+    const SUPABASE_URL = process.env["SUPABASE_URL"];
+    const SUPABASE_PUBLISHABLE_KEY = process.env["SUPABASE_PUBLISHABLE_KEY"];
+    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+      return skippeFail(
+        "⚠️ Missing SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY — connect Supabase in Lovable Cloud.",
+      );
+    }
+
+    const { getRequest } = await import("@tanstack/react-start/server");
+    const { createClient } = await import("@supabase/supabase-js");
+    const request = getRequest();
+    const authHeader = request?.headers?.get("authorization") ?? "";
+    if (!authHeader.startsWith("Bearer ")) {
+      return skippeFail(
+        "⚠️ Not signed in — refresh the page and log into staff again.",
+      );
+    }
+    const token = authHeader.slice("Bearer ".length).trim();
+    if (!token || token.split(".").length !== 3) {
+      return skippeFail("⚠️ Invalid session — sign out and back into staff.");
+    }
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: {
+        storage: undefined,
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    const { data: claimData, error: claimErr } =
+      await supabase.auth.getClaims(token);
+    if (claimErr || !claimData?.claims?.sub) {
+      return skippeFail("⚠️ Session expired — sign in again.");
+    }
+    const userId = claimData.claims.sub as string;
+    const actorEmail =
+      (claimData.claims as { email?: string }).email ?? null;
+
+    // ── 3) Staff gate ──
+    const { data: roleRows, error: roleError } = await supabase
+      .from("user_roles" as never)
+      .select("role")
+      .eq("user_id", userId);
+    if (roleError) {
+      return skippeFail(
+        `⚠️ Could not verify staff role: ${roleError.message}`,
+      );
+    }
+    const roles =
+      (roleRows as unknown as Array<{ role: string }> | null)?.map(
+        (r) => r.role,
+      ) ?? [];
+    const isAdmin = roles.includes("admin");
+    const isChef = roles.includes("chef");
+    if (!isAdmin && !isChef) {
+      return skippeFail("⚠️ Chef or admin only — Skippe is for staff.");
+    }
+
+    const staffName = actorEmail?.split("@")[0] || "Chef";
+
+    // ── 4) Load Skippe engine (dynamic — keeps it off the public graph) ──
     let buildSkippePrompt: any;
     let resolveModel: any;
     let runSkippeTurn: any;
@@ -105,69 +186,13 @@ export const pandaChat = createServerFn({
       runSkippeTurn = mod.runSkippeTurn;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return {
-        reply: `⚠️ Skippe module failed to load: ${msg}`,
-        thinking: "",
-        runs: [],
-        model: "none",
-        model_label: "Skippe",
-        auto: false,
-      };
+      return skippeFail(`⚠️ Skippe module failed to load: ${msg}`);
     }
 
-    const actorEmail =
-      (
-        context.claims as
-          | { email?: string }
-          | undefined
-      )?.email ?? null;
-
-    // Same staff gate as menu.functions assertStaff / getMyRoles (proven on /staff).
-    const { data: roleRows, error: roleError } = await context.supabase
-      .from("user_roles" as never)
-      .select("role")
-      .eq("user_id", context.userId);
-    if (roleError) {
-      return {
-        reply: `⚠️ Could not verify staff role: ${roleError.message || "sign in again"}`,
-        thinking: "",
-        runs: [],
-        model: "none",
-        model_label: "Skippe",
-        auto: false,
-      };
-    }
-    const roles =
-      (roleRows as unknown as Array<{ role: string }> | null)?.map((r) => r.role) ??
-      [];
-    const isAdmin = roles.includes("admin");
-    const isChef = roles.includes("chef");
-    if (!isAdmin && !isChef) {
-      return {
-        reply: "⚠️ Chef or admin only — Skippe is for staff.",
-        thinking: "",
-        runs: [],
-        model: "none",
-        model_label: "Skippe",
-        auto: false,
-      };
-    }
-
-    // No staff_profiles read — name from JWT email only (0 extra DB).
-    const staffName = actorEmail?.split("@")[0] || "Chef";
-
-    // History is browser localStorage only — never skippe_messages.
-    // Keep short — long threads slow the gateway and cause tool-call mismatches.
     const history = (data.history ?? []).slice(-3);
-
-    // Hard cap images: 9 frames = slow + often fails. 3 is enough for fridge scans.
     const images = (data.images ?? []).slice(0, 3);
-
-    // Pure vision (screenshots / fridge / video frames): no kitchen tools → no
-    // menu/order/discount/audit table hits. Only the AI gateway is used.
     const visionOnly =
-      images.length > 0 &&
-      !KITCHEN_ACTION_RE.test(data.message || "");
+      images.length > 0 && !KITCHEN_ACTION_RE.test(data.message || "");
 
     const { model, auto } = resolveModel(
       data.mode,
@@ -189,8 +214,8 @@ export const pandaChat = createServerFn({
         staffName,
         toolsEnabled: !visionOnly,
         ctx: {
-          supabase: context.supabase as never,
-          userId: context.userId,
+          supabase: supabase as never,
+          userId,
           isAdmin,
           actorEmail,
           _cache: new Map(),
@@ -201,7 +226,7 @@ export const pandaChat = createServerFn({
         turn.reply ||
         (turn.runs.length > 0
           ? turn.runs
-              .map((r) => `${r.ok ? "✅" : "⚠️"} ${r.summary}`)
+              .map((r: SkippeToolRun) => `${r.ok ? "✅" : "⚠️"} ${r.summary}`)
               .join("\n")
           : "I couldn't put a reply together — try asking again?");
 
@@ -211,21 +236,21 @@ export const pandaChat = createServerFn({
         runs: turn.runs ?? [],
         model,
         model_label: SKIPPE_MODEL_LABELS[model] ?? model,
-        auto,
+        auto: Boolean(auto),
       };
     } catch (err) {
-      // Never throw HTTP 500 for kitchen chat — surface the message in the thread.
       const msg = err instanceof Error ? err.message : String(err);
-      return {
-        reply: `⚠️ ${msg.startsWith("Skippe") ? msg : `Skippe hit a problem: ${msg}`}`,
-        thinking: "",
-        runs: [],
+      return skippeFail(
+        msg.startsWith("Skippe") ? msg : `Skippe hit a problem: ${msg}`,
         model,
-        model_label: SKIPPE_MODEL_LABELS[model] ?? model,
-        auto,
-      };
+      );
     }
-  });
+  } catch (err) {
+    // Absolute last resort — still HTTP 200 with a message
+    const msg = err instanceof Error ? err.message : String(err);
+    return skippeFail(`⚠️ Skippe crashed: ${msg}`);
+  }
+});
 
 export const listSkippeChat =
   createServerFn({
