@@ -422,113 +422,44 @@ export async function runSkippeTool(
     case "create_menu_item": {
       // Skippe is never allowed to set prices. Always create at B$0.
       // Chef prices the item in the staff UI; customers see "Price coming soon".
-      // If the chef already has an item with the same name (case-insensitive),
-      // update stock/description instead of inserting duplicates (Gemini often
-      // fires the same create_menu_item tool 3–4 times in one turn).
-      const name = String(rawArgs.name ?? "")
-        .trim()
-        .slice(0, 100);
-
-      if (!name) {
-        return fail("A name is required");
-      }
-
-      const description = String(rawArgs.description ?? "").slice(0, 500);
-      const stock = clampInt(rawArgs.stock, 0, 1_000_000, 0);
-      const category = rawArgs.category === "seasonal" ? "seasonal" : "non_seasonal";
-      const is_active = rawArgs.is_active !== false;
-
-      // Match existing owned item by name (case-insensitive) so repeated tool
-      // calls in the same turn become idempotent updates.
-      const { data: existingRows, error: findErr } = await ctx.supabase
-        .from("menu_items")
-        .select("id,name,stock")
-        .eq("owner_id", ctx.userId)
-        .ilike("name", name)
-        .limit(5);
-
-      if (findErr) return fail(findErr.message);
-
-      const existing = (existingRows as Array<{ id: string; name: string; stock: number }> | null)?.[0];
-
-      if (existing) {
-        const patch: Record<string, unknown> = {
-          stock,
-          is_active,
-          category,
-        };
-        if (description) patch.description = description;
-
-        const { error: updErr } = await ctx.supabase
-          .from("menu_items")
-          .update(patch)
-          .eq("id", existing.id)
-          .eq("owner_id", ctx.userId);
-
-        if (updErr) return fail(updErr.message);
-
-        await log("skippe_update_menu_item", "menu_item", existing.id, patch);
-        ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
-
-        return done(
-          `Updated ${existing.name}`,
-          { ok: true, item_id: existing.id, updated: true },
-          `Already on your menu — set stock to ${stock} · Price B$0 (set price in staff menu)`,
-        );
-      }
-
       const payload = {
-        name,
-        description,
+        name: String(rawArgs.name ?? "")
+          .trim()
+          .slice(0, 100),
+
+        description: String(rawArgs.description ?? "").slice(0, 500),
+
         price_bs: 0,
-        stock,
-        category,
-        is_active,
+
+        stock: clampInt(rawArgs.stock, 0, 1_000_000, 0),
+
+        category: rawArgs.category === "seasonal" ? "seasonal" : "non_seasonal",
+
+        is_active: rawArgs.is_active !== false,
+
         owner_id: ctx.userId,
       };
 
-      const { data, error } = await ctx.supabase
-        .from("menu_items")
-        .insert(payload)
-        .select("id")
-        .single();
+      if (!payload.name) {
+        return fail("A name is required");
+      }
+
+      const { data, error } = await ctx.supabase.from("menu_items").insert(payload).select("id").single();
 
       if (error) return fail(error.message);
 
-      const id = (data as { id: string } | null)?.id;
-      if (!id) {
-        // Insert may have succeeded under RLS but SELECT on the same statement
-        // returned nothing — verify with a follow-up read.
-        const { data: verify, error: verifyErr } = await ctx.supabase
-          .from("menu_items")
-          .select("id")
-          .eq("owner_id", ctx.userId)
-          .ilike("name", name)
-          .limit(1)
-          .maybeSingle();
-        if (verifyErr || !verify) {
-          return fail(
-            verifyErr?.message ||
-              "Create appeared to succeed but the item is not visible on your menu. Try the staff Menu editor or re-sign in.",
-          );
-        }
-        const verifiedId = (verify as { id: string }).id;
-        await log("skippe_create_menu_item", "menu_item", verifiedId, payload);
-        ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
-        return done(
-          `Added ${name}`,
-          { ok: true, item_id: verifiedId },
-          `Price B$0 (you set the price in the staff menu) · stock ${stock}`,
-        );
-      }
+      const id = (data as { id: string }).id;
 
       await log("skippe_create_menu_item", "menu_item", id, payload);
       ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
 
       return done(
-        `Added ${name}`,
-        { ok: true, item_id: id },
-        `Price B$0 (you set the price in the staff menu) · stock ${stock}`,
+        `Added ${payload.name}`,
+        {
+          ok: true,
+          item_id: id,
+        },
+        `Price B$0 (you set the price in the staff menu) · stock ${payload.stock}`,
       );
     }
 
@@ -1292,67 +1223,104 @@ export async function runSkippeTool(
   }
 }
 
-/** Full prompt — only used for vision / fridge / multi-step work. */
 export function buildSkippePrompt(args: { staffName: string; isAdmin: boolean }) {
   return [
-    "You are Skippe — kitchen manager for Panda Bites (Bloxburg, B$).",
-    `Working with ${args.staffName} (${args.isAdmin ? "admin" : "chef"}).`,
-    "USE TOOLS. Act. Report results in plain English. Never dump function names or JSON.",
-    "Own scope only. Never invent ids — list first. New menu items always price B$0.",
-    "Orders: pending→preparing→ready→delivered. Claim = preparing.",
-    "Fridge restock: list_menu_items + list_orders(pending/preparing/ready), sellable = max(0, physical − reserved). Create/update stock. Summarize.",
-    "Discounts/priority/bulk fee: act immediately when asked. Prefer ONE tool per request.",
-    "Short replies. Lead with the result.",
+    "You are Skippe — an extremely capable AI kitchen manager inside the Panda Bites staff portal (Bloxburg food shop, currency B$).",
+    `You are working with ${args.staffName} (${
+      args.isAdmin ? "admin" : "chef"
+    }). Treat them like a busy colleague, not a student.`,
+    "",
+    "CORE IDENTITY:",
+    "- You run the kitchen with them. You execute. You do not teach the API.",
+    "- When they ask for something, USE TOOLS and finish the job. Then report results in plain English.",
+    "- Never write function names, JSON, or 'call list_orders({...})' in your reply. That confuses them and wastes time.",
+    "- Be proactive: if they say 'claim an order' and there is one clear pending order, claim it. If several, list them briefly and claim the most recent unless they specify.",
+    "- Be precise with numbers, short order refs (#first8), names, statuses, and totals.",
+    "",
+    "CAPABILITIES (always prefer acting over explaining):",
+    "ORDERS",
+    "- list_orders: see assigned orders (null = all, or pending/preparing/ready/delivered/cancelled).",
+    "- set_order_status: change stage. This is how you CLAIM and progress work.",
+    "- get_order_details: full line items, customer, note, totals.",
+    "- Flow: pending → preparing (claim/start) → ready (done cooking) → delivered. cancelled stops it.",
+    "- 'Claim', 'take', 'start', 'I'm on it' → set to preparing.",
+    "- 'Mark ready', 'food's done' → ready. 'Handed off', 'delivered' → delivered.",
+    "- 'Cancel that order' → cancelled. Confirm only if ambiguous.",
+    "",
+    "CHAT WITH CUSTOMERS",
+    "- Order chat is removed — do not use read_order_chat or send_order_message; tell the chef to use Discord.",
+    "- Messages: short, warm, specific (order status, ETA vibe, missing item). Never robotic.",
+    "",
+    "DISCOUNTS",
+    "- list / create / update / end discounts on their menu.",
+    "- When they ask to make a discount, CALL create_discount immediately. Do not apologize or stall.",
+    '- Example: \'name 10% off, auto 10% off\' → create_discount({ name: "10% off", code: null, discount_type: "percentage", value: 10, is_automatic: true, is_active: true }).',
+    "- Automatic: is_automatic true, code null. Code deal: is_automatic false + short code.",
+    "- percentage 10 = 10% off. fixed 500 = B$500 off. After create, confirm name + value + automatic/code.",
+    "- If they say 'remove the discount' without id → list_discounts first, then end the matching one.",
+    "- If a create fails, report the real error from the tool — never invent a vague 'try again later'.",
+    "",
+    "HONESTY (critical)",
+    "- NEVER claim you created, updated, deleted, or set something unless a tool result returned ok:true in THIS turn.",
+    "- If no tool ran, say what you need or that you could not act — do not fake success.",
+    "- Prefer calling the tool over describing what you would do.",
+    "- Max 3 images per message — if the chef sends more, work from the first 3 and ask for another batch.",
+    "",
+    "MENU",
+    "- list / create / update / delete their own items (name, description, stock, category, active).",
+    "- You CANNOT set or change menu item prices. New items always price_bs 0. Tell them to price in the staff menu UI.",
+    "- Active + B$0 still shows as 'Price coming soon' to customers until a human prices it.",
+    "",
+    "FRIDGE SCAN / RESTOCK (video or screenshots of their Bloxburg fridge):",
+    "- Prefer 1–3 clear frames, not 9. Read every visible item and quantity you can actually see.",
+    "- Workflow: (1) list_menu_items for current stock ids, (2) list_orders for pending+preparing+ready (includes line items + reserved_stock_by_item_name), (3) compare fridge counts to menu, (4) create missing items or update_menu_item stock.",
+    "- RESTOCK MATH (critical):",
+    "  physical_fridge = what you count in the photos/video.",
+    "  reserved = quantities on THIS chef's orders still pending, preparing, or ready (from list_orders).",
+    "  default sellable stock to write = max(0, physical_fridge - reserved).",
+    "  Exception — chef correction: if they say ready-order items were ALREADY taken out of the fridge, do NOT subtract those ready quantities (only subtract pending+preparing).",
+    "  Exception — chef correction: if they say ready items are STILL in the fridge, DO subtract ready quantities.",
+    "  If unsure whether ready orders were pulled from the fridge, ask ONE short question, then act on their answer.",
+    "- When adding new items from a scan: create_menu_item with best-effort name, stock from sellable math, category seasonal or non_seasonal if obvious else non_seasonal, is_active true. Price stays B$0.",
+    "- When updating stock: update_menu_item with item_id + stock only. Never invent ids — list_menu_items first.",
+    "- After restock, give a tight summary: items created, stock changes, reserved quantities subtracted, and any order the chef corrected.",
+    "",
+    "PRIORITY (checkout speed tiers) — YOU DO HAVE ACCESS",
+    "- Tools: list_priority_levels, upsert_priority_level, delete_priority_level.",
+    "- Table: public.chef_priority_levels (tiers: low, mid, high).",
+    "- NEVER say you cannot access priority / priority listings / tiers.",
+    "- 'Delete all my priority listings/tiers' → delete_priority_level({ delete_all: true, priority_id: null }).",
+    "- 'List my priority' → list_priority_levels.",
+    "- Prefer ONE tool per request. Do not list_discounts or list_priority_levels unless the user asked to list/show.",
+    "- set_bulk_service_fee alone is enough — do not also call get_bulk_service_fee in the same turn.",
+    "- Priority price_bs is allowed (not a menu item price).",
+    "",
+    "BULK / FAST SERVICE FEE",
+    "- Only eligible Bulk/Fast chefs and admin/house kitchen.",
+    "- percentage 20 = +20%. fixed 5000 = +B$5,000. 0 clears the fee.",
+    "- Non-eligible chefs: refuse politely, do not call the tool.",
+    "",
+    "HARD RULES:",
+    "1. OWN SCOPE ONLY — their menu, their discounts, their assigned orders. Never another chef's (admins may delete another chef's item, never edit it).",
+    "2. Never invent ids. list_* / get_* first when you need an id.",
+    "3. Clear request → act now. Only ask when something essential is missing (e.g. which of 3 pendings).",
+    "4. Photos: describe what you actually see, then act.",
+    "5. Do not expose tool names or raw payloads unless they ask how the system works.",
+    "",
+    "HOW TO BE EXTREMELY SMART:",
+    "- Infer intent. 'list all my orders' → list_orders(null). 'pending ones' → status pending. 'claim it' after a list → set the obvious one to preparing.",
+    "- Chain tools when needed: list then act; list discounts then end the right one.",
+    "- After every successful action, give a tight status line: what changed, key ids, next natural step.",
+    "- If a tool fails, say why in human terms and the fix (e.g. 'that order isn't assigned to you').",
+    "- Remember conversation context: if they already picked an order, keep using that order_id.",
+    "- Prefer one solid action over asking three questions.",
+    "",
+    "RESPONSE STYLE:",
+    "- Lead with the result. Short paragraphs + bullets. Friendly, confident, no fluff.",
+    "- Order refs as #xxxxxxxx (first 8 of the id).",
+    "- Never dump code, schemas, or 'here's how you call the tool'.",
+    "- If unsure, one focused question — then act.",
   ].join("\n");
-}
-
-/** Ultra-short prompt for text-only tool turns (saves hundreds of tokens / ms). */
-function buildSkippePromptFast(args: { staffName: string; isAdmin: boolean }) {
-  return [
-    `Skippe kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). Panda Bites / Bloxburg / B$.`,
-    "Call tools now. Own menu/orders/discounts only. Menu prices always B$0. Short result-first reply, no tool names.",
-  ].join(" ");
-}
-
-/** Only ship tools the message likely needs — smaller payloads = faster model. */
-function selectToolsForMessage(message: string, hasImages: boolean): ToolDef[] {
-  if (hasImages) return SKIPPE_TOOLS;
-
-  const m = message.toLowerCase();
-  const names = new Set<string>();
-
-  const need = (...n: string[]) => n.forEach((x) => names.add(x));
-
-  if (/\b(menu|item|dish|stock|fridge|ingredient)\b/i.test(m)) {
-    need("list_menu_items", "create_menu_item", "update_menu_item", "delete_menu_item");
-  }
-  if (/\b(order|claim|prepar|ready|deliver|cancel|pending)\b/i.test(m)) {
-    need("list_orders", "set_order_status", "get_order_details");
-  }
-  if (/\b(discount|%|percent|off|code|deal)\b/i.test(m)) {
-    need("list_discounts", "create_discount", "update_discount", "end_discount");
-  }
-  if (/\b(priorit|tier)\b/i.test(m)) {
-    need("list_priority_levels", "upsert_priority_level", "delete_priority_level");
-  }
-  if (/\b(bulk|fast service|fee)\b/i.test(m)) {
-    need("get_bulk_service_fee", "set_bulk_service_fee");
-  }
-
-  // Fallback: core kitchen tools only (skip disabled chat tools)
-  if (names.size === 0) {
-    need(
-      "list_menu_items",
-      "create_menu_item",
-      "update_menu_item",
-      "list_orders",
-      "set_order_status",
-      "list_discounts",
-      "create_discount",
-    );
-  }
-
-  return SKIPPE_TOOLS.filter((t) => names.has(t.name));
 }
 
 function gatewayKey() {
@@ -1494,17 +1462,16 @@ async function runOpenAiTurn(args: {
   const runs: SkippeToolRun[] = [];
   let reply = "";
   const toolsEnabled = args.toolsEnabled !== false;
-  const hasImages = args.images.length > 0;
 
-  // Tiny history + short text = lower TTFT.
-  const recent = args.history.slice(hasImages ? -4 : -2);
+  // Keep context tight — less tokens = less latency.
+  const recent = args.history.slice(-6);
 
   const input: Array<Record<string, unknown>> = recent.map((h) => ({
     role: h.role,
     content: [
       {
         type: h.role === "assistant" ? "output_text" : "input_text",
-        text: h.content.slice(0, hasImages ? 400 : 200),
+        text: h.content.slice(0, 600),
       },
     ],
   }));
@@ -1524,11 +1491,9 @@ async function runOpenAiTurn(args: {
     ],
   });
 
-  // 1 round for plain text; 2 only when tools+images need list-then-act.
-  const maxRounds = toolsEnabled && hasImages ? 2 : toolsEnabled ? 1 : 1;
-  const selected = toolsEnabled ? selectToolsForMessage(args.userText, hasImages) : [];
+  const maxRounds = toolsEnabled ? 2 : 1;
   const toolDefs = toolsEnabled
-    ? selected.map((t) => ({
+    ? SKIPPE_TOOLS.map((t) => ({
         type: "function",
         name: t.name,
         description: t.description,
@@ -1536,12 +1501,6 @@ async function runOpenAiTurn(args: {
         strict: true,
       }))
     : undefined;
-  const instructions = hasImages
-    ? args.instructions
-    : buildSkippePromptFast({
-        staffName: args.staffName,
-        isAdmin: args.ctx.isAdmin,
-      });
 
   for (let round = 0; round < maxRounds; round += 1) {
     const res = await gatewayFetch(
@@ -1556,12 +1515,14 @@ async function runOpenAiTurn(args: {
         },
         body: JSON.stringify({
           model: args.model,
-          instructions,
+          instructions: args.instructions,
           input,
+          // Non-stream is faster for tool-agent loops (UI waits for full reply anyway).
           stream: false,
           store: false,
+          // Faster OpenAI tier when available (falls back to standard if not).
           service_tier: "priority",
-          max_output_tokens: hasImages ? 600 : 350,
+          max_output_tokens: 900,
           ...(toolDefs ? { tools: toolDefs } : {}),
         }),
       },
@@ -1599,23 +1560,9 @@ async function runOpenAiTurn(args: {
       break;
     }
 
-    // Keep function_call items and function_call_output items 1:1.
-    // Cap at 8 calls; drop extras from the input we feed back to the model.
-    const acceptedCalls = calls.slice(0, 8);
-    const acceptedIds = new Set(
-      acceptedCalls.map((c) => String(c["call_id"] ?? "")),
-    );
-    for (const item of output) {
-      if (item["type"] === "function_call") {
-        const cid = String(item["call_id"] ?? "");
-        if (!acceptedIds.has(cid)) continue;
-      }
-      input.push(item);
-    }
+    input.push(...output);
 
-    const seenToolKeys = new Map<string, { result: unknown; run: SkippeToolRun }>();
-
-    for (const call of acceptedCalls) {
+    for (const call of calls.slice(0, 8)) {
       let parsedArgs: Record<string, unknown> = {};
       try {
         parsedArgs = JSON.parse(String(call["arguments"] ?? "{}")) as Record<string, unknown>;
@@ -1623,24 +1570,9 @@ async function runOpenAiTurn(args: {
         parsedArgs = {};
       }
 
-      const toolName = String(call["name"] ?? "");
-      const dedupeKey = `${toolName}:${JSON.stringify(parsedArgs)}`;
+      const { result, run } = await runSkippeTool(args.ctx, String(call["name"]), parsedArgs, args.staffName);
 
-      let result: unknown;
-      let run: SkippeToolRun;
-
-      const prior = seenToolKeys.get(dedupeKey);
-      if (prior) {
-        result = prior.result;
-        run = { ...prior.run, summary: `${prior.run.summary} (duplicate call skipped)` };
-      } else {
-        const out = await runSkippeTool(args.ctx, toolName, parsedArgs, args.staffName);
-        result = out.result;
-        run = out.run;
-        seenToolKeys.set(dedupeKey, { result, run });
-      }
-
-      if (!prior) runs.push(run);
+      runs.push(run);
 
       input.push({
         type: "function_call_output",
@@ -1712,23 +1644,14 @@ async function runGoogleTurn(args: {
     name?: string;
   };
 
-  const hasImages = args.images.length > 0;
-  const toolsEnabled = args.toolsEnabled !== false;
-  const systemPrompt = hasImages
-    ? args.instructions
-    : buildSkippePromptFast({
-        staffName: args.staffName,
-        isAdmin: args.ctx.isAdmin,
-      });
-
   const messages: ChatMsg[] = [
     {
       role: "system",
-      content: systemPrompt,
+      content: args.instructions,
     },
-    ...args.history.slice(hasImages ? -4 : -2).map((h) => ({
+    ...args.history.slice(-6).map((h) => ({
       role: h.role,
-      content: h.content.slice(0, hasImages ? 400 : 200),
+      content: h.content.slice(0, 600),
     })),
   ];
 
@@ -1748,12 +1671,12 @@ async function runGoogleTurn(args: {
 
   messages.push({
     role: "user",
-    content: hasImages ? userContent : args.userText || "(look at these images)",
+    content: args.images.length > 0 ? userContent : args.userText || "(look at these images)",
   });
 
-  const selected = toolsEnabled ? selectToolsForMessage(args.userText, hasImages) : [];
+  const toolsEnabled = args.toolsEnabled !== false;
   const tools = toolsEnabled
-    ? selected.map((t) => ({
+    ? SKIPPE_TOOLS.map((t) => ({
         type: "function",
         function: {
           name: t.name,
@@ -1763,8 +1686,8 @@ async function runGoogleTurn(args: {
       }))
     : undefined;
 
-  // Text kitchen commands: 1 round. Images (fridge): allow 2 for list-then-act.
-  const maxRounds = toolsEnabled && hasImages ? 2 : 1;
+  // Vision-only / chat-only: single round, no tools → no kitchen table access.
+  const maxRounds = toolsEnabled ? 2 : 1;
 
   for (let round = 0; round < maxRounds; round += 1) {
     const res = await gatewayFetch(
@@ -1780,10 +1703,10 @@ async function runGoogleTurn(args: {
         body: JSON.stringify({
           model: args.model,
           messages,
-          max_tokens: hasImages ? 600 : 350,
           ...(tools ? { tools } : {}),
           ...(tools
             ? {
+                // Prefer tools when the chef is clearly asking for kitchen work.
                 tool_choice: /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier)\b/i.test(
                   args.userText,
                 )
@@ -1832,16 +1755,10 @@ async function runGoogleTurn(args: {
       break;
     }
 
-    // Cap how many tool calls we accept from the model, but the assistant
-    // message and the tool responses MUST stay 1:1 — Gemini 400s with
-    // "number of function response parts is equal to the number of function
-    // call parts" if they diverge.
-    const acceptedCalls = toolCalls.slice(0, 8);
-
     messages.push({
       role: "assistant",
       content: message.content ?? "",
-      tool_calls: acceptedCalls.map((tc) => ({
+      tool_calls: toolCalls.map((tc) => ({
         id: tc.id,
         type: tc.type ?? "function",
         function: {
@@ -1851,12 +1768,7 @@ async function runGoogleTurn(args: {
       })),
     });
 
-    // Gemini often emits the same create/update call 3–4 times in one response.
-    // Run each unique (name + args) once; reuse the result for duplicates so the
-    // model still gets a tool output for every call_id without spamming the DB.
-    const seenToolKeys = new Map<string, { result: unknown; run: SkippeToolRun }>();
-
-    for (const tc of acceptedCalls) {
+    for (const tc of toolCalls.slice(0, 8)) {
       let parsedArgs: Record<string, unknown> = {};
       try {
         parsedArgs = JSON.parse(tc.function?.arguments ?? "{}") as Record<string, unknown>;
@@ -1864,25 +1776,14 @@ async function runGoogleTurn(args: {
         parsedArgs = {};
       }
 
-      const toolName = String(tc.function?.name ?? "");
-      const dedupeKey = `${toolName}:${JSON.stringify(parsedArgs)}`;
+      const { result, run } = await runSkippeTool(
+        args.ctx,
+        String(tc.function?.name ?? ""),
+        parsedArgs,
+        args.staffName,
+      );
 
-      let result: unknown;
-      let run: SkippeToolRun;
-
-      const prior = seenToolKeys.get(dedupeKey);
-      if (prior) {
-        result = prior.result;
-        run = { ...prior.run, summary: `${prior.run.summary} (duplicate call skipped)` };
-      } else {
-        const out = await runSkippeTool(args.ctx, toolName, parsedArgs, args.staffName);
-        result = out.result;
-        run = out.run;
-        seenToolKeys.set(dedupeKey, { result, run });
-      }
-
-      // Only surface unique runs in the UI activity feed.
-      if (!prior) runs.push(run);
+      runs.push(run);
 
       messages.push({
         role: "tool",
@@ -1918,201 +1819,6 @@ async function runGoogleTurn(args: {
 }
 
 /**
- * INSTANT PATH — no LLM, no gateway. Regex + direct tools only.
- * This is the only way to get ~100× latency (local DB vs multi-second model).
- * Returns null when the message needs vision, reasoning, or is ambiguous.
- */
-async function tryInstantKitchen(
-  ctx: SkippeContext,
-  staffName: string,
-  userText: string,
-): Promise<{ runs: SkippeToolRun[]; reply: string } | null> {
-  const text = userText.trim();
-  if (!text || text.length > 800) return null;
-  const msg = text.toLowerCase();
-
-  // Vision / complex / chatty → LLM
-  if (
-    /\b(fridge|screenshot|photo|image|video|scan|look at|what do you see|why|how do i|explain)\b/i.test(
-      text,
-    )
-  ) {
-    return null;
-  }
-
-  // ----- LIST MENU -----
-  if (
-    /\b(list|show|see)\b/i.test(msg) &&
-    /\b(menu|items?|dishes?)\b/i.test(msg) &&
-    !/\b(add|create|update|delete|stock|order)\b/i.test(msg)
-  ) {
-    const { run, result } = await runSkippeTool(ctx, "list_menu_items", {}, staffName);
-    const items = (result as { items?: Array<{ name: string; stock: number; price_bs: number }> })
-      ?.items;
-    const lines =
-      items && items.length
-        ? items.map((i) => `• ${i.name} — stock ${i.stock}, B$${i.price_bs}`).join("\n")
-        : "No items on your menu yet.";
-    return {
-      runs: [run],
-      reply: run.ok ? `✅ ${run.summary}\n${lines}` : `⚠️ ${run.summary}`,
-    };
-  }
-
-  // ----- LIST ORDERS -----
-  if (
-    /\b(list|show|see)\b/i.test(msg) &&
-    /\borders?\b/i.test(msg) &&
-    !/\b(add|create|menu|discount)\b/i.test(msg)
-  ) {
-    let status: string | null = null;
-    for (const s of STATUSES) {
-      if (new RegExp(`\\b${s}\\b`, "i").test(msg)) {
-        status = s;
-        break;
-      }
-    }
-    const { run, result } = await runSkippeTool(ctx, "list_orders", { status }, staffName);
-    return {
-      runs: [run],
-      reply: run.ok
-        ? `✅ ${run.summary}${run.detail ? `\n${run.detail}` : ""}`
-        : `⚠️ ${run.summary}`,
-    };
-  }
-
-  // ----- ADD / CREATE MENU ITEM(S) -----
-  // Patterns:
-  //   "add lobster to my menu with a stock of 38"
-  //   "add lobster stock 38"
-  //   "create pizza, stock 10"
-  //   "add these to my menu: lobster 38, pizza 5"
-  //   "add lobster, pizza, soup" (stock 0)
-  const wantsAdd =
-    /\b(add|create|make|put)\b/i.test(msg) &&
-    (/\b(menu|item|dish|stock)\b/i.test(msg) ||
-      /\badd\s+[a-z0-9][^,]{0,40}\s+(to\s+(my\s+)?menu|with\s+(a\s+)?stock|stock\s*\d)/i.test(
-        text,
-      ));
-
-  if (wantsAdd && !/\b(order|discount|priority|fee)\b/i.test(msg)) {
-    type Draft = { name: string; stock: number };
-    const drafts: Draft[] = [];
-
-    // "name ... stock of? N" / "name stock N"
-    const stockOfRe =
-      /(?:add|create|make|put)\s+(?:these\s+to\s+(?:my\s+)?menu[:\s]*)?([a-z0-9][\w\s'-]{0,40}?)\s+(?:to\s+(?:my\s+)?menu\s+)?(?:with\s+)?(?:a\s+)?stock(?:\s+of)?\s*[:=]?\s*(\d{1,7})/gi;
-    let m: RegExpExecArray | null;
-    while ((m = stockOfRe.exec(text)) !== null) {
-      const name = m[1].replace(/\bto\s+(my\s+)?menu\b/i, "").trim();
-      if (name && !/^(these|them|it|items?)$/i.test(name)) {
-        drafts.push({ name: name.slice(0, 100), stock: clampInt(m[2], 0, 1_000_000, 0) });
-      }
-    }
-
-    // Comma / newline lists: "lobster 38, pizza 5" or "lobster, pizza"
-    if (drafts.length === 0) {
-      const listChunk =
-        text.match(
-          /(?:add|create|make)\s+(?:these\s+)?(?:to\s+(?:my\s+)?menu[:\s]*)?(.+)/i,
-        )?.[1] ?? "";
-      const parts = listChunk
-        .split(/[,;\n]+/)
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .slice(0, 20);
-      for (const part of parts) {
-        const sm = part.match(
-          /^([a-z0-9][\w\s'-]{0,40}?)\s*(?:[:=x×*]|\bstock\b|\()\s*(\d{1,7})\)?$/i,
-        );
-        if (sm) {
-          drafts.push({
-            name: sm[1].replace(/\bto\s+(my\s+)?menu\b/i, "").trim().slice(0, 100),
-            stock: clampInt(sm[2], 0, 1_000_000, 0),
-          });
-        } else {
-          const bare = part
-            .replace(/\bto\s+(my\s+)?menu\b/i, "")
-            .replace(/\bwith\s+(a\s+)?stock\b/i, "")
-            .trim();
-          if (bare && bare.length <= 60 && !/^\d+$/.test(bare) && !/^(these|them|items?)$/i.test(bare)) {
-            drafts.push({ name: bare.slice(0, 100), stock: 0 });
-          }
-        }
-      }
-    }
-
-    // Deduplicate by lower name
-    const seen = new Set<string>();
-    const unique = drafts.filter((d) => {
-      const k = d.name.toLowerCase();
-      if (!d.name || seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
-
-    if (unique.length === 0) return null;
-
-    const runs: SkippeToolRun[] = [];
-    const lines: string[] = [];
-    // Parallel creates — major speed win for multi-item adds
-    const outcomes = await Promise.all(
-      unique.map((d) =>
-        runSkippeTool(
-          ctx,
-          "create_menu_item",
-          {
-            name: d.name,
-            description: "",
-            stock: d.stock,
-            category: "non_seasonal",
-            is_active: true,
-          },
-          staffName,
-        ),
-      ),
-    );
-    for (const { run } of outcomes) {
-      runs.push(run);
-      lines.push(`${run.ok ? "✅" : "⚠️"} ${run.summary}${run.detail ? ` — ${run.detail}` : ""}`);
-    }
-    return { runs, reply: lines.join("\n") };
-  }
-
-  // ----- UPDATE STOCK -----
-  // "set lobster stock to 20" / "update stock of pizza to 5" / "lobster stock 20"
-  const stockUp = text.match(
-    /(?:set|update|change)?\s*(?:the\s+)?(?:stock\s+(?:of|for)\s+)?([a-z0-9][\w\s'-]{0,40}?)\s+stock\s*(?:to|=)?\s*(\d{1,7})\b/i,
-  );
-  if (stockUp && !/\b(add|create)\b/i.test(msg)) {
-    const itemName = stockUp[1].trim();
-    const stock = clampInt(stockUp[2], 0, 1_000_000, 0);
-    const listed = await runSkippeTool(ctx, "list_menu_items", {}, staffName);
-    const items =
-      (listed.result as { items?: Array<{ id: string; name: string }> })?.items ?? [];
-    const hit = items.find((i) => i.name.toLowerCase() === itemName.toLowerCase());
-    if (!hit) {
-      return {
-        runs: [listed.run],
-        reply: `⚠️ No menu item named "${itemName}" on your menu. Say **add ${itemName} stock ${stock}** to create it.`,
-      };
-    }
-    const { run } = await runSkippeTool(
-      ctx,
-      "update_menu_item",
-      { item_id: hit.id, name: null, description: null, stock, category: null, is_active: null },
-      staffName,
-    );
-    return {
-      runs: [listed.run, run],
-      reply: run.ok ? `✅ ${run.summary}` : `⚠️ ${run.summary}`,
-    };
-  }
-
-  return null;
-}
-
-/**
  * When the model skips tools, still execute clear kitchen intents.
  * Handles fuzzy messages like: "Name would be test and it would be auto"
  */
@@ -2124,15 +1830,17 @@ async function maybeRunIntentFallback(
 ): Promise<{ runs: SkippeToolRun[]; reply: string } | null> {
   const msg = userText.toLowerCase();
 
-  // PRIORITY first. Do NOT use chat history here — old "discount" turns were
-  // incorrectly creating discounts when the chef asked about priority.
+  // PRIORITY — parse & execute without waiting on the LLM.
+  // Do NOT use chat history (old discount turns used to misfire).
   const mentionsPriority =
     /\bpriorit/i.test(msg) ||
-    /\bpriort/i.test(msg) || // common typo: priorty
-    /\bpriority\b/i.test(msg);
+    /\bpriort/i.test(msg) ||
+    /\b(low|mid|high)\s+(tier|level)\b/i.test(msg) ||
+    /\b(set|update|change|save)\s+(the\s+)?(low|mid|high)\b/i.test(msg) ||
+    /\b(low|mid|high)\s+(to|at|for|=)\s*b?\$?\s*[\d,]+/i.test(msg);
 
   if (mentionsPriority) {
-    if (/\b(delete|remove|clear)\b/i.test(msg) && /\b(all|every|my)\b/i.test(msg)) {
+    if (/\b(delete|remove|clear)\b/i.test(msg) && /\b(all|every)\b/i.test(msg)) {
       const { run } = await runSkippeTool(
         ctx,
         "delete_priority_level",
@@ -2145,24 +1853,92 @@ async function maybeRunIntentFallback(
       };
     }
 
-    // Only hit DB when the chef explicitly asks to list / show tiers.
     const wantsList =
-      /\b(list|show|see|what|current|my tiers?|my levels?)\b/i.test(msg);
+      /\b(list|show|see|what|current|my tiers?|my levels?)\b/i.test(msg) &&
+      !/\b(set|update|change|make|save)\b/i.test(msg);
 
-    if (!wantsList) {
+    if (wantsList) {
+      const { run } = await runSkippeTool(ctx, "list_priority_levels", {}, staffName);
       return {
-        runs: [],
-        reply:
-          "Priority tools: say **list my priority**, or **set low/mid/high to B$…**, or **delete all priority**.",
+        runs: [run],
+        reply: run.ok
+          ? `✅ ${run.summary}\nSay e.g. **set mid to B$5000 color blue** to change a tier.`
+          : `⚠️ ${run.summary}`,
       };
     }
 
-    const { run } = await runSkippeTool(ctx, "list_priority_levels", {}, staffName);
+    // set / update / change low|mid|high …
+    const tierMatch = msg.match(/\b(low|mid|high)\b/i);
+    const priceMatch =
+      userText.match(/b\$\s*([\d,]+)/i) ||
+      userText.match(/\$\s*([\d,]+)/) ||
+      userText.match(
+        /\b(?:to|at|for|price|cost|is|=)\s*([\d,]+)\b/i,
+      ) ||
+      userText.match(/\b([\d,]{2,})\b/);
+    const colorWord = msg.match(
+      /\b(red|blue|green|gold|yellow|purple|pink|orange|black|white|cherry|lime)\b/i,
+    );
+    const hexColor = userText.match(/#([0-9a-fA-F]{6})\b/);
+    const nameMatch =
+      userText.match(
+        /\b(?:name[d]?|call(?:ed)?)\s+[\"']?([a-z0-9][a-z0-9 \-]{0,30})[\"']?/i,
+      ) ||
+      userText.match(/[\"']([^\"']{1,40})[\"']/);
+
+    const COLOR_MAP: Record<string, string> = {
+      red: "#FF4D6D",
+      cherry: "#FF4D6D",
+      blue: "#3B82F6",
+      green: "#22C55E",
+      lime: "#84CC16",
+      gold: "#EAB308",
+      yellow: "#EAB308",
+      purple: "#A855F7",
+      pink: "#EC4899",
+      orange: "#F97316",
+      black: "#111111",
+      white: "#F8FAFC",
+    };
+
+    if (tierMatch && priceMatch) {
+      const tier = tierMatch[1].toLowerCase() as "low" | "mid" | "high";
+      const price_bs = Math.max(
+        0,
+        parseInt(priceMatch[1].replace(/,/g, ""), 10) || 0,
+      );
+      const defaultNames = { low: "Low", mid: "Mid", high: "High" };
+      const name = (nameMatch?.[1]?.trim() || defaultNames[tier]).slice(0, 40);
+      let color = "#FF4D6D";
+      if (hexColor) color = `#${hexColor[1]}`;
+      else if (colorWord) {
+        color = COLOR_MAP[colorWord[1].toLowerCase()] ?? color;
+      }
+
+      const { run } = await runSkippeTool(
+        ctx,
+        "upsert_priority_level",
+        {
+          tier,
+          name,
+          price_bs,
+          color,
+          is_active: !/\b(off|inactive|disable)\b/i.test(msg),
+        },
+        staffName,
+      );
+      return {
+        runs: [run],
+        reply: run.ok
+          ? `✅ ${run.summary}${run.detail ? ` · ${run.detail}` : ""}`
+          : `⚠️ ${run.summary}`,
+      };
+    }
+
     return {
-      runs: [run],
-      reply: run.ok
-        ? `✅ ${run.summary}\n(I can upsert or delete priority tiers — say which.)`
-        : `⚠️ ${run.summary}`,
+      runs: [],
+      reply:
+        "Priority — try:\n• **list my priority**\n• **set mid to B$5000 color blue**\n• **set high named Express at 10000**\n• **delete all priority**",
     };
   }
 
@@ -2173,7 +1949,6 @@ async function maybeRunIntentFallback(
 
   if (!wantsDiscount) return null;
 
-
   // Name: "name would be test", "named weekend", "name: test", "call it test"
   const nameMatch =
     userText.match(/\bname\s+(?:would\s+be|is|should\s+be|:)?\s*[\"']?([^\"'\n,]+?)[\"']?(?:\s+and\b|,|$)/i) ||
@@ -2181,27 +1956,23 @@ async function maybeRunIntentFallback(
 
   let name = nameMatch?.[1]?.trim() ?? "";
   if (!name) {
-    // Fallback: last quoted bit or "test" style single token near "name"
     const q = userText.match(/[\"']([^\"']{1,40})[\"']/);
     name = q?.[1]?.trim() ?? "";
   }
   if (!name) {
-    // "Name would be test and it would be auto" → capture token after be
     const m2 = userText.match(/\bbe\s+([a-z0-9%._-]+)/i);
     name = m2?.[1]?.trim() ?? "";
   }
   if (!name) name = "Discount";
 
-  // Percent: "10% off", "10 percent", bare "10" near off/%
   let value = 10;
   const pct =
     userText.match(/(\d{1,3})\s*%\s*(?:off)?/i) ||
-    userText.match(/(\d{1,3})\s*percent/i) ||
-    blob.match(/(\d{1,3})\s*%/);
+    userText.match(/(\d{1,3})\s*percent/i);
   if (pct) value = Math.min(100, Math.max(1, parseInt(pct[1], 10)));
 
   const automatic =
-    /\b(auto|automatic)\b/i.test(userText) || /\b(auto|automatic)\b/i.test(blob) || !/\bcode\b/i.test(userText);
+    /\b(auto|automatic)\b/i.test(userText) || !/\bcode\b/i.test(userText);
 
   const { result, run } = await runSkippeTool(
     ctx,
@@ -2235,17 +2006,22 @@ export async function runSkippeTurn(args: {
   /** When false, no tools are offered — pure vision/chat, zero kitchen DB. */
   toolsEnabled?: boolean;
 }): Promise<SkippeTurn> {
-  const toolsEnabled = args.toolsEnabled !== false;
-
-  // ── INSTANT PATH (no LLM) ──────────────────────────────────────────
-  // Common kitchen commands finish in ~50–200ms instead of multi-second
-  // gateway rounds. Only runs when there are no images.
-  if (toolsEnabled && args.images.length === 0) {
-    const instant = await tryInstantKitchen(args.ctx, args.staffName, args.userText);
+  // Instant kitchen path: priority / clear intents before any LLM gateway call.
+  // Huge win for latency and stops "I set it" lies when no tool ran.
+  if (
+    (args.toolsEnabled !== false) &&
+    args.images.length === 0 &&
+    (args.userText || "").trim().length > 0
+  ) {
+    const instant = await maybeRunIntentFallback(
+      args.ctx,
+      args.staffName,
+      args.userText,
+      args.history,
+    );
     if (instant) {
       return {
         reply: instant.reply,
-        thinking: "",
         runs: instant.runs,
         model: args.model,
       };
@@ -2254,6 +2030,7 @@ export async function runSkippeTurn(args: {
 
   // OpenAI models → /v1/responses
   // Google (and any other) → /v1/chat/completions
+  // (Lovable rejects non-OpenAI models on /v1/responses)
   const vendor = MODEL_VENDOR[args.model];
   if (vendor === "openai") {
     return runOpenAiTurn(args);
