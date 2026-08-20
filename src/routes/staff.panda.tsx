@@ -16,6 +16,11 @@ import {
   type ParsedStackFrame,
 } from "@/lib/parse-error-stack";
 import { pandaChat } from "@/lib/panda.functions";
+import {
+  activitiesFromMessage,
+  activitiesFromRuns,
+  type SkippeActivity,
+} from "@/lib/skippe-activity";
 import { SKIPPE_MODE_OPTIONS, modelShowsThinking, MODEL_BY_MODE, type SkippeMode } from "@/lib/skippe-models";
 import { GoogleGlyph } from "@/components/google-glyph";
 import { ChatGptGlyph } from "@/components/chatgpt-glyph";
@@ -94,6 +99,7 @@ function ThinkingBlock({ text }: { text: string }) {
           {text}
         </p>
       )}
+
     </div>
   );
 }
@@ -383,6 +389,18 @@ function PandaPage() {
     typeof window !== "undefined" ? loadDraftImages() : [],
   );
   const [loading, setLoading] = useState(false);
+  /** Live status — system labels only, zero LLM credits. */
+  const [liveActivities, setLiveActivities] = useState<SkippeActivity[]>([]);
+  const [activityIndex, setActivityIndex] = useState(0);
+
+  useEffect(() => {
+    if (!loading || liveActivities.length <= 1) return;
+    const id = window.setInterval(() => {
+      setActivityIndex((i) => (i + 1) % liveActivities.length);
+    }, 1600);
+    return () => window.clearInterval(id);
+  }, [loading, liveActivities]);
+
   const [issue, setIssue] = useState<{
     error: Error;
     context?: Record<string, unknown>;
@@ -744,7 +762,7 @@ function PandaPage() {
    */
   async function captureScreenshot() {
     if (!requireCheapVision()) return;
-    if (images.length >= 9) {
+    if (images.length >= 3) {
       toast.error("Max 3 images — remove one first");
       return;
     }
@@ -918,7 +936,7 @@ function PandaPage() {
   }
 
   async function snapFromShare() {
-    if (images.length >= 9) {
+    if (images.length >= 3) {
       toast.error("Max 3 images — remove one first");
       return;
     }
@@ -955,9 +973,13 @@ function PandaPage() {
       images: [...sendImages],
     };
     setMessages((m) => [...m, userMsg]);
+    setLiveActivities(
+      activitiesFromMessage(userMsg.content, sendImages.length),
+    );
+    setActivityIndex(0);
     setLoading(true);
     // Short history keeps gateway fast — even shorter when images are attached
-    const historyWindow = sendImages.length > 0 ? 4 : 8;
+    const historyWindow = sendImages.length > 0 ? 4 : 6;
     const history = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .slice(-historyWindow)
@@ -972,6 +994,12 @@ function PandaPage() {
     setImages([]);
     try {
       const res = await chatFn({ data: payload });
+      // Prefer real tool names for a final status flash (still no LLM)
+      const fromRuns = activitiesFromRuns(res.runs ?? []);
+      if (fromRuns.length) {
+        setLiveActivities(fromRuns);
+        setActivityIndex(0);
+      }
       setMessages((m) => [
         ...m,
         {
@@ -1026,6 +1054,7 @@ function PandaPage() {
       setMessages((m) => [...m, { role: "assistant", content: "Sorry — I hit an error. Try again?" }]);
     } finally {
       setLoading(false);
+      setLiveActivities([]);
     }
   }
 
@@ -1164,9 +1193,39 @@ function PandaPage() {
                 </div>
               </motion.div>
             ))}
+                  <style>{`
+        .skippe-shine {
+          position: relative;
+          display: inline-block;
+          background: linear-gradient(
+            90deg,
+            rgba(30, 30, 30, 0.55) 0%,
+            rgba(30, 30, 30, 0.55) 40%,
+            rgba(255, 255, 255, 0.95) 50%,
+            rgba(30, 30, 30, 0.55) 60%,
+            rgba(30, 30, 30, 0.55) 100%
+          );
+          background-size: 200% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          animation: skippe-shine 2.2s ease-in-out infinite;
+        }
+        @keyframes skippe-shine {
+          0% { background-position: 100% 0; }
+          100% { background-position: -100% 0; }
+        }
+      `}</style>
+
             {loading && (
-              <div className="flex items-center gap-2 text-sm text-ink/60">
-                <Loader2 className="h-4 w-4 animate-spin" /> Skippe is thinking…
+              <div className="flex items-center gap-3 py-1">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cherry" />
+                <span
+                  key={liveActivities[activityIndex]?.id ?? "on-it"}
+                  className="skippe-shine text-sm font-medium text-ink/70"
+                >
+                  {liveActivities[activityIndex]?.label ?? "Skippe is on it"}
+                </span>
               </div>
             )}
           </div>
@@ -1194,13 +1253,13 @@ function PandaPage() {
                   </motion.div>
                 ))}
               </AnimatePresence>
-              <span className="ml-1 self-end text-xs text-ink/50">{images.length}/9</span>
+              <span className="ml-1 self-end text-xs text-ink/50">{images.length}/3</span>
             </div>
           )}
           <div className="flex items-end gap-2">
             <button
               onClick={() => fileRef.current?.click()}
-              disabled={images.length >= 9}
+              disabled={images.length >= 3}
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
               title="Upload images or a video (video → frames for Skippe)"
             >
@@ -1220,7 +1279,7 @@ function PandaPage() {
                   }, 500);
                 }
               }}
-              disabled={!visionCaptureAllowed || images.length >= 9}
+              disabled={!visionCaptureAllowed || images.length >= 3}
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
               title={
                 visionCaptureAllowed
@@ -1234,7 +1293,7 @@ function PandaPage() {
               type="button"
               onClick={() => void captureScreenshot()}
               disabled={
-                !visionCaptureAllowed || images.length >= 9 || snapBusy
+                !visionCaptureAllowed || images.length >= 3 || snapBusy
               }
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
               title={
@@ -1317,7 +1376,7 @@ function PandaPage() {
                 <button
                   type="button"
                   onClick={snapFromShare}
-                  disabled={images.length >= 9}
+                  disabled={images.length >= 3}
                   className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cherry px-3 text-xs font-bold text-cream hover:bg-cherry/90 disabled:opacity-40"
                 >
                   <Camera className="h-3.5 w-3.5" />
