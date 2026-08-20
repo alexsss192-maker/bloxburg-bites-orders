@@ -1942,13 +1942,129 @@ async function maybeRunIntentFallback(
     };
   }
 
+  // ── MENU (instant, no LLM) ──────────────────────────────────────────
+  const wantsMenuList =
+    /\b(list|show|see)\b/i.test(msg) &&
+    /\b(menu|items?|dishes|stock)\b/i.test(msg);
+
+  if (wantsMenuList) {
+    const { run } = await runSkippeTool(ctx, "list_menu_items", {}, staffName);
+    return {
+      runs: [run],
+      reply: run.ok ? `✅ ${run.summary}` : `⚠️ ${run.summary}`,
+    };
+  }
+
+  // "add item lobster stock 20" / "create menu item pizza with stock 5"
+  const addMenu =
+    /\b(add|create|make|new)\b/i.test(msg) &&
+    /\b(item|dish|food|menu)\b/i.test(msg);
+  if (addMenu) {
+    const nameMatch =
+      userText.match(
+        /\b(?:item|dish|food|named?|called)\s+[\"']?([a-z0-9][a-z0-9 \-']{0,40})[\"']?/i,
+      ) ||
+      userText.match(/\badd\s+[\"']?([a-z0-9][a-z0-9 \-']{0,40})[\"']?/i);
+    let name = nameMatch?.[1]?.trim() ?? "";
+    // strip trailing "stock …"
+    name = name.replace(/\s+stock\b.*$/i, "").trim();
+    const stockMatch = userText.match(/\bstock\s*[:=]?\s*(\d{1,7})\b/i);
+    const stock = stockMatch ? parseInt(stockMatch[1], 10) : 0;
+    const seasonal = /\bseasonal\b/i.test(msg);
+    if (name && name.length >= 2) {
+      const { run } = await runSkippeTool(
+        ctx,
+        "create_menu_item",
+        {
+          name,
+          description: "",
+          stock,
+          category: seasonal ? "seasonal" : "non_seasonal",
+          is_active: true,
+        },
+        staffName,
+      );
+      return {
+        runs: [run],
+        reply: run.ok
+          ? `✅ ${run.summary}${run.detail ? ` · ${run.detail}` : ""}`
+          : `⚠️ ${run.summary}`,
+      };
+    }
+  }
+
+  // "set stock of lobster to 40" / "update pizza stock 12"
+  const stockUpdate =
+    /\bstock\b/i.test(msg) &&
+    /\b(set|update|change|make)\b/i.test(msg);
+  if (stockUpdate) {
+    const stockMatch = userText.match(/\bstock\s*(?:of\s+)?(?:to\s+)?[:=]?\s*(\d{1,7})\b/i) ||
+      userText.match(/\bto\s+(\d{1,7})\b/i);
+    const stock = stockMatch ? parseInt(stockMatch[1], 10) : NaN;
+    const nameMatch =
+      userText.match(
+        /\b(?:stock\s+(?:of\s+)?|update\s+|set\s+)[\"']?([a-z][a-z0-9 \-']{1,40}?)[\"']?\s+(?:stock|to)\b/i,
+      ) ||
+      userText.match(/\b(?:of|for)\s+[\"']?([a-z][a-z0-9 \-']{1,40})[\"']?/i);
+    const itemName = nameMatch?.[1]?.trim().toLowerCase();
+    if (itemName && Number.isFinite(stock)) {
+      const { result, run: listRun } = await runSkippeTool(
+        ctx,
+        "list_menu_items",
+        {},
+        staffName,
+      );
+      const items =
+        (result as { items?: Array<{ id: string; name: string }> })?.items ??
+        [];
+      const hit = items.find(
+        (i) => i.name.toLowerCase() === itemName ||
+          i.name.toLowerCase().includes(itemName),
+      );
+      if (!hit) {
+        return {
+          runs: [listRun],
+          reply: listRun.ok
+            ? `⚠️ No menu item matching “${itemName}”. Say **list my menu** to see names.`
+            : `⚠️ ${listRun.summary}`,
+        };
+      }
+      const { run } = await runSkippeTool(
+        ctx,
+        "update_menu_item",
+        { item_id: hit.id, stock },
+        staffName,
+      );
+      return {
+        runs: [listRun, run],
+        reply: run.ok
+          ? `✅ ${run.summary} → stock ${stock}`
+          : `⚠️ ${run.summary}`,
+      };
+    }
+  }
+
+  // orders list
+  if (/\b(list|show)\b/i.test(msg) && /\borders?\b/i.test(msg)) {
+    const { run } = await runSkippeTool(
+      ctx,
+      "list_orders",
+      { status: null },
+      staffName,
+    );
+    return {
+      runs: [run],
+      reply: run.ok ? `✅ ${run.summary}` : `⚠️ ${run.summary}`,
+    };
+  }
+
+
   // DISCOUNT only when THIS message is about discounts (not history).
   const wantsDiscount =
     /\bdiscount\b/i.test(msg) ||
     (/\b(auto|automatic)\b/i.test(msg) && /\b(name|off|%|percent)\b/i.test(msg));
 
-  if (!wantsDiscount) return null;
-
+  if (wantsDiscount) {
   // Name: "name would be test", "named weekend", "name: test", "call it test"
   const nameMatch =
     userText.match(/\bname\s+(?:would\s+be|is|should\s+be|:)?\s*[\"']?([^\"'\n,]+?)[\"']?(?:\s+and\b|,|$)/i) ||
@@ -1993,7 +2109,11 @@ async function maybeRunIntentFallback(
     : `⚠️ Couldn't create the discount: ${run.summary}`;
 
   return { runs: [run], reply };
+  }
+
+  return null;
 }
+
 
 export async function runSkippeTurn(args: {
   model: string;
