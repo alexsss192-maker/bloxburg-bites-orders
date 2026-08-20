@@ -332,7 +332,7 @@ export const listAllMenu = createServerFn({ method: "GET" })
     const { data, error } = await context.supabase
       .from("menu_items" as any)
       .select(
-        "id,name,description,price_bs,stock,low_stock_threshold,image_url,category,is_active,owner_id,created_at",
+        "id,name,description,price_bs,stock,image_url,category,is_active,owner_id,created_at",
       )
       .eq("owner_id", context.userId)
       .order("created_at", { ascending: false });
@@ -347,7 +347,6 @@ export const listAllMenu = createServerFn({ method: "GET" })
         description: string;
         price_bs: number;
         stock: number;
-        low_stock_threshold: number;
         image_url: string | null;
         category: string;
         is_active: boolean;
@@ -362,7 +361,7 @@ const menuUpsert = z.object({
   description: z.string().trim().max(500).default(""),
   price_bs: z.number().int().min(0).max(100000000),
   stock: z.number().int().min(0).max(1000000),
-  low_stock_threshold: z.number().int().min(0).max(100000).default(5),
+  // low_stock_threshold is NOT in the live menu_items schema — do not send it.
   image_url: z.string().url().max(2000).optional().nullable(),
   category: z.enum(["non_seasonal", "seasonal"]).default("non_seasonal"),
   is_active: z.boolean().default(true),
@@ -373,6 +372,16 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => menuUpsert.parse(d))
   .handler(async ({ context, data }) => {
     await assertStaff(context);
+    // Only columns that exist on public.menu_items
+    const payload = {
+      name: data.name,
+      description: data.description,
+      price_bs: data.price_bs,
+      stock: data.stock,
+      image_url: data.image_url ?? null,
+      category: data.category,
+      is_active: data.is_active,
+    };
     if (data.id) {
       // Everyone — admins included — may only ever edit their own items.
       const { data: existing } = await context.supabase
@@ -384,14 +393,14 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
       if (owner !== context.userId) throw new Error("You can only edit your own menu items");
       const { error } = await context.supabase
         .from("menu_items" as any)
-        .update({ ...data, category: data.category })
+        .update(payload)
         .eq("id", data.id);
       if (error) throw new Error(error.message);
       return { id: data.id };
     }
     const { data: row, error } = await context.supabase
       .from("menu_items" as any)
-      .insert({ ...data, owner_id: context.userId })
+      .insert({ ...payload, owner_id: context.userId })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
