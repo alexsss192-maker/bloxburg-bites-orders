@@ -23,7 +23,13 @@ export {
   modelShowsThinking,
 } from "@/lib/skippe-models";
 
-import type { SkippeToolRun } from "@/lib/skippe.server";
+/** Local type — do NOT import from skippe.server (keeps LLM/DB code off the client graph). */
+export type SkippeToolRun = {
+  name: string;
+  ok: boolean;
+  summary: string;
+  detail?: string;
+};
 
 export type SkippeSavedMessage = {
   id: string;
@@ -52,7 +58,7 @@ const pandaInput = z.object({
         data_url: z.string().max(6_500_000),
       }),
     )
-    .max(9)
+    .max(3)
     .default([]),
 
   mode: z
@@ -143,9 +149,8 @@ export const pandaChat = createServerFn({
       data.message,
     );
 
-    let turn;
     try {
-      turn = await runSkippeTurn({
+      const turn = await runSkippeTurn({
         model,
         instructions: buildSkippePrompt({
           staffName,
@@ -165,45 +170,35 @@ export const pandaChat = createServerFn({
           _cache: new Map(),
         },
       });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(msg.startsWith("Skippe") ? msg : `Skippe failed: ${msg}`);
-    }
 
-    const reply =
-      turn.reply ||
-      (
-        turn.runs.length > 0
+      const reply =
+        turn.reply ||
+        (turn.runs.length > 0
           ? turn.runs
-              .map(
-                (r) =>
-                  `${
-                    r.ok
-                      ? "✅"
-                      : "⚠️"
-                  } ${r.summary}`,
-              )
+              .map((r) => `${r.ok ? "✅" : "⚠️"} ${r.summary}`)
               .join("\n")
-          : "I couldn't put a reply together — try asking again?"
-      );
+          : "I couldn't put a reply together — try asking again?");
 
-        return {
-      reply,
-
-      thinking:
-        turn.thinking,
-
-      runs:
-        turn.runs,
-
-      model,
-
-      model_label:
-        SKIPPE_MODEL_LABELS[model] ??
+      return {
+        reply,
+        thinking: turn.thinking ?? "",
+        runs: turn.runs ?? [],
         model,
-
-      auto,
-    };
+        model_label: SKIPPE_MODEL_LABELS[model] ?? model,
+        auto,
+      };
+    } catch (err) {
+      // Never throw HTTP 500 for kitchen chat — surface the message in the thread.
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        reply: `⚠️ ${msg.startsWith("Skippe") ? msg : `Skippe hit a problem: ${msg}`}`,
+        thinking: "",
+        runs: [],
+        model,
+        model_label: SKIPPE_MODEL_LABELS[model] ?? model,
+        auto,
+      };
+    }
   });
 
 export const listSkippeChat =
@@ -233,15 +228,10 @@ export const listSkippeChat =
         })
         .limit(200);
 
-      if (error) {
-        throw new Error(
-          error.message,
-        );
-      }
+      // Table may not exist / RLS — never 500 the Skippe page for history.
+      if (error) return [] as SkippeSavedMessage[];
 
-      return (
-        data ?? []
-      ) as unknown as SkippeSavedMessage[];
+      return (data ?? []) as unknown as SkippeSavedMessage[];
     });
 
 export const clearSkippeChat =
