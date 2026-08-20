@@ -1,5 +1,6 @@
 import { MODEL_BY_MODE, MODEL_VENDOR, type SkippeMode } from "./skippe-models";
 import { logPandaAction } from "@/lib/audit.server";
+import { isPublicBulkChef } from "@/lib/bulk-department";
 
 export type SkippeContext = {
   supabase: { from: (table: string) => any; rpc?: unknown };
