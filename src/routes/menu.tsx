@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
-import { Plus, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, Search, Sparkles, X } from "lucide-react";
 import { toast } from "sonner";
 import { getPublicChefs, getPublicMenu } from "@/lib/menu.functions";
 import { isPublicBulkChef } from "@/lib/bulk-department";
@@ -51,10 +51,20 @@ export const Route = createFileRoute("/menu")({
 
 type Tab = "non_seasonal" | "seasonal";
 
+const PRICE_FILTERS: Array<{ label: string; max: number | null }> = [
+  { label: "Any price", max: null },
+  { label: "Under B$1k", max: 1000 },
+  { label: "Under B$5k", max: 5000 },
+  { label: "Under B$15k", max: 15000 },
+  { label: "Under B$50k", max: 50000 },
+];
+
 function MenuPage() {
   const [tab, setTab] = useState<Tab>("non_seasonal");
   const { data: chefs } = useSuspenseQuery(chefsQuery);
   const [chefId, setChefId] = useState<string>(() => chefs[0]?.owner_id ?? "");
+  const [search, setSearch] = useState("");
+  const [maxPrice, setMaxPrice] = useState<number | null>(null);
   const activeChef =
     chefs.find((c) => c.owner_id === chefId) ?? chefs[0] ?? null;
 
@@ -98,6 +108,50 @@ function MenuPage() {
             >
               Seasonals
             </TabButton>
+          </div>
+        </div>
+
+        {/* Search + price filter — client-only, no database */}
+        <div className="mb-8 space-y-3">
+          <div className="relative max-w-xl">
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink/40" />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search dishes…"
+              className="h-12 w-full rounded-full border border-ink/15 bg-white py-2 pl-11 pr-11 text-sm text-ink shadow-sm outline-none ring-cherry/30 placeholder:text-ink/40 focus:ring-2"
+              aria-label="Search menu"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-ink/40 hover:bg-blossom hover:text-ink"
+                aria-label="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {PRICE_FILTERS.map((f) => {
+              const active = maxPrice === f.max;
+              return (
+                <button
+                  key={f.label}
+                  type="button"
+                  onClick={() => setMaxPrice(f.max)}
+                  className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ${
+                    active
+                      ? "border-cherry bg-cherry text-cream"
+                      : "border-ink/15 bg-white text-ink/70 hover:border-cherry/50 hover:text-cherry"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -190,6 +244,8 @@ function MenuPage() {
             <MenuGrid
               category={tab}
               ownerId={activeChef?.owner_id ?? null}
+              search={search}
+              maxPrice={maxPrice}
             />
           </motion.div>
         </AnimatePresence>
@@ -264,36 +320,52 @@ function TabButton({
 function MenuGrid({
   category,
   ownerId,
+  search,
+  maxPrice,
 }: {
   category: Tab;
   ownerId: string | null;
+  search: string;
+  maxPrice: number | null;
 }) {
   const { data: items } = useSuspenseQuery(menuQuery);
   const add = useCart((s) => s.add);
   const cartItems = useCart((s) => s.items);
 
-  const filtered = items.filter(
-    (i) =>
-      i.category === category &&
-      (ownerId ? i.owner_id === ownerId : true),
+  const q = search.trim().toLowerCase();
+
+  const filtered = useMemo(
+    () =>
+      items.filter((i) => {
+        if (i.category !== category) return false;
+        if (ownerId && i.owner_id !== ownerId) return false;
+        if (maxPrice != null && i.price_bs > maxPrice) return false;
+        if (q) {
+          const hay = `${i.name} ${i.description ?? ""}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      }),
+    [items, category, ownerId, maxPrice, q],
   );
 
   const featured = filtered[0];
   const rest = filtered.slice(1);
 
   if (filtered.length === 0) {
+    const hasFilters = Boolean(q) || maxPrice != null;
     return (
       <div className="rounded-3xl border border-dashed border-ink/20 bg-white p-16 text-center">
         <p className="font-display text-3xl">
-          No{" "}
-          {category === "non_seasonal"
-            ? "non-seasonal"
-            : "seasonal"}{" "}
-          items yet
+          {hasFilters
+            ? "No matches"
+            : `No ${category === "non_seasonal" ? "non-seasonal" : "seasonal"} items yet`}
         </p>
 
         <p className="mt-2 text-muted-foreground">
-          Our chefs are prepping this shelf. Check back soon!
+          {hasFilters
+            ? "Try a different search or price filter."
+            : "Our chefs are prepping this shelf. Check back soon!"}
         </p>
       </div>
     );
