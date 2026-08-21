@@ -1551,14 +1551,31 @@ async function runOpenAiTurn(args: {
     ],
   }));
 
+  const visionImages = args.images.filter((img) => {
+    const u = (img?.data_url || "").trim();
+    return (
+      u.startsWith("data:image/") ||
+      u.startsWith("https://") ||
+      u.startsWith("http://")
+    );
+  });
+  const userText =
+    (args.userText || "").trim() ||
+    (visionImages.length > 0
+      ? `Please look at the ${visionImages.length} image(s) I attached and help with the kitchen task.`
+      : "(empty)");
+
   input.push({
     role: "user",
     content: [
       {
         type: "input_text",
-        text: args.userText || "(look at these images)",
+        text:
+          visionImages.length > 0
+            ? `${userText}\n\n(${visionImages.length} image${visionImages.length === 1 ? "" : "s"} attached below — use them.)`
+            : userText,
       },
-      ...args.images.map((img) => ({
+      ...visionImages.map((img) => ({
         type: "input_image",
         image_url: img.data_url,
         detail: "low",
@@ -1733,14 +1750,33 @@ async function runGoogleTurn(args: {
     })),
   ];
 
+  // Only keep real data: / https image URLs — drop blanks that make Gemini claim "no images"
+  const visionImages = args.images.filter((img) => {
+    const u = (img?.data_url || "").trim();
+    return (
+      u.startsWith("data:image/") ||
+      u.startsWith("https://") ||
+      u.startsWith("http://")
+    );
+  });
+
+  const userText =
+    (args.userText || "").trim() ||
+    (visionImages.length > 0
+      ? `Please look at the ${visionImages.length} image(s) I attached and help with the kitchen task.`
+      : "(empty)");
+
   const userContent: Array<Record<string, unknown>> = [
     {
       type: "text",
-      text: args.userText || "(look at these images)",
+      text:
+        visionImages.length > 0
+          ? `${userText}\n\n(${visionImages.length} image${visionImages.length === 1 ? "" : "s"} attached below — use them.)`
+          : userText,
     },
   ];
 
-  for (const image of args.images) {
+  for (const image of visionImages) {
     userContent.push({
       type: "image_url",
       image_url: { url: image.data_url },
@@ -1749,7 +1785,7 @@ async function runGoogleTurn(args: {
 
   messages.push({
     role: "user",
-    content: args.images.length > 0 ? userContent : args.userText || "(look at these images)",
+    content: visionImages.length > 0 ? userContent : userText,
   });
 
   const toolsEnabled = args.toolsEnabled !== false;
