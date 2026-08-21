@@ -2839,14 +2839,17 @@ async function transcribeMenuFromImages(args: {
   if (visionImages.length === 0) return { items: [], raw: "" };
 
   const system = [
-    "You OCR Bloxburg food-list screenshots (fridge Content panel, cooking list, or shop list).",
-    'Return ONLY valid JSON, no markdown, no explanation: {"items":[{"name":"Pancakes","stock":12}]}',
-    "name = exact food label text on a row in the picture (e.g. Pancakes, Boba Tea, Taco). Short dish names only.",
-    "stock = the quantity number next to that food, or 0 if not visible.",
-    "NEVER invent foods. NEVER copy the chef's chat message as a name.",
-    "NEVER use UI chrome as names: Content, Take, Qty, View Content, Stock, Menu, Fridge, Button, Row.",
-    "NEVER use instruction phrases: 'these menu items', 'add these', 'from the picture', 'scan this'.",
-    'If you cannot read any real food labels: {"items":[]}',
+    "You are a strict OCR engine for Bloxburg fridge Content panels only.",
+    'Return ONLY JSON: {"items":[{"name":"Pancakes","stock":12}]}',
+    "",
+    "HARD RULES:",
+    "1) name = letters you can LITERALLY see on a food row next to a blue Take button.",
+    "2) stock = the number on that same row. Use 0 only if the number is unreadable.",
+    "3) If the image is blurry, dark, wrong window, Skippe UI, browser, Discord, or has no Content+Take rows → return {\"items\":[]}.",
+    "4) NEVER invent, guess, or recall popular Bloxburg foods from memory.",
+    "5) NEVER output a generic starter list (burgers, milkshakes, boba, hot chocolate, flour, eggs, butter, sugar, milk, orange juice) unless those exact words are visible on screen.",
+    "6) Empty is always better than a made-up menu. Chefs hate hallucinated items.",
+    "7) No markdown, no prose, no apology — JSON only.",
   ].join("\n");
 
   const content: Array<Record<string, unknown>> = [];
@@ -2856,11 +2859,10 @@ async function transcribeMenuFromImages(args: {
       image_url: { url: image.data_url, detail: "high" },
     });
   }
-  // Do NOT echo the chef's full sentence into the vision prompt — weak models
-  // copy it as item names ("these menu items in the picture"). Task is fixed.
+  // Do NOT echo the chef's sentence — models copy it or invent a default menu.
   content.push({
     type: "text",
-    text: "Read every food name and qty from the image(s) above. JSON only.",
+    text: 'OCR only what is visible. If unsure, {"items":[]}. JSON only.',
   });
 
   const key = gatewayKey();
@@ -2945,6 +2947,75 @@ function parseTranscribedItems(raw: string): Array<{ name: string; stock: number
   return items.slice(0, 80);
 }
 
+/**
+ * Models love to invent the same "default Bloxburg menu" when frames are
+ * blank/wrong-window. If a transcription is mostly one of these packs, treat
+ * it as hallucination — never write it to the chef's menu.
+ */
+const HALLUCINATION_PACKS: string[][] = [
+  [
+    "orange juice",
+    "milk",
+    "eggs",
+    "butter",
+    "flour",
+    "sugar",
+  ],
+  [
+    "caramelized onion burger",
+    "milkshake (vanilla)",
+    "strawberry milkshake",
+    "candy cane",
+    "cinnamon roll",
+    "cherry tart",
+    "gingerbread man",
+    "taro boba tea",
+    "milkshake (chocolate)",
+    "strawberry shortcake",
+    "mixed berry tart",
+    "milk cake",
+  ],
+  [
+    "gingerbread hot chocolate",
+    "pink hot chocolate",
+    "berry cream boba tea",
+    "peppermint hot chocolate",
+    "cherry popcorn",
+    "gingerbread latte",
+  ],
+];
+
+function looksLikeHallucinatedMenu(
+  items: Array<{ name: string; stock: number }>,
+): boolean {
+  if (items.length === 0) return false;
+  const names = items.map((it) => it.name.trim().toLowerCase());
+  const unique = new Set(names);
+
+  for (const pack of HALLUCINATION_PACKS) {
+    const packSet = new Set(pack);
+    let hits = 0;
+    for (const n of unique) {
+      if (packSet.has(n)) hits += 1;
+    }
+    // 70%+ of returned names sit inside a known hallucinated pack
+    if (unique.size >= 3 && hits / unique.size >= 0.7) return true;
+    // Almost the whole pack appeared in one go
+    if (hits >= Math.min(pack.length, 5) && hits >= unique.size - 1) return true;
+  }
+
+  // All stock 0 + 5+ items is a common "I guessed a menu" signature
+  // when the model never saw real qty numbers on Content rows.
+  if (items.length >= 5 && items.every((it) => it.stock === 0)) {
+    const inAnyPack = names.filter((n) =>
+      HALLUCINATION_PACKS.some((pack) => pack.includes(n)),
+    ).length;
+    if (inAnyPack >= Math.ceil(items.length * 0.5)) return true;
+  }
+
+  return false;
+}
+
 async function addMenuFromPictures(args: {
   model: string;
   images: Img[];
@@ -2954,22 +3025,21 @@ async function addMenuFromPictures(args: {
 }): Promise<SkippeTurn> {
   const runs: SkippeToolRun[] = [];
   const msg = (args.userText || "").toLowerCase();
+  // Only wipe when the chef clearly asked — not on the default scan prompt.
   const wantsWipe =
     /\b(remove|delete|clear)\s+all\b/.test(msg) ||
     /\bdelete\s+every\b/.test(msg) ||
-    /\breplace\b/.test(msg);
+    /\breplace\s+(my\s+)?(menu|items|everything|all)\b/.test(msg);
 
-  /** Drop any transcribed name that is mostly the chef's own message (model echo). */
+  /** Drop names that are the chef's instruction text, not foods. */
   const filterEchoes = (list: Array<{ name: string; stock: number }>) => {
     const chef = (args.userText || "").toLowerCase().replace(/\s+/g, " ").trim();
     if (chef.length < 8) return list.filter((it) => !isBogusMenuName(it.name));
     return list.filter((it) => {
       if (isBogusMenuName(it.name)) return false;
       const n = it.name.toLowerCase();
-      // Exact or near-exact copy of the instruction
       if (chef.includes(n) && n.length >= 12) return false;
       if (n.includes(chef) && chef.length >= 8) return false;
-      // High overlap with a long instruction sentence
       if (chef.length > 20) {
         const chefWords = new Set(chef.split(" ").filter((w) => w.length > 2));
         const nameWords = n.split(" ").filter((w) => w.length > 2);
@@ -2983,15 +3053,51 @@ async function addMenuFromPictures(args: {
   };
 
   let usedModel = args.model;
-  let { items } = await transcribeMenuFromImages({
+
+  // ── Gate: must look like a real Bloxburg Content panel before we write anything.
+  // This is what stops "default menu" hallucinations on blank / wrong-window shares.
+  let verdict = await classifyBloxburgFridge({
     model: args.model,
+    images: args.images,
+    userText: args.userText,
+  });
+  if (verdict !== "fridge" && args.model.includes("2.5-flash-lite")) {
+    usedModel = MODEL_BY_MODE.lite_31;
+    verdict = await classifyBloxburgFridge({
+      model: usedModel,
+      images: args.images,
+      userText: args.userText,
+    });
+  }
+
+  if (verdict === "not_fridge") {
+    return {
+      reply:
+        "I don't see a Bloxburg **Content** panel in those frames (need the white list with qty numbers and blue **Take** buttons). Share the **Roblox** window → open fridge → View Content, then Send. I will **not** invent menu items.",
+      thinking: "",
+      runs: [],
+      model: usedModel,
+    };
+  }
+  if (verdict === "unclear") {
+    return {
+      reply:
+        "Those frames are too unclear to trust (dark, wrong window, or share paused). Resume share on Roblox, open **View Content**, capture clear rows, then Send. I will **not** guess foods that aren't on screen.",
+      thinking: "",
+      runs: [],
+      model: usedModel,
+    };
+  }
+
+  let { items } = await transcribeMenuFromImages({
+    model: usedModel,
     images: args.images,
     userText: args.userText,
   });
   items = filterEchoes(items);
 
-  // 2.5-lite often returns empty or junk on game UI — one 3.1 pass, then stop.
-  if (items.length === 0 && args.model.includes("2.5-flash-lite")) {
+  // 2.5-lite often returns empty on game UI — one 3.1 pass, then stop.
+  if (items.length === 0 && args.model.includes("2.5-flash-lite") && usedModel === args.model) {
     usedModel = MODEL_BY_MODE.lite_31;
     const retry = await transcribeMenuFromImages({
       model: usedModel,
@@ -2999,6 +3105,17 @@ async function addMenuFromPictures(args: {
       userText: args.userText,
     });
     items = filterEchoes(retry.items);
+  }
+
+  // Block the classic "I made up a Bloxburg menu" packs (your exact bug).
+  if (looksLikeHallucinatedMenu(items)) {
+    return {
+      reply:
+        "I almost added a **generic made-up menu** (burgers / milkshakes / flour-eggs-sugar style) that is **not** what I can verify on your Content panel. Nothing was written. Scroll the fridge slowly with **Fridge share** on the Roblox window so each row is sharp, or type names like: `add Pancakes stock 12, Taco stock 5`.",
+      thinking: "",
+      runs: [],
+      model: usedModel,
+    };
   }
 
   if (wantsWipe) {
@@ -3009,7 +3126,7 @@ async function addMenuFromPictures(args: {
   if (items.length === 0) {
     return {
       reply:
-        "I looked at the picture(s) but could not read any food names. Send a closer shot of the Bloxburg list (big text, one panel), or type the names like: `add Pancakes stock 12, Taco stock 5`.",
+        "I confirmed a Content-style panel but could not read any food names. Send a closer shot (big text, one panel), or type: `add Pancakes stock 12, Taco stock 5`.",
       thinking: "",
       runs,
       model: usedModel,
