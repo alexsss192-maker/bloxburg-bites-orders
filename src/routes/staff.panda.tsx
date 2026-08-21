@@ -79,55 +79,93 @@ function runEmoji(name: string, ok: boolean): string {
   return "✅";
 }
 
-/** Cute animated tool-result chips (matches thinking-pad vibe). */
+/** Strip plain ✅/⚠️ lines from reply when we render RunChips instead. */
+function contentWithoutRunLines(content: string, runs?: ToolRun[]): string {
+  if (!runs?.length) return content;
+  const lines = content.split("\n");
+  const kept = lines.filter((line) => {
+    const t = line.trim();
+    if (!t) return true;
+    if (/^[✅⚠️✓]\s/.test(t)) return false;
+    if (/^_Answered by /i.test(t)) return true;
+    // drop lines that only repeat a run summary
+    if (runs.some((r) => t === r.summary || t.endsWith(r.summary))) return false;
+    return true;
+  });
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Playful tool-result chips — bounce in, soft glow, sparkle on success. */
 function RunChips({ runs, compact = false }: { runs: ToolRun[]; compact?: boolean }) {
   return (
-    <ul className={compact ? "mt-2 flex flex-col gap-1.5" : "mt-4 space-y-2"}>
+    <ul className={compact ? "mt-1.5 flex flex-col gap-2" : "mt-4 flex flex-col gap-2.5"}>
       {runs.map((r, idx) => (
         <motion.li
           key={`${r.name}-${idx}-${r.summary}`}
-          initial={{ opacity: 0, y: 6, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ delay: Math.min(idx * 0.05, 0.35), type: "spring", stiffness: 380, damping: 28 }}
+          initial={{ opacity: 0, x: -12, scale: 0.88, rotate: -1.5 }}
+          animate={{ opacity: 1, x: 0, scale: 1, rotate: 0 }}
+          transition={{
+            delay: Math.min(idx * 0.07, 0.5),
+            type: "spring",
+            stiffness: 420,
+            damping: 22,
+            mass: 0.7,
+          }}
+          whileHover={{ scale: 1.02, x: 2 }}
           className={
             compact
-              ? `flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs ${
+              ? `group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-2 text-xs shadow-sm ${
                   r.ok
-                    ? "border-bamboo/25 bg-gradient-to-r from-bamboo/10 to-transparent text-ink/85"
-                    : "border-destructive/25 bg-destructive/5 text-destructive"
+                    ? "border-bamboo/30 bg-gradient-to-r from-bamboo/20 via-white/80 to-blossom/50 text-ink"
+                    : "border-destructive/30 bg-gradient-to-r from-destructive/10 to-white/50 text-destructive"
                 }`
-              : `rounded-2xl border p-3 text-sm ${
+              : `group relative overflow-hidden rounded-2xl border p-3.5 text-sm shadow-sm ${
                   r.ok
-                    ? "border-bamboo/30 bg-gradient-to-r from-bamboo/10 via-blossom/40 to-transparent"
-                    : "border-destructive/30 bg-destructive/5"
+                    ? "border-bamboo/35 bg-gradient-to-br from-bamboo/15 via-blossom/60 to-white"
+                    : "border-destructive/30 bg-gradient-to-br from-destructive/10 to-white"
                 }`
           }
         >
+          {/* soft shine sweep */}
           <span
-            className={`grid shrink-0 place-items-center rounded-lg ${
-              compact ? "h-6 w-6 text-sm" : "h-8 w-8 text-base"
-            } ${r.ok ? "bg-bamboo/15" : "bg-destructive/10"}`}
+            className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 transition duration-700 group-hover:translate-x-full group-hover:opacity-100"
+            aria-hidden
+          />
+          <motion.span
+            initial={{ scale: 0, rotate: -20 }}
+            animate={{ scale: 1, rotate: 0 }}
+            transition={{ delay: Math.min(idx * 0.07, 0.5) + 0.08, type: "spring", stiffness: 500, damping: 16 }}
+            className={`relative grid shrink-0 place-items-center rounded-xl shadow-inner ${
+              compact ? "h-8 w-8 text-base" : "h-10 w-10 text-lg"
+            } ${r.ok ? "bg-bamboo/25 ring-1 ring-bamboo/20" : "bg-destructive/15 ring-1 ring-destructive/20"}`}
             aria-hidden
           >
             {runEmoji(r.name, r.ok)}
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className={`leading-snug ${compact ? "font-medium" : "font-semibold"}`}>
+          </motion.span>
+          <div className="relative min-w-0 flex-1">
+            <p
+              className={`leading-snug ${compact ? "font-semibold" : "font-bold"} ${
+                r.ok ? "text-ink/90" : ""
+              }`}
+            >
               {r.summary}
             </p>
             {!compact && r.detail && (
               <p className="mt-0.5 text-xs text-ink/55">{r.detail}</p>
             )}
             {!compact && (
-              <p className="mt-1 text-[0.6rem] uppercase tracking-[0.18em] text-ink/40">
+              <p className="mt-1 text-[0.6rem] uppercase tracking-[0.2em] text-ink/40">
                 {r.name.replace(/_/g, " ")}
               </p>
             )}
           </div>
-          <span
-            className={`shrink-0 rounded-full ${compact ? "h-1.5 w-1.5" : "h-2 w-2"} ${
-              r.ok ? "bg-bamboo" : "bg-destructive"
-            }`}
+          <motion.span
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: Math.min(idx * 0.07, 0.5) + 0.15, type: "spring", stiffness: 600 }}
+            className={`relative shrink-0 rounded-full shadow ${
+              compact ? "h-2 w-2" : "h-2.5 w-2.5"
+            } ${r.ok ? "bg-bamboo shadow-bamboo/40" : "bg-destructive"}`}
             title={r.ok ? "ok" : "failed"}
           />
         </motion.li>
@@ -1464,9 +1502,14 @@ function PandaPage() {
                     </div>
                   )}
                   {m.thinking && <ThinkingBlock text={m.thinking} />}
-                  <p className="whitespace-pre-wrap">{m.content}</p>
+                  {(() => {
+                    const body = contentWithoutRunLines(m.content, m.runs);
+                    return body ? (
+                      <p className="whitespace-pre-wrap">{body}</p>
+                    ) : null;
+                  })()}
                   {m.runs && m.runs.length > 0 && (
-                    <div className="mt-2 border-t border-ink/10 pt-2">
+                    <div className={m.content ? "mt-2" : ""}>
                       <RunChips runs={m.runs} compact />
                     </div>
                   )}
