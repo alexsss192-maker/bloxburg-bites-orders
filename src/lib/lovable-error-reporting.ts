@@ -383,13 +383,21 @@ export function detectSkippeProblem(args: {
     }`;
   }
 
-  const actionAsk =
-    /\b(create|make|add|claim|mark|set|cancel|delete|remove|list|show|message|send|discount|order)\b/i;
+  // Only flag CLEAR kitchen commands that produced nothing useful.
+  // Do NOT flag chatty asks, clarifications, typos, or "add those" when
+  // the model legitimately needs item names — those were huge false positives.
+  const hardAction =
+    /\b(claim|mark|set|cancel|delete|remove)\b.{0,40}\b(order|item|discount|priority|tier|status)\b/i.test(
+      args.userMessage || "",
+    ) ||
+    /\b(create|make)\s+(discount|priority|item)\b/i.test(args.userMessage || "");
+  const genericFail =
+    /couldn'?t complete|try again with a bit more detail|need a clearer ask/i.test(reply);
   if (
-    args.userMessage &&
-    actionAsk.test(args.userMessage) &&
+    hardAction &&
     runs.length === 0 &&
-    reply.length < 80
+    genericFail &&
+    reply.length < 120
   ) {
     return "Chef asked for an action but Skippe ran zero tools.";
   }
