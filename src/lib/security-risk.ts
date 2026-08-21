@@ -15,6 +15,8 @@
  *   5. Build actionable diagnosis + copy block
  */
 
+import { runMicroHeuristics } from "./micro-heuristics";
+
 export type SecurityLevel = "critical" | "high" | "medium" | "low" | "info";
 
 export type SecurityCategory =
@@ -892,6 +894,87 @@ const RULES: Rule[] = [
   },
 
   {
+    id: "clickjacking_frame",
+    category: "cors_csp",
+    level: "medium",
+    weight: 60,
+    test: ({ lower }) =>
+      /x-frame-options|frame-ancestors|clickjack/i.test(lower)
+        ? ["frame-ancestors"]
+        : null,
+    title: "Framing / clickjacking signal",
+    risk: "App may be embeddable in hostile origins.",
+    why: "Frame-options / frame-ancestors messaging appeared in diagnostics.",
+    where: "CSP / security headers.",
+    fix: "Set Content-Security-Policy frame-ancestors 'self' (or deny) in production.",
+    priorityAction: "Verify CSP frame-ancestors on the production response headers.",
+  },
+  {
+    id: "mixed_content",
+    category: "crypto_tls",
+    level: "high",
+    weight: 79,
+    test: ({ lower }) =>
+      /mixed content|blocked:http:|active mixed/i.test(lower)
+        ? ["mixed-content"]
+        : null,
+    title: "Mixed content blocked",
+    risk: "HTTPS page loading HTTP active content is blocked — or worse, allowed.",
+    why: "Browser mixed-content language detected.",
+    where: "Asset URLs / API base URLs.",
+    fix: "Serve all APIs and assets over HTTPS; fix http:// hardcoded endpoints.",
+    priorityAction: "Search for http:// API URLs in client config.",
+  },
+  {
+    id: "postmessage_origin",
+    category: "cors_csp",
+    level: "high",
+    weight: 77,
+    test: ({ lower }) =>
+      /postmessage|event\.origin/i.test(lower) &&
+      /invalid|untrusted|mismatch/i.test(lower)
+        ? ["postmessage-origin"]
+        : null,
+    title: "postMessage origin mismatch",
+    risk: "Accepting messages without origin checks enables cross-window attacks.",
+    why: "postMessage + invalid/untrusted origin language detected.",
+    where: "window message listeners.",
+    fix: "Always verify event.origin against an allowlist before handling data.",
+    priorityAction: "Audit message event listeners for origin checks.",
+  },
+  {
+    id: "staff_role_claim_trust",
+    category: "authorization",
+    level: "high",
+    weight: 83,
+    test: ({ lower }) =>
+      /user_roles|chef or admin only|admins only/i.test(lower)
+        ? ["staff-role-gate"]
+        : null,
+    title: "Staff role gate denied",
+    risk: "Authorization boundary for staff features fired.",
+    why: "Staff-only language indicates a role check failed or was probed.",
+    where: "user_roles checks on server fns.",
+    fix: "Ensure server-side role reads from user_roles; never trust client isAdmin flags.",
+    priorityAction: "Confirm the actor has chef/admin in user_roles.",
+  },
+  {
+    id: "owner_id_tamper",
+    category: "idor",
+    level: "critical",
+    weight: 91,
+    test: ({ lower }) =>
+      /owner_id|wrong owner|does not belong|not assigned to you/i.test(lower)
+        ? ["owner-scope"]
+        : null,
+    title: "Ownership / IDOR boundary",
+    risk: "Cross-tenant access attempt or mis-scoped query.",
+    why: "Ownership denial language indicates IDOR protection engaged or misfired.",
+    where: "Queries filtering by owner_id / chef assignment.",
+    fix: "Always filter by auth.uid() server-side; never accept owner_id from client without verify.",
+    priorityAction: "Inspect the failing query for missing owner_id = auth.uid() predicates.",
+  },
+  {
     id: "tls_crypto_noise",
 
     category: "crypto_tls",
@@ -986,6 +1069,31 @@ export function diagnoseSecurityRisk(
       level: rule.level,
       weight: rule.weight,
       evidence,
+    });
+  }
+
+  // Fold security-domain micro heuristics into rule hits
+  const microSec = runMicroHeuristics(text).filter((h) => h.domain === "security");
+  for (const h of microSec) {
+    hits.push({
+      ruleId: `micro_${h.id}`,
+      category:
+        h.id.includes("rls")
+          ? "rls_permission"
+          : h.id.includes("secret") || h.id.includes("service_role")
+            ? "secret_exposure"
+            : h.id.includes("xss")
+              ? "injection"
+              : h.id.includes("path")
+                ? "ssrf_path"
+                : h.id.includes("proto")
+                  ? "injection"
+                  : h.id.includes("gateway") || h.id.includes("skippe")
+                    ? "lovable_supabase"
+                    : "generic",
+      level: h.level,
+      weight: h.weight,
+      evidence: h.evidence,
     });
   }
 
