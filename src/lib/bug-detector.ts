@@ -13,6 +13,7 @@ import {
   formatSecurityDiagnosisForCopy,
   type SecurityDiagnosis,
 } from "./security-risk";
+import { runMicroHeuristics, type MicroHit } from "./micro-heuristics";
 
 export type BugLevel = "critical" | "high" | "medium" | "low" | "info";
 
@@ -734,11 +735,26 @@ function synthesizeConfirmed(
   f: ErrorFeatures,
   top: ScorerResult | null,
   security: SecurityDiagnosis | null,
+  microTop?: MicroHit | null,
 ): ConfirmedCause {
   const loc =
     f.primaryFile && f.primaryLine != null
       ? `${f.primaryFile}:${f.primaryLine}`
       : f.primaryFile || f.appFrames[0] || null;
+
+  // Micro-heuristic wins when weight is extreme (tiny but real issues)
+  if (microTop && microTop.weight >= 88) {
+    return {
+      statement: microTop.why,
+      fix: microTop.fix,
+      location:
+        f.primaryFile && f.primaryLine != null
+          ? `${f.primaryFile}:${f.primaryLine}`
+          : f.primaryFile,
+      anchor: microTop.id,
+      confidence: Math.min(0.99, 0.7 + microTop.weight / 400),
+    };
+  }
 
   // Security wins when critical/high
   if (security && (security.level === "critical" || security.level === "high")) {
@@ -970,7 +986,37 @@ export function diagnoseBug(error: unknown): BugDiagnosis | null {
 
   const features = extractFeatures(error);
   const security = diagnoseSecurityRisk(error);
+  const microHits = runMicroHeuristics(error);
   const scorers: ScorerResult[] = [];
+
+  // Promote micro-heuristic hits into scorers (beats generic unknown)
+  for (const h of microHits.slice(0, 8)) {
+    scorers.push({
+      family:
+        h.domain === "security"
+          ? "security"
+          : h.id.includes("hook") || h.id.includes("react") || h.id.includes("hydrat")
+            ? "react"
+            : h.id.includes("http") || h.id.includes("zod") || h.id.includes("tanstack")
+              ? "tanstack"
+              : h.id.includes("undef") || h.id.includes("token") || h.id.includes("eof")
+                ? "reference"
+                : h.id.includes("syntax")
+                  ? "syntax"
+                  : h.id.includes("postgrest") || h.id.includes("column") || h.id.includes("table")
+                    ? "postgrest"
+                    : h.id.includes("network") || h.id.includes("chunk") || h.id.includes("fetch")
+                      ? "network"
+                      : h.id.includes("gateway") || h.id.includes("skippe")
+                        ? "gateway"
+                        : "unknown",
+      level: h.level,
+      score: h.weight,
+      evidence: h.evidence.concat([`micro:${h.id}`]),
+      titleHint: h.title,
+    });
+  }
+
 
   for (const s of ALL_SCORERS) {
     try {
@@ -992,7 +1038,7 @@ export function diagnoseBug(error: unknown): BugDiagnosis | null {
   }
 
   const top = scorers[0] ?? null;
-  const confirmed = synthesizeConfirmed(features, top, security);
+  const confirmed = synthesizeConfirmed(features, top, security, microHits[0] ?? null);
 
   // Family / level
   let family: BugFamily = top?.family ?? "unknown";
