@@ -80,7 +80,16 @@ const GREETING: Msg = {
 };
 
 function ModeGlyph({ vendor }: { vendor: "openai" | "google" }) {
-  return vendor === "openai" ? <ChatGptGlyph /> : <GoogleGlyph />;
+  // Fixed box so longer labels (e.g. Gemini 3.1 Flash Lite) never shrink the mark
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+      {vendor === "openai" ? (
+        <ChatGptGlyph className="h-4 w-4 shrink-0" />
+      ) : (
+        <GoogleGlyph className="h-4 w-4 shrink-0" />
+      )}
+    </span>
+  );
 }
 
 function ThinkingBlock({ text }: { text: string }) {
@@ -1328,16 +1337,16 @@ function PandaPage() {
               </span>
             </button>
             <Select value={mode} onValueChange={(v) => pickMode(v as SkippeMode)}>
-              <SelectTrigger className="h-11 w-[16.5rem] rounded-2xl border-ink/10 bg-white text-left text-sm font-semibold">
+              <SelectTrigger className="h-11 w-[17.5rem] shrink-0 rounded-2xl border-ink/10 bg-white text-left text-sm font-semibold [&>span]:flex [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-2 [&>span]:truncate">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="rounded-2xl">
                 {SKIPPE_MODE_OPTIONS.map((o) => (
                   <SelectItem key={o.value} value={o.value} className="rounded-xl py-2.5">
-                    <span className="flex w-full items-center gap-2">
+                    <span className="flex w-full min-w-0 items-center gap-2">
                       <ModeGlyph vendor={o.vendor} />
-                      <span className="font-semibold">{o.label}</span>
-                      <span className="ml-auto pl-4 text-xs text-ink/50">Cost: {o.cost}</span>
+                      <span className="min-w-0 flex-1 truncate font-semibold">{o.label}</span>
+                      <span className="ml-auto shrink-0 pl-3 text-xs text-ink/50">Cost: {o.cost}</span>
                     </span>
                   </SelectItem>
                 ))}
