@@ -6,6 +6,10 @@ import {
   getUnseenRewards,
   type UnseenRewardGroup,
 } from "@/lib/members.functions";
+import {
+  ackRewardMilestoneLocal,
+  getSeenRewardMilestones,
+} from "@/lib/client-cache";
 
 const ORDINAL = ["", "1st", "2nd", "3rd", "4th", "5th"];
 
@@ -77,9 +81,12 @@ export function RewardPopup() {
             username: cleanUsername,
           },
         });
+        // Filter out milestones already acknowledged in localStorage (no DB ack).
+        const seen = new Set(getSeenRewardMilestones(cleanUsername));
+        const filtered = (groups ?? []).filter((g) => !seen.has(g.milestone));
 
         if (!stopped) {
-          setQueue(groups ?? []);
+          setQueue(filtered);
         }
       } catch {
         // Reward popup should never break the rest of the website.
@@ -104,6 +111,9 @@ export function RewardPopup() {
     // Remove it immediately so the UI feels instant.
     setQueue((q) => q.slice(1));
 
+    // Local-only ack — no member_rewards DB write.
+    ackRewardMilestoneLocal(cleanUsername, milestone);
+
     try {
       await ackFn({
         data: {
@@ -112,7 +122,7 @@ export function RewardPopup() {
         },
       });
     } catch {
-      // The reward itself is already stored server-side.
+      /* server is no-op */
     }
   }
 
