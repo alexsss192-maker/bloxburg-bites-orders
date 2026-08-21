@@ -2730,6 +2730,184 @@ async function classifyBloxburgFridge(args: {
   }
 }
 
+async function transcribeMenuFromImages(args: {
+  model: string;
+  images: Img[];
+  userText: string;
+}): Promise<{ items: Array<{ name: string; stock: number }>; raw: string }> {
+  const visionImages = args.images.filter((img) => {
+    const u = (img?.data_url || "").trim();
+    return (
+      u.startsWith("data:image/") ||
+      u.startsWith("https://") ||
+      u.startsWith("http://")
+    );
+  });
+  if (visionImages.length === 0) return { items: [], raw: "" };
+
+  const system = [
+    "You read Bloxburg screenshots of a food list (fridge Content, cooking list, or shop list).",
+    'Return ONLY JSON: {"items":[{"name":"Pancakes","stock":12}]}',
+    "name = the food label written in the picture, not the user's sentence.",
+    "stock = the quantity number on that row, or 0 if you cannot see a number.",
+    "Include every unique readable food. Never invent. Never use phrases like 'these menu items in the picture'.",
+    'If nothing is readable: {"items":[]}',
+  ].join("\n");
+
+  const content: Array<Record<string, unknown>> = [];
+  for (const image of visionImages.slice(0, 9)) {
+    content.push({
+      type: "image_url",
+      image_url: { url: image.data_url, detail: "high" },
+    });
+  }
+  content.push({
+    type: "text",
+    text: `Chef said: ${(args.userText || "").slice(0, 400)}\n\nList every food in the pictures as JSON.`,
+  });
+
+  const key = gatewayKey();
+  const res = await gatewayFetch(
+    "https://ai.gateway.lovable.dev/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Lovable-API-Key": key,
+        Authorization: `Bearer ${key}`,
+        "X-Lovable-AIG-SDK": "fetch",
+      },
+      body: JSON.stringify({
+        model: args.model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content },
+        ],
+        temperature: 0,
+        max_tokens: 2000,
+      }),
+    },
+    "menu-transcribe",
+  );
+  if (!res.ok) return { items: [], raw: "" };
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string | null } }>;
+  };
+  const raw = (data.choices?.[0]?.message?.content || "").trim();
+  return { items: parseTranscribedItems(raw), raw };
+}
+
+function parseTranscribedItems(raw: string): Array<{ name: string; stock: number }> {
+  const items: Array<{ name: string; stock: number }> = [];
+  const seen = new Set<string>();
+
+  const push = (name: unknown, stock: unknown) => {
+    const n = String(name ?? "").trim();
+    if (!n || isBogusMenuName(n)) return;
+    const key = n.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push({ name: n.slice(0, 100), stock: clampInt(stock, 0, 1_000_000, 0) });
+  };
+
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        items?: Array<{ name?: string; stock?: number }>;
+      };
+      for (const it of parsed.items ?? []) push(it.name, it.stock);
+    } catch {
+      /* fall through to line parse */
+    }
+  }
+
+  if (items.length === 0) {
+    for (const line of raw.split(/\n/)) {
+      const m = line.match(
+        /^\s*(?:[-*\d\.\)\]]\s*)?([A-Za-z][A-Za-z0-9 .'&]{1,48}?)(?:\s+[-–:x×]?\s*(\d{1,6}))?\s*$/,
+      );
+      if (m) push(m[1], m[2]);
+    }
+  }
+
+  return items.slice(0, 80);
+}
+
+async function addMenuFromPictures(args: {
+  model: string;
+  images: Img[];
+  userText: string;
+  ctx: SkippeContext;
+  staffName: string;
+}): Promise<SkippeTurn> {
+  const runs: SkippeToolRun[] = [];
+  const msg = (args.userText || "").toLowerCase();
+  const wantsWipe =
+    /\b(remove|delete|clear)\s+all\b/.test(msg) ||
+    /\bdelete\s+every\b/.test(msg) ||
+    /\breplace\b/.test(msg);
+
+  let usedModel = args.model;
+  let { items } = await transcribeMenuFromImages({
+    model: args.model,
+    images: args.images,
+    userText: args.userText,
+  });
+
+  // 2.5-lite often returns empty on game UI — one 3.1 pass, then stop.
+  if (items.length === 0 && args.model.includes("2.5-flash-lite")) {
+    usedModel = MODEL_BY_MODE.lite_31;
+    const retry = await transcribeMenuFromImages({
+      model: usedModel,
+      images: args.images,
+      userText: args.userText,
+    });
+    items = retry.items;
+  }
+
+  if (wantsWipe) {
+    const { run } = await runSkippeTool(args.ctx, "delete_all_my_menu_items", {}, args.staffName);
+    runs.push(run);
+  }
+
+  if (items.length === 0) {
+    return {
+      reply:
+        "I looked at the picture(s) but could not read any food names. Send a closer shot of the Bloxburg list (big text, one panel), or type the names like: `add Pancakes stock 12, Taco stock 5`.",
+      thinking: "",
+      runs,
+      model: usedModel,
+    };
+  }
+
+  const { run } = await runSkippeTool(
+    args.ctx,
+    "create_menu_items_batch",
+    {
+      items: items.map((it) => ({
+        name: it.name,
+        stock: it.stock,
+        category: /holiday|christmas|halloween|valentine|gingerbread|peppermint|candy cane/i.test(
+          it.name,
+        )
+          ? "seasonal"
+          : "non_seasonal",
+        is_active: true,
+      })),
+    },
+    args.staffName,
+  );
+  runs.push(run);
+
+  return {
+    reply: synthesizeReplyFromRuns(runs),
+    thinking: "",
+    runs,
+    model: usedModel,
+  };
+}
+
 export async function runSkippeTurn(args: {
   model: string;
   instructions: string;
@@ -2760,6 +2938,22 @@ export async function runSkippeTurn(args: {
         model: args.model,
       };
     }
+  }
+
+  // Pictures + add/create: transcribe first (no tools), then insert. Lite models
+  // fail vision+function-calling in one turn — that's why they claimed "Added" with junk names.
+  if (
+    (args.toolsEnabled !== false) &&
+    args.images.length > 0 &&
+    askedToAddFromPicture(args.userText, args.images.length)
+  ) {
+    return addMenuFromPictures({
+      model: args.model,
+      images: args.images,
+      userText: args.userText,
+      ctx: args.ctx,
+      staffName: args.staffName,
+    });
   }
 
   // ── Vision gate: skip for explicit "add from picture" (classifier wastes a round
