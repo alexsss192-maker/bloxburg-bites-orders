@@ -2101,7 +2101,55 @@ async function maybeRunIntentFallback(
     };
   }
 
-  // ── MENU (instant, no LLM) ──────────────────────────────────────────
+  // ── RESTORE deleted items from the same message ───────────────────
+  // e.g. "✅ Deleted Latte\n…\nAdd them all back"
+  if (/\b(add|restore|put)\b/i.test(msg) && /\b(back|them|those|these|all)\b/i.test(msg)) {
+    const deletedNames: string[] = [];
+    const delRe = /(?:✅\s*)?Deleted\s+([^\n✅]+)/gi;
+    let dm: RegExpExecArray | null;
+    while ((dm = delRe.exec(userText)) !== null) {
+      const n = dm[1].replace(/\s+/g, " ").trim();
+      if (n.length >= 2 && n.toLowerCase() !== "s") deletedNames.push(n);
+    }
+    // Also pull names from recent history lines that look like deletes / fridge rows
+    if (deletedNames.length === 0) {
+      const hist = history
+        .slice(-8)
+        .map((h) => h.content)
+        .join("\n");
+      let hm: RegExpExecArray | null;
+      const hr = /(?:✅\s*)?Deleted\s+([^\n✅]+)/gi;
+      while ((hm = hr.exec(hist)) !== null) {
+        const n = hm[1].replace(/\s+/g, " ").trim();
+        if (n.length >= 2 && n.toLowerCase() !== "s") deletedNames.push(n);
+      }
+    }
+    // Dedupe
+    const unique = [...new Set(deletedNames.map((n) => n.trim()))].slice(0, 20);
+    if (unique.length > 0) {
+      const runs: SkippeToolRun[] = [];
+      const lines: string[] = [];
+      for (const name of unique) {
+        const { run } = await runSkippeTool(
+          ctx,
+          "create_menu_item",
+          {
+            name,
+            description: "",
+            stock: 0,
+            category: "non_seasonal",
+            is_active: true,
+          },
+          staffName,
+        );
+        runs.push(run);
+        lines.push(run.ok ? `✅ ${run.summary}` : `⚠️ ${run.summary}`);
+      }
+      return { runs, reply: lines.join("\n") };
+    }
+  }
+
+    // ── MENU (instant, no LLM) ──────────────────────────────────────────
   const wantsMenuList =
     /\b(list|show|see)\b/i.test(msg) &&
     /\b(menu|items?|dishes|stock)\b/i.test(msg);
