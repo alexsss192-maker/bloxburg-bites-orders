@@ -190,7 +190,17 @@ export const pandaChat = createServerFn({
     }
 
     const history = (data.history ?? []).slice(-3);
-    const images = (data.images ?? []).slice(0, 3);
+    // Keep only real image data URLs (blank / non-image payloads make models say "no images")
+    const images = (data.images ?? [])
+      .slice(0, 3)
+      .filter((img: { data_url?: string }) => {
+        const u = (img?.data_url || "").trim();
+        return (
+          u.startsWith("data:image/") ||
+          u.startsWith("https://") ||
+          u.startsWith("http://")
+        );
+      });
     const visionOnly =
       images.length > 0 && !KITCHEN_ACTION_RE.test(data.message || "");
 
@@ -199,6 +209,13 @@ export const pandaChat = createServerFn({
       images.length,
       data.message,
     );
+
+    // When chef only drops frames, give the model a clear vision instruction
+    const userText =
+      (data.message || "").trim() ||
+      (images.length > 0
+        ? "Scan these fridge / menu images and add or update items as needed."
+        : "");
 
     try {
       const turn = await runSkippeTurn({
@@ -209,7 +226,7 @@ export const pandaChat = createServerFn({
           withVision: images.length > 0,
         }),
         history,
-        userText: data.message,
+        userText,
         images,
         staffName,
         toolsEnabled: !visionOnly,
