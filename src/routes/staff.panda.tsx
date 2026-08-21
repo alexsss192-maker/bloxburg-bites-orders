@@ -544,23 +544,24 @@ function PandaPage() {
     toast.success("Conversation cleared");
   }
 
-  /** Grab one frame from a <video> → JPEG data URL. */
+  /** Grab one frame from a <video> → JPEG data URL (compact for gateway vision). */
   function frameFromVideo(video: HTMLVideoElement): string | null {
     const w = video.videoWidth;
     const h = video.videoHeight;
     if (!w || !h) return null;
     const canvas = document.createElement("canvas");
-    const max = 896; // smaller = faster gateway
+    // Keep under ~640px so 3 frames stay small enough for Lovable → Gemini
+    const max = 640;
     const scale = Math.min(1, max / Math.max(w, h));
-    canvas.width = Math.round(w * scale);
-    canvas.height = Math.round(h * scale);
+    canvas.width = Math.max(1, Math.round(w * scale));
+    canvas.height = Math.max(1, Math.round(h * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     try {
-      return canvas.toDataURL("image/jpeg", 0.65);
+      // 0.55 keeps fridge text readable while shrinking base64 a lot
+      return canvas.toDataURL("image/jpeg", 0.55);
     } catch {
-      // Tainted canvas (rare) — fail soft
       return null;
     }
   }
