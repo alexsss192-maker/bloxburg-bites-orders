@@ -760,7 +760,7 @@ function PandaPage() {
     if (!files) return;
     let remaining = 9 - images.length;
     if (remaining <= 0) {
-      toast.error("Max 3 images — remove one first");
+      toast.error("Max 9 frames — remove some first");
       return;
     }
 
@@ -804,7 +804,7 @@ function PandaPage() {
     }
 
     if (next.length > 0) {
-      setImages((prev) => [...prev, ...next].slice(0, 3));
+      setImages((prev) => [...prev, ...next].slice(0, 9));
     }
   }
 
@@ -899,14 +899,15 @@ function PandaPage() {
     try {
       const rec = new MediaRecorder(stream, {
         mimeType: mime,
-        videoBitsPerSecond: 1_200_000,
+        // Higher bitrate = sharper Content text for OCR (1.2M was soft)
+        videoBitsPerSecond: 2_500_000,
       });
       persistentRecorder = rec;
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) persistentRecordChunks.push(e.data);
       };
-      rec.start(500); // timeslice so we keep data even if share ends abruptly
-      toast.message("Recording fridge scroll as video — scroll the Content list, then Send");
+      rec.start(250); // shorter timeslice — less lost data at the end of a scroll
+      toast.message("Recording fridge scroll — scroll Content, then Send");
     } catch (err) {
       console.error(err);
       persistentRecorder = null;
@@ -923,8 +924,8 @@ function PandaPage() {
    */
   async function captureScreenshot() {
     if (!requireVisionCapture()) return;
-    if (images.length >= 3) {
-      toast.error("Max 3 images — remove one first");
+    if (images.length >= 9) {
+      toast.error("Max 9 frames — remove one first");
       return;
     }
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -974,7 +975,7 @@ function PandaPage() {
         );
         return;
       }
-      setImages((prev) => [...prev, dataUrl].slice(0, 3));
+      setImages((prev) => [...prev, dataUrl].slice(0, 9));
       toast.success("Screenshot added for Skippe");
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") {
@@ -1097,8 +1098,8 @@ function PandaPage() {
   }
 
   async function snapFromShare() {
-    if (images.length >= 3) {
-      toast.error("Max 3 images — remove one first");
+    if (images.length >= 9) {
+      toast.error("Max 9 frames — remove one first");
       return;
     }
     const video = shareVideoRef.current;
@@ -1120,15 +1121,15 @@ function PandaPage() {
       toast.error("Couldn’t snap — try Resume share on the game window");
       return;
     }
-    setImages((prev) => [...prev, dataUrl].slice(0, 3));
+    setImages((prev) => [...prev, dataUrl].slice(0, 9));
     toast.success("Frame snapped for Skippe");
   }
 
 
-  /** Dense frames from a recorded fridge-scroll video (or uploaded file). */
+  /** Dense stills from a fridge-scroll recording. Biased to the end (latest scroll). */
   async function framesFromBlob(
     blob: Blob,
-    maxFrames = 9,
+    maxFrames = 12,
   ): Promise<string[]> {
     const url = URL.createObjectURL(blob);
     const video = document.createElement("video");
@@ -1141,26 +1142,49 @@ function PandaPage() {
         video.onloadedmetadata = () => resolve();
         video.onerror = () => reject(new Error("Couldn’t read fridge video"));
       });
+      // Wait for real duration (some browsers report Infinity until data loads)
+      if (!Number.isFinite(video.duration) || video.duration === Infinity) {
+        await new Promise<void>((resolve) => {
+          const onDur = () => {
+            video.removeEventListener("durationchange", onDur);
+            resolve();
+          };
+          video.addEventListener("durationchange", onDur);
+          window.setTimeout(() => resolve(), 800);
+        });
+      }
       const duration =
-        Number.isFinite(video.duration) && video.duration > 0
-          ? Math.min(video.duration, 45) // cap long shares
+        Number.isFinite(video.duration) && video.duration > 0 && video.duration !== Infinity
+          ? Math.min(video.duration, 60)
           : 1;
-      // Aim ~1 frame every 0.4s so fast scrolls still land items
-      const byTime = Math.max(1, Math.ceil(duration / 0.4));
-      const count = Math.max(1, Math.min(maxFrames, byTime, 9));
+      // ~1 frame / 0.35s, cap 12 — more coverage of a full Content scroll
+      const byTime = Math.max(1, Math.ceil(duration / 0.35));
+      const count = Math.max(1, Math.min(maxFrames, byTime, 12));
+
+      // 35% of samples in the first half, 65% in the second half + always the last frame
+      // so the latest scroll position is never dropped.
+      const times: number[] = [];
+      const earlyN = Math.max(1, Math.floor(count * 0.35));
+      const lateN = Math.max(1, count - earlyN);
+      for (let i = 0; i < earlyN; i++) {
+        times.push(duration * 0.5 * ((i + 0.5) / earlyN));
+      }
+      for (let i = 0; i < lateN; i++) {
+        times.push(duration * (0.5 + 0.5 * ((i + 0.5) / lateN)));
+      }
+      times[times.length - 1] = Math.max(0, duration - 0.04);
+
       const out: string[] = [];
-      for (let i = 0; i < count; i++) {
-        const t = Math.min(
-          duration * ((i + 0.5) / count),
-          Math.max(0, duration - 0.05),
-        );
-        video.currentTime = t;
+      for (const t of times) {
+        video.currentTime = Math.min(Math.max(0, t), Math.max(0, duration - 0.02));
         await new Promise<void>((resolve) => {
           const onSeeked = () => {
             video.removeEventListener("seeked", onSeeked);
             resolve();
           };
           video.addEventListener("seeked", onSeeked);
+          // Fallback if seeked never fires
+          window.setTimeout(() => resolve(), 400);
         });
         const frame = frameFromVideo(video);
         if (frame) out.push(frame);
@@ -1172,10 +1196,10 @@ function PandaPage() {
     }
   }
 
-  async function finalizeFridgeRecording(): Promise<string[]> {
+  /** Stop the current scroll recording, pull stills, optionally restart if still sharing. */
+  async function finalizeFridgeRecording(restartIfSharing = true): Promise<string[]> {
     const rec = persistentRecorder;
     if (!rec || rec.state === "inactive") {
-      // Fall back to whatever stills are already in the tray
       return [];
     }
     const blob: Blob = await new Promise((resolve) => {
@@ -1199,9 +1223,41 @@ function PandaPage() {
     });
     persistentRecorder = null;
     persistentRecordChunks = [];
+
+    // Kick off a fresh recording so the next Send gets up-to-date scroll, not stale tape
+    if (restartIfSharing && sharing) {
+      const stream = shareStreamRef.current || persistentShareStream;
+      if (stream && typeof MediaRecorder !== "undefined") {
+        const mimeCandidates = [
+          "video/webm;codecs=vp9",
+          "video/webm;codecs=vp8",
+          "video/webm",
+        ];
+        const mime =
+          mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) || "";
+        if (mime) {
+          try {
+            persistentRecordChunks = [];
+            persistentRecordMime = mime;
+            const next = new MediaRecorder(stream, {
+              mimeType: mime,
+              videoBitsPerSecond: 2_500_000,
+            });
+            persistentRecorder = next;
+            next.ondataavailable = (e) => {
+              if (e.data && e.data.size > 0) persistentRecordChunks.push(e.data);
+            };
+            next.start(250);
+          } catch {
+            persistentRecorder = null;
+          }
+        }
+      }
+    }
+
     if (!blob || blob.size < 1000) return [];
-    toast.message("Reading your fridge scroll video…");
-    return framesFromBlob(blob, 9);
+    toast.message("Reading your latest fridge scroll…");
+    return framesFromBlob(blob, 12);
   }
 
   async function send() {
@@ -1601,13 +1657,13 @@ function PandaPage() {
                   </motion.div>
                 ))}
               </AnimatePresence>
-              <span className="ml-1 self-end text-xs text-ink/50">{images.length}/3</span>
+              <span className="ml-1 self-end text-xs text-ink/50">{images.length}/9</span>
             </div>
           )}
           <div className="flex items-end gap-2">
             <button
               onClick={() => fileRef.current?.click()}
-              disabled={images.length >= 3}
+              disabled={images.length >= 9}
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
               title="Upload images or a video (video → frames for Skippe)"
             >
@@ -1627,7 +1683,7 @@ function PandaPage() {
                   }, 500);
                 }
               }}
-              disabled={!visionCaptureAllowed || images.length >= 3}
+              disabled={!visionCaptureAllowed || images.length >= 9}
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
               title={
                 visionCaptureAllowed
@@ -1641,7 +1697,7 @@ function PandaPage() {
               type="button"
               onClick={() => void captureScreenshot()}
               disabled={
-                !visionCaptureAllowed || images.length >= 3 || snapBusy
+                !visionCaptureAllowed || images.length >= 9 || snapBusy
               }
               className="grid h-11 w-11 flex-shrink-0 place-items-center rounded-2xl border border-ink/10 bg-card text-ink hover:bg-petal disabled:opacity-40"
               title={
@@ -1725,7 +1781,7 @@ function PandaPage() {
                 <button
                   type="button"
                   onClick={snapFromShare}
-                  disabled={images.length >= 3}
+                  disabled={images.length >= 9}
                   className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-cherry px-3 text-xs font-bold text-cream hover:bg-cherry/90 disabled:opacity-40"
                 >
                   <Camera className="h-3.5 w-3.5" />
