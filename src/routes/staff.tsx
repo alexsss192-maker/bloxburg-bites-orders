@@ -107,11 +107,6 @@ const NAV_ITEMS: NavItem[] = [
     icon: Sparkles,
   },
   {
-    to: "/staff/audit",
-    label: "Audit Log",
-    icon: ScrollText,
-  },
-  {
     to: "/staff/users",
     label: "Users",
     icon: Users,
@@ -191,9 +186,44 @@ function StaffLayout() {
       setRolesReady(false);
 
       try {
-        // Single DB round-trip (getMyRoles). syncDiscordStaffRoles only
-        // re-read user_roles and doubled every staff page load cost.
-        const roles = await getRoles();
+        // sessionStorage cache (15 min) — avoids user_roles DB on every staff nav.
+        const cacheKey = `pb_staff_roles_${session.userId}`;
+        let roles: {
+          isAdmin?: boolean;
+          isChef?: boolean;
+          isBulkChef?: boolean;
+        } | null = null;
+        try {
+          const raw = sessionStorage.getItem(cacheKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as {
+              exp: number;
+              v: typeof roles;
+            };
+            if (parsed.exp > Date.now()) roles = parsed.v;
+          }
+        } catch {
+          /* ignore */
+        }
+
+        if (!roles) {
+          roles = await getRoles();
+          try {
+            sessionStorage.setItem(
+              cacheKey,
+              JSON.stringify({
+                exp: Date.now() + 15 * 60_000,
+                v: {
+                  isAdmin: Boolean(roles.isAdmin),
+                  isChef: Boolean(roles.isChef),
+                  isBulkChef: Boolean(roles.isBulkChef),
+                },
+              }),
+            );
+          } catch {
+            /* ignore */
+          }
+        }
 
         if (cancelled) return;
 
