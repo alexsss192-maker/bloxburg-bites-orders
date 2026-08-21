@@ -318,20 +318,111 @@ function clampInt(v: unknown, min: number, max: number, fallback: number) {
 }
 
 
+/**
+ * Reject names that are instructions, UI chrome, or OCR garbage —
+ * the #1 reason Skippe was adding "nonsense" from fridge pictures.
+ * Real Bloxburg foods are short dish labels (Pancakes, Boba Tea, Taco…).
+ */
 function isBogusMenuName(name: string): boolean {
   const n = name.trim().toLowerCase().replace(/\s+/g, " ");
-  if (n.length < 2 || n.length > 80) return true;
+  if (n.length < 2 || n.length > 60) return true;
+
+  // Pure numbers / qty-looking strings
+  if (/^[\d×x\s.\-–]+$/.test(n)) return true;
+  if (/^\d+\s*(x|×)?\s*\d*$/.test(n)) return true;
+
+  // Explicit instruction / chat phrases the model used to copy as item names
   if (
-    /these menu items|menu items in the picture|items in the picture|add these|add those|from the picture|in the picture|in the photo|in the image/.test(
+    /these menu items|menu items in the picture|items in the picture|add these|add those|from the picture|in the picture|in the photo|in the image|scan this|look at|every row|every food|from every|please add|can you add|i want to add|add all|import these|rebuild|replace my menu/.test(
       n,
     )
   ) {
     return true;
   }
-  if (/^(add|create|remove|delete|update|scan|import)\b/.test(n)) return true;
-  if (/\b(picture|photo|image|screenshot)\b/.test(n) && /\b(item|menu|these|those|add)\b/.test(n)) {
+
+  // Imperative starts
+  if (/^(add|create|remove|delete|update|scan|import|list|show|set|make|put|please)\b/.test(n)) {
     return true;
   }
+
+  // Instruction + media words together
+  if (
+    /\b(picture|photo|image|screenshot|frame|frames|video)\b/.test(n) &&
+    /\b(item|items|menu|these|those|add|create|scan|from|in)\b/.test(n)
+  ) {
+    return true;
+  }
+
+  // Bloxburg Content / fridge UI chrome that OCR loves to pick up
+  const uiChrome = new Set([
+    "content",
+    "view content",
+    "take",
+    "take all",
+    "qty",
+    "quantity",
+    "stock",
+    "food",
+    "foods",
+    "item",
+    "items",
+    "menu",
+    "menu item",
+    "menu items",
+    "fridge",
+    "inventory",
+    "panel",
+    "button",
+    "row",
+    "rows",
+    "list",
+    "name",
+    "amount",
+    "count",
+    "bloxburg",
+    "roblox",
+    "skippe",
+    "panda",
+    "panda bites",
+    "close",
+    "back",
+    "ok",
+    "yes",
+    "no",
+    "none",
+    "null",
+    "undefined",
+    "n/a",
+    "na",
+    "unknown",
+    "unreadable",
+    "illegible",
+    "blurry",
+  ]);
+  if (uiChrome.has(n)) return true;
+
+  // Single filler words / pronouns that are never dish names
+  if (
+    /^(the|a|an|this|that|these|those|my|your|all|every|some|any|here|there|and|or|of|to|for|from|with|in|on|at)$/.test(
+      n,
+    )
+  ) {
+    return true;
+  }
+
+  // Long instruction-y sentences (real foods are short labels)
+  if (n.split(" ").length > 6) return true;
+
+  // Looks like a full sentence (contains common verbs + articles)
+  if (
+    /\b(is|are|was|were|be|been|being|have|has|had|do|does|did|will|would|should|could|can|may|might)\b/.test(
+      n,
+    ) &&
+    n.split(" ").length >= 3
+  ) {
+    return true;
+  }
+
   return false;
 }
 
@@ -1915,15 +2006,17 @@ function extractFoodsFromModelText(text: string): Array<{
     is_active: boolean;
   }> = [];
   const seen = new Set<string>();
-  const lines = (text || "").split(/\n|;|,|\u2022|\-/).map((l) => l.trim()).filter(Boolean);
+  // Prefer line-shaped lists only — splitting on commas used to turn full
+  // sentences into fake "foods".
+  const lines = (text || "").split(/\n/).map((l) => l.trim()).filter(Boolean);
   for (const line of lines) {
     const m = line.match(
-      /^(?:\d+[\.\)]\s*)?([A-Za-z][A-Za-z0-9 .'&]{1,48}?)(?:\s+[x×]?\s*(\d{1,6}))?$/,
+      /^(?:\d+[\.\)]\s*|[-*•]\s*)?([A-Za-z][A-Za-z0-9 .'&]{1,40}?)(?:\s+[x×]?\s*(\d{1,6}))?\s*$/,
     );
     if (!m) continue;
     const name = m[1].trim();
     if (isBogusMenuName(name)) continue;
-    if (name.split(" ").length > 8) continue;
+    if (name.split(" ").length > 5) continue;
     const key = name.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
@@ -2746,12 +2839,14 @@ async function transcribeMenuFromImages(args: {
   if (visionImages.length === 0) return { items: [], raw: "" };
 
   const system = [
-    "You read Bloxburg screenshots of a food list (fridge Content, cooking list, or shop list).",
-    'Return ONLY JSON: {"items":[{"name":"Pancakes","stock":12}]}',
-    "name = the food label written in the picture, not the user's sentence.",
-    "stock = the quantity number on that row, or 0 if you cannot see a number.",
-    "Include every unique readable food. Never invent. Never use phrases like 'these menu items in the picture'.",
-    'If nothing is readable: {"items":[]}',
+    "You OCR Bloxburg food-list screenshots (fridge Content panel, cooking list, or shop list).",
+    'Return ONLY valid JSON, no markdown, no explanation: {"items":[{"name":"Pancakes","stock":12}]}',
+    "name = exact food label text on a row in the picture (e.g. Pancakes, Boba Tea, Taco). Short dish names only.",
+    "stock = the quantity number next to that food, or 0 if not visible.",
+    "NEVER invent foods. NEVER copy the chef's chat message as a name.",
+    "NEVER use UI chrome as names: Content, Take, Qty, View Content, Stock, Menu, Fridge, Button, Row.",
+    "NEVER use instruction phrases: 'these menu items', 'add these', 'from the picture', 'scan this'.",
+    'If you cannot read any real food labels: {"items":[]}',
   ].join("\n");
 
   const content: Array<Record<string, unknown>> = [];
@@ -2761,9 +2856,11 @@ async function transcribeMenuFromImages(args: {
       image_url: { url: image.data_url, detail: "high" },
     });
   }
+  // Do NOT echo the chef's full sentence into the vision prompt — weak models
+  // copy it as item names ("these menu items in the picture"). Task is fixed.
   content.push({
     type: "text",
-    text: `Chef said: ${(args.userText || "").slice(0, 400)}\n\nList every food in the pictures as JSON.`,
+    text: "Read every food name and qty from the image(s) above. JSON only.",
   });
 
   const key = gatewayKey();
@@ -2804,12 +2901,20 @@ function parseTranscribedItems(raw: string): Array<{ name: string; stock: number
   const push = (name: unknown, stock: unknown) => {
     const n = String(name ?? "").trim();
     if (!n || isBogusMenuName(n)) return;
-    const key = n.toLowerCase();
+    // Strip trailing qty that models sometimes glue onto the name ("Pancakes 12")
+    const cleaned = n.replace(/\s+[x×]?\s*\d{1,6}\s*$/i, "").trim();
+    if (!cleaned || isBogusMenuName(cleaned)) return;
+    const key = cleaned.toLowerCase();
     if (seen.has(key)) return;
     seen.add(key);
-    items.push({ name: n.slice(0, 100), stock: clampInt(stock, 0, 1_000_000, 0) });
+    items.push({
+      name: cleaned.slice(0, 80),
+      stock: clampInt(stock, 0, 1_000_000, 0),
+    });
   };
 
+  // Prefer strict JSON — line-parse is a last resort and used to pull junk
+  // from model prose ("I see Pancakes…" → false positives).
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
@@ -2818,16 +2923,22 @@ function parseTranscribedItems(raw: string): Array<{ name: string; stock: number
       };
       for (const it of parsed.items ?? []) push(it.name, it.stock);
     } catch {
-      /* fall through to line parse */
+      /* fall through */
     }
   }
 
+  // Only line-parse if JSON produced nothing AND the response looks like a list
   if (items.length === 0) {
-    for (const line of raw.split(/\n/)) {
-      const m = line.match(
-        /^\s*(?:[-*\d\.\)\]]\s*)?([A-Za-z][A-Za-z0-9 .'&]{1,48}?)(?:\s+[-–:x×]?\s*(\d{1,6}))?\s*$/,
-      );
-      if (m) push(m[1], m[2]);
+    const lines = raw.split(/\n/).map((l) => l.trim()).filter(Boolean);
+    const looksLikeList =
+      lines.filter((l) => /^[-*\d•]/.test(l) || /[x×:]\s*\d/.test(l)).length >= 2;
+    if (looksLikeList) {
+      for (const line of lines) {
+        const m = line.match(
+          /^\s*(?:[-*•\d\.\)\]]\s*)?([A-Za-z][A-Za-z0-9 .'&]{1,40}?)(?:\s+[-–:x×]?\s*(\d{1,6}))?\s*$/,
+        );
+        if (m) push(m[1], m[2]);
+      }
     }
   }
 
@@ -2848,14 +2959,38 @@ async function addMenuFromPictures(args: {
     /\bdelete\s+every\b/.test(msg) ||
     /\breplace\b/.test(msg);
 
+  /** Drop any transcribed name that is mostly the chef's own message (model echo). */
+  const filterEchoes = (list: Array<{ name: string; stock: number }>) => {
+    const chef = (args.userText || "").toLowerCase().replace(/\s+/g, " ").trim();
+    if (chef.length < 8) return list.filter((it) => !isBogusMenuName(it.name));
+    return list.filter((it) => {
+      if (isBogusMenuName(it.name)) return false;
+      const n = it.name.toLowerCase();
+      // Exact or near-exact copy of the instruction
+      if (chef.includes(n) && n.length >= 12) return false;
+      if (n.includes(chef) && chef.length >= 8) return false;
+      // High overlap with a long instruction sentence
+      if (chef.length > 20) {
+        const chefWords = new Set(chef.split(" ").filter((w) => w.length > 2));
+        const nameWords = n.split(" ").filter((w) => w.length > 2);
+        if (nameWords.length >= 2) {
+          const overlap = nameWords.filter((w) => chefWords.has(w)).length;
+          if (overlap / nameWords.length >= 0.7) return false;
+        }
+      }
+      return true;
+    });
+  };
+
   let usedModel = args.model;
   let { items } = await transcribeMenuFromImages({
     model: args.model,
     images: args.images,
     userText: args.userText,
   });
+  items = filterEchoes(items);
 
-  // 2.5-lite often returns empty on game UI — one 3.1 pass, then stop.
+  // 2.5-lite often returns empty or junk on game UI — one 3.1 pass, then stop.
   if (items.length === 0 && args.model.includes("2.5-flash-lite")) {
     usedModel = MODEL_BY_MODE.lite_31;
     const retry = await transcribeMenuFromImages({
@@ -2863,7 +2998,7 @@ async function addMenuFromPictures(args: {
       images: args.images,
       userText: args.userText,
     });
-    items = retry.items;
+    items = filterEchoes(retry.items);
   }
 
   if (wantsWipe) {
