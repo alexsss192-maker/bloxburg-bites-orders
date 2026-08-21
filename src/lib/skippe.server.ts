@@ -87,7 +87,7 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   {
     name: "create_menu_item",
     description:
-      "Create ONE menu item. name MUST be a real food label from the image or an explicit dish the chef typed — NEVER the instruction sentence (never 'these menu items in the picture'). Price always B$0.",
+      "Create ONE menu item. name MUST be a real food from the image or an explicit dish name — NEVER the instruction sentence (never 'these menu items in the picture'). Price always B$0.",
     parameters: obj({
       name: { type: "string" },
       description: { type: "string" },
@@ -128,14 +128,14 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   {
     name: "delete_all_my_menu_items",
     description:
-      "Delete EVERY menu item you own in one call. Use when the chef says remove/clear/delete all my menu items before rebuilding from a fridge picture. Prefer this over many delete_menu_item calls.",
+      "Delete EVERY menu item you own in one call. Use when the chef says remove/clear/delete all my menu items before rebuilding from a fridge picture.",
     parameters: obj({}),
   },
 
   {
     name: "create_menu_items_batch",
     description:
-      "PREFERRED when the chef attaches fridge/Content pictures: create many items in one call. Each name must be a food you READ in the image (e.g. 'Pancakes'), never the chat sentence. Price always B$0. Pass items: [{name, stock, category, is_active}, ...].",
+      "PREFERRED for fridge/Content pictures: create many items in one call. Each name must be a food READ from the image (e.g. Pancakes), NEVER the chat sentence. Price always B$0. Pass items: [{name, stock, category, is_active}, ...].",
     parameters: obj({
       items: {
         type: "array",
@@ -311,44 +311,28 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   },
 ];
 
-/** Reject names that are clearly the chef's instruction, not a food from the image. */
-function isBogusMenuName(name: string): boolean {
-  const n = name.trim().toLowerCase().replace(/\s+/g, " ");
-  if (n.length < 2) return true;
-  if (n.length > 80) return true;
-  const badExact = new Set([
-    "these menu items in the picture",
-    "menu items in the picture",
-    "items in the picture",
-    "these menu items",
-    "the menu items",
-    "add these",
-    "add those",
-    "from the picture",
-    "in the picture",
-    "in the photo",
-    "in the image",
-    "menu item",
-    "menu items",
-    "new item",
-    "test",
-    "untitled",
-  ]);
-  if (badExact.has(n)) return true;
-  if (/\b(these|those|the)\s+menu\s+items?\b/.test(n)) return true;
-  if (/\b(in|from)\s+the\s+(picture|photo|image|screenshot)\b/.test(n)) return true;
-  if (/^(add|create|remove|delete|update|scan|import)\b/.test(n)) return true;
-  if (/\bpicture\b|\bphoto\b|\bimage\b|\bscreenshot\b/.test(n) && /\b(item|menu|these|those|add)\b/.test(n)) {
-    return true;
-  }
-  return false;
-}
-
-
 function clampInt(v: unknown, min: number, max: number, fallback: number) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+
+function isBogusMenuName(name: string): boolean {
+  const n = name.trim().toLowerCase().replace(/\s+/g, " ");
+  if (n.length < 2 || n.length > 80) return true;
+  if (
+    /these menu items|menu items in the picture|items in the picture|add these|add those|from the picture|in the picture|in the photo|in the image/.test(
+      n,
+    )
+  ) {
+    return true;
+  }
+  if (/^(add|create|remove|delete|update|scan|import)\b/.test(n)) return true;
+  if (/\b(picture|photo|image|screenshot)\b/.test(n) && /\b(item|menu|these|those|add)\b/.test(n)) {
+    return true;
+  }
+  return false;
 }
 
 async function ownItem(ctx: SkippeContext, id: string) {
@@ -512,7 +496,7 @@ export async function runSkippeTool(
       }
       if (isBogusMenuName(payload.name)) {
         return fail(
-          `Refused name "${payload.name}" — that looks like the chef's instruction, not a food from the fridge picture. Read the item names in the image(s) and create those instead.`,
+          `Refused name "${payload.name}" — that is the chef's instruction, not a food from the image. Read dish names from the picture.`,
         );
       }
 
@@ -659,7 +643,7 @@ export async function runSkippeTool(
         return fail("Pass items: [{ name, stock, category, is_active }, ...]");
       }
 
-      const rows = [];
+      const rows: Array<Record<string, unknown>> = [];
       const skipped: string[] = [];
       for (const it of rawItems.slice(0, 80)) {
         const rec = (it ?? {}) as Record<string, unknown>;
@@ -685,7 +669,7 @@ export async function runSkippeTool(
       if (rows.length === 0) {
         return fail(
           skipped.length
-            ? `No valid food names — refused instruction-like names (${skipped.slice(0, 3).join(", ")}). Read the actual dish names from the image(s).`
+            ? `No valid food names — refused instruction-like names (${skipped.slice(0, 3).join(", ")}). Read dish names from the image(s).`
             : "No valid item names in the batch",
         );
       }
@@ -710,11 +694,15 @@ export async function runSkippeTool(
         .join(", ");
       const more = created.length > 12 ? ` (+${created.length - 12} more)` : "";
 
-      return done(`Added ${created.length} items: ${preview}${more}`, {
-        ok: true,
-        count: created.length,
-        item_ids: created.map((c) => c.id),
-      }, "All at B$0 — set prices in staff menu");
+      return done(
+        `Added ${created.length} items: ${preview}${more}`,
+        {
+          ok: true,
+          count: created.length,
+          item_ids: created.map((c) => c.id),
+        },
+        "All at B$0 — set prices in staff menu",
+      );
     }
 
     case "get_bulk_service_fee": {
@@ -1400,13 +1388,17 @@ export function selectToolsForMessage(
   const msg = (userText || "").toLowerCase().trim();
   const want = new Set<string>();
 
-  // --- Vision / fridge frames ---
-  // Menu tools only — never discounts/priority unless the chef asks in the same message.
+  // --- Vision / fridge frames (fast path) ---
+  // Create tools first. No discounts. Skip list on pure "add" so the model does not stop after listing.
   if (imageCount > 0) {
+    const pureAdd =
+      /\b(add|create|import)\b/.test(msg) ||
+      /\bmenu items?\b/.test(msg) ||
+      /\b(picture|photo|image)\b/.test(msg);
+
     want.add("create_menu_items_batch");
     want.add("create_menu_item");
     want.add("update_menu_item");
-    want.add("list_menu_items");
 
     if (
       /\b(remove|delete|clear)\s+all\b/.test(msg) ||
@@ -1416,6 +1408,10 @@ export function selectToolsForMessage(
     ) {
       want.add("delete_all_my_menu_items");
       want.add("delete_menu_item");
+    }
+
+    if (!pureAdd) {
+      want.add("list_menu_items");
     }
 
     if (/\b(order|orders|reserved|preparing|pending|ready|deliver)\b/.test(msg)) {
@@ -1462,9 +1458,7 @@ export function selectToolsForMessage(
     msg === "add those" ||
     msg === "add them" ||
     msg === "update those" ||
-    msg === "restock those" ||
-    /\bmenu items in the picture\b/.test(msg) ||
-    /\badd these menu items\b/.test(msg)
+    msg === "restock those"
   ) {
     want.add("list_menu_items");
     want.add("create_menu_item");
@@ -1522,16 +1516,13 @@ export function selectToolsForMessage(
 /** Short prompt for text-only turns (big token saver). */
 export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolean }) {
   return [
-    `Skippe — Panda Bites kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). Currency B$.`,
-    "You run the kitchen. Use tools to finish real work. Reply short plain English.",
-    "NEVER claim success unless a tool returned ok:true this turn.",
-    "You CANNOT set menu item prices (creates always B$0 — chef prices in staff UI).",
-    "You CAN: menu (list/create/update stock/delete), orders (list/claim/status), discounts, priority tiers, bulk fee.",
-    "Only call tools you need. Do not list data 'just in case'.",
-    "If the chef says 'add those/them' after a fridge scan, CALL create_menu_items_batch (or create_menu_item) for each food — do not reply without tools.",
-    "For 'remove all then add from picture': delete_all_my_menu_items then create_menu_items_batch. Never claim Added without ok:true tool results.",
-    "Never invent success. If tools were not called, say what you still need (e.g. re-attach the fridge picture).",
-    "NEVER name a menu item after the chef's instruction text. Only real food names from images or explicit food names the chef typed.",
+    `Skippe — Panda Bites kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). B$.`,
+    "Call tools. Never narrate fake success.",
+    "NEVER say Added/Created/Done unless a tool returned ok:true this turn.",
+    "Prices on create are always B$0.",
+    "Pictures → create_menu_items_batch with food names READ from the image, never the chat sentence as a name.",
+    "Do not list_discounts or list_orders unless asked.",
+    "If you cannot read the image, say so in one line — do not invent items.",
   ].join("\n");
 }
 
@@ -1545,58 +1536,23 @@ export function buildSkippePrompt(args: {
     return buildSkippePromptLite(args);
   }
 
-  // Vision turns — locked to Bloxburg fridge Content GUI (View Content)
+  // Vision turns — transcribe Content rows, then WRITE. Never list-and-stop.
   return [
     `Skippe — kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). Bloxburg food shop, currency B$.`,
     "",
-    "══════════════════════════════════════",
-    "STEP 0 — BLOXBURG FRIDGE CONTENT GUI ONLY",
-    "══════════════════════════════════════",
-    "In Welcome to Bloxburg, players click a fridge → View Content.",
-    "That opens the Content GUI. THAT is the only screen you restock from.",
+    "You CAN see the attached images. Never say they are missing.",
     "",
-    "MUST MATCH ALL of these (if any missing → NOT a fridge):",
-    "1) White rounded panel with title text: Content",
-    "2) Top-right: search (magnifier / Search…) and red X close",
-    "3) Scrollable list of rows",
-    "4) Each row: small 3D food icon | gray quantity number under/beside icon | food name | bright blue rectangular Take button",
-    "5) Quantity is a plain integer (e.g. 213, 145, 106, 99) — that IS the stock count",
-    "6) Names are Bloxburg foods/drinks (examples from real Content panels):",
-    "   Gingerbread Hot Chocolate, Pink Hot Chocolate, Berry Cream Boba Tea, Candy Cane,",
-    "   Peppermint Hot Chocolate, Cherry Popcorn, Gingerbread Latte, Taro Boba Tea,",
-    "   White Chocolate Peppermint Popcorn, P.N.D.A Popcorn, Strawberry Popping Boba Tea,",
-    "   Strawberry Cream Cappuccino, Strawberry Swirl Cheesecake, Heart Cake",
-    "7) Often a blurred 3D Roblox room behind the panel",
+    "YOUR ONLY JOB THIS TURN:",
+    "1) Read EVERY food name (and qty number if visible) from the Bloxburg Content / fridge list in the photos.",
+    "2) Call create_menu_items_batch ONCE with those foods.",
+    "3) Do NOT call list_menu_items, list_discounts, or list_orders unless the chef asked to list.",
     "",
-    "NOT a fridge — one short line, ZERO tools:",
-    "- Lovable, lovable.dev, code/IDE, dark dashboards, staff portal, Skippe chat",
-    "- Browser chrome, Discord, Google Docs, Figma",
-    "- 'Take Ingredients' cooking menu (meal recipes) — different UI",
-    "- Missing Content title OR missing blue Take buttons OR missing qty numbers",
-    "- Blank/black/unreadable frames",
-    "Reply: 'Not a Bloxburg Content panel — open View Content on the fridge in-game, then Fridge-share.'",
+    "ITEM NAMES = text on the food rows in the picture (e.g. Pancakes, Taco, Boba Tea).",
+    "FORBIDDEN names (tools reject them): the chef's sentence, 'these menu items in the picture', 'add these', 'from the photo'.",
     "",
-    "You CAN see attached images. Never say images are missing.",
-    "",
-    "══════════════════════════════════════",
-    "FRIDGE WORKFLOW (only if Step 0 = full match)",
-    "══════════════════════════════════════",
-    "Parse every visible row: { name: text next to icon, stock: the quantity number }.",
-    "Scroll may hide rows — only use what you can read; ask for another scroll frame if needed.",
-    "1) list_menu_items once.",
-    "2) For each fridge row not on the menu → create_menu_item({ name, stock, category: seasonal if holiday/event food else non_seasonal, is_active: true }). Price is always B$0.",
-    "3) For each fridge row already on the menu → update_menu_item stock to the qty you read.",
-    "4) Do NOT list_orders unless chef asked about open/reserved orders.",
-    "5) Never claim Added/Updated without ok:true tool results this turn.",
-    "6) Short summary after tools: names + stocks only.",
-    "7) If the chef says remove/delete ALL menu items then add from the picture: call delete_all_my_menu_items once, then create_menu_items_batch with every readable row from the image(s).",
-    "8) Prefer create_menu_items_batch over many create_menu_item calls when adding more than 2 items from a picture.",
-    "9) If this message has images, you MUST read them. If the chef refers to 'the picture' and images are attached, use them — do not say you cannot see prior chat images unless none are attached this turn.",
-    "10) NEVER create a menu item whose name is the chef's sentence (e.g. 'these menu items in the picture', 'add these', 'from the photo'). Names must be the food labels you read in the Bloxburg Content list (e.g. 'Pancakes', 'Taco').",
-    "11) Workflow when images show a menu/fridge list: (a) look at every readable row in the image(s), (b) create_menu_items_batch with those exact food names + stocks if visible, (c) only list_menu_items if you need ids to update. Do not stop after list_menu_items alone.",
-    "12) If text is too small to read, say so — do not invent one fake item named after the request.",
-    "",
-    "Hard rules: no tools on non-Content screens · no inventing foods · cannot set menu prices · one list_menu_items max.",
+    "If chef asked to remove/delete all first: delete_all_my_menu_items, then create_menu_items_batch.",
+    "Price is always B$0. category: seasonal for holiday foods, else non_seasonal. is_active: true.",
+    "If text is unreadable: one honest line. NEVER invent a fake item. NEVER claim Added without a successful create tool.",
   ].join("\n");
 }
 
@@ -1782,7 +1738,7 @@ async function runOpenAiTurn(args: {
       ...visionImages.map((img) => ({
         type: "input_image",
         image_url: img.data_url,
-        detail: "low",
+        detail: "high",
       })),
     ],
   });
@@ -1894,6 +1850,13 @@ async function runOpenAiTurn(args: {
     reply = synthesizeReplyFromRuns(runs);
   }
 
+  reply = finalizeSkippeReply({
+    userText: args.userText,
+    imageCount: visionImages.length,
+    runs,
+    modelReply: reply,
+  });
+
   return {
     reply: reply.trim(),
     thinking: "",
@@ -1905,7 +1868,7 @@ async function runOpenAiTurn(args: {
 /** Build a human reply when the model forgets to write one after tools. */
 function synthesizeReplyFromRuns(runs: SkippeToolRun[]): string {
   if (runs.length === 0) {
-    return "I need a clearer ask — e.g. add Gingerbread Hot Chocolate stock 213, or Fridge-share the Content panel first so I know what 'those' are.";
+    return "I need a clearer ask — e.g. add Gingerbread Hot Chocolate stock 213, or attach a Content picture.";
   }
 
   const lines = runs.map((r) => {
@@ -1915,6 +1878,100 @@ function synthesizeReplyFromRuns(runs: SkippeToolRun[]): string {
   });
 
   return lines.join("\n");
+}
+
+function askedToAddFromPicture(userText: string, imageCount: number): boolean {
+  const msg = (userText || "").toLowerCase();
+  if (imageCount > 0) {
+    return (
+      /\b(add|create|import|rebuild|replace)\b/.test(msg) ||
+      /\bmenu items?\b/.test(msg) ||
+      msg.length < 120
+    );
+  }
+  return /\b(add|create|import)\b/.test(msg) && /\b(picture|photo|image|these|those)\b/.test(msg);
+}
+
+function successfulCreates(runs: SkippeToolRun[]): SkippeToolRun[] {
+  return runs.filter(
+    (r) =>
+      r.ok &&
+      (r.name === "create_menu_item" ||
+        r.name === "create_menu_items_batch"),
+  );
+}
+
+/** Pull food names the model transcribed in prose when it skipped the create tool. */
+function extractFoodsFromModelText(text: string): Array<{
+  name: string;
+  stock: number;
+  category: "non_seasonal" | "seasonal";
+  is_active: boolean;
+}> {
+  const out: Array<{
+    name: string;
+    stock: number;
+    category: "non_seasonal" | "seasonal";
+    is_active: boolean;
+  }> = [];
+  const seen = new Set<string>();
+  const lines = (text || "").split(/\n|;|,|\u2022|\-/).map((l) => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const m = line.match(
+      /^(?:\d+[\.\)]\s*)?([A-Za-z][A-Za-z0-9 .'&]{1,48}?)(?:\s+[x×]?\s*(\d{1,6}))?$/,
+    );
+    if (!m) continue;
+    const name = m[1].trim();
+    if (isBogusMenuName(name)) continue;
+    if (name.split(" ").length > 8) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      name,
+      stock: m[2] ? clampInt(m[2], 0, 1_000_000, 0) : 0,
+      category: /holiday|christmas|halloween|valentine|season/i.test(name)
+        ? "seasonal"
+        : "non_seasonal",
+      is_active: true,
+    });
+  }
+  return out.slice(0, 80);
+}
+
+/** Never allow chat to claim Added when no create tool returned ok:true. */
+function finalizeSkippeReply(args: {
+  userText: string;
+  imageCount: number;
+  runs: SkippeToolRun[];
+  modelReply: string;
+}): string {
+  const { userText, imageCount, runs, modelReply } = args;
+  const creates = successfulCreates(runs);
+  const askedAdd = askedToAddFromPicture(userText, imageCount);
+  const modelClaimedAdd =
+    /\b(added|created|imported|all set|i'?ve added|successfully added)\b/i.test(
+      modelReply || "",
+    );
+
+  if (creates.length > 0) {
+    return synthesizeReplyFromRuns(runs);
+  }
+
+  if (askedAdd && creates.length === 0) {
+    return imageCount > 0
+      ? "I did **not** add menu items this turn (no successful create tool ran). I got your picture(s) but could not map food names into create_menu_items_batch. Send a sharper Content close-up, or type: `add Pancakes stock 12, Taco stock 5`."
+      : "I did **not** add menu items this turn (no successful create tool ran). Re-attach the picture or type the food names.";
+  }
+
+  if (modelClaimedAdd) {
+    return runs.length > 0
+      ? synthesizeReplyFromRuns(runs)
+      : "Nothing was added — no create tool succeeded.";
+  }
+
+  const cleaned = (modelReply || "").trim();
+  return cleaned || synthesizeReplyFromRuns(runs);
 }
 
 /**
@@ -1970,22 +2027,33 @@ async function runGoogleTurn(args: {
       ? `Please look at the ${visionImages.length} image(s) I attached and help with the kitchen task.`
       : "(empty)");
 
+  const askedAdd = askedToAddFromPicture(userText, visionImages.length);
+
   const userContent: Array<Record<string, unknown>> = [];
 
-  // Images first — some gateways / models attend better this way
+  // Images first — models attend better; include detail:high when the gateway honors it
   for (const image of visionImages) {
     userContent.push({
       type: "image_url",
-      image_url: { url: image.data_url },
+      image_url: { url: image.data_url, detail: "high" },
     });
   }
 
+  const visionTask =
+    visionImages.length > 0
+      ? [
+          userText,
+          "",
+          `You have ${visionImages.length} image(s) attached ABOVE.`,
+          askedAdd
+            ? "TASK: Transcribe every food name (+ stock qty if shown) from the pictures, then call create_menu_items_batch NOW. Do not list the menu. Do not use this sentence as an item name."
+            : "Look at the pictures and use kitchen tools to finish the ask.",
+        ].join("\n")
+      : userText;
+
   userContent.push({
     type: "text",
-    text:
-      visionImages.length > 0
-        ? `${userText}\n\n(${visionImages.length} image${visionImages.length === 1 ? "" : "s"} attached above — you can see them. Describe / act on what is in the photos.)`
-        : userText,
+    text: visionTask,
   });
 
   messages.push({
@@ -2025,15 +2093,13 @@ async function runGoogleTurn(args: {
     )
       ? 3
       : 1;
-  // Rebuild from pictures needs list/delete + batch create
-  if (
-    toolsEnabled &&
-    selected.some((t) => t.name === "create_menu_items_batch" || t.name === "delete_all_my_menu_items")
-  ) {
-    maxRounds = Math.max(maxRounds, 3);
-  }
 
   for (let round = 0; round < maxRounds; round += 1) {
+    const stillNeedCreate = askedAdd && successfulCreates(runs).length === 0;
+    const forceBatch =
+      stillNeedCreate &&
+      selected.some((t) => t.name === "create_menu_items_batch");
+
     const res = await gatewayFetch(
       "https://ai.gateway.lovable.dev/v1/chat/completions",
       {
@@ -2050,13 +2116,17 @@ async function runGoogleTurn(args: {
           ...(tools ? { tools } : {}),
           ...(tools && tools.length > 0
             ? {
-                // Always require tools when we selected any — stops empty "couldn't complete" replies
-                tool_choice: "required",
+                tool_choice: forceBatch
+                  ? {
+                      type: "function",
+                      function: { name: "create_menu_items_batch" },
+                    }
+                  : "required",
               }
             : {}),
           stream: false,
-          temperature: 0.2,
-          max_tokens: 350,
+          temperature: 0,
+          max_tokens: visionImages.length > 0 ? 1400 : 600,
         }),
       },
       `model=${args.model} path=/v1/chat/completions`,
@@ -2094,6 +2164,18 @@ async function runGoogleTurn(args: {
 
     const toolCalls = toolsEnabled ? (message.tool_calls ?? []) : [];
     if (toolCalls.length === 0) {
+      if (askedAdd && successfulCreates(runs).length === 0 && round < maxRounds - 1) {
+        messages.push({
+          role: "assistant",
+          content: message.content ?? "",
+        });
+        messages.push({
+          role: "user",
+          content:
+            "You did not call create_menu_items_batch. Look at the attached images again. Call create_menu_items_batch now with every food name you can read. Do not reply in text. Do not use my instruction as an item name.",
+        });
+        continue;
+      }
       break;
     }
 
@@ -2111,7 +2193,7 @@ async function runGoogleTurn(args: {
     });
 
     const seenListTools = new Set<string>();
-    for (const tc of toolCalls.slice(0, 8)) {
+    for (const tc of toolCalls.slice(0, 24)) {
       const toolName = String(tc.function?.name ?? "");
       // Block repeated pure-read tools in the same turn (wastes DB + tokens)
       if (
@@ -2156,6 +2238,29 @@ async function runGoogleTurn(args: {
         content: JSON.stringify(result),
       });
     }
+
+    if (askedAdd && successfulCreates(runs).length === 0 && round < maxRounds - 1) {
+      messages.push({
+        role: "user",
+        content:
+          "Create did not succeed yet. Transcribe food names FROM THE PICTURES and call create_menu_items_batch. Forbidden: naming an item after the chef's sentence.",
+      });
+    }
+  }
+
+  // If the model transcribed foods in chat but never created them, do it here.
+  if (askedAdd && successfulCreates(runs).length === 0) {
+    const parsedFoods = extractFoodsFromModelText(reply);
+    if (parsedFoods.length >= 2) {
+      const { run } = await runSkippeTool(
+        args.ctx,
+        "create_menu_items_batch",
+        { items: parsedFoods },
+        args.staffName,
+      );
+      runs.push(run);
+      if (run.ok) reply = run.summary;
+    }
   }
 
   // Lite models sometimes invent "I couldn't create that" without calling tools.
@@ -2174,8 +2279,13 @@ async function runGoogleTurn(args: {
     reply = synthesizeReplyFromRuns(runs);
   }
 
-  // Model sometimes hallucinates "no images" even when parts were sent.
-  // If we delivered vision frames, never let that dead-end answer through.
+  reply = finalizeSkippeReply({
+    userText: args.userText,
+    imageCount: visionImages.length,
+    runs,
+    modelReply: reply,
+  });
+
   const deniedVision =
     visionImages.length > 0 &&
     /can'?t see any images?|no images? attached|don'?t see any images?|please upload them/i.test(
@@ -2183,8 +2293,8 @@ async function runGoogleTurn(args: {
     );
   if (deniedVision) {
     reply =
-      `I received ${visionImages.length} frame${visionImages.length === 1 ? "" : "s"} from your fridge share, but the vision pass came back unclear (often the share was paused or the window was dark). ` +
-      `Hit Resume on Live Share, make sure the full Bloxburg fridge is visible, wait for 2–3 fresh frames, then Send again.`;
+      `I received ${visionImages.length} image(s) this turn but still could not finish adds. ` +
+      `Send a closer Content-list shot or type the food names.`;
   }
 
   return {
@@ -2652,9 +2762,9 @@ export async function runSkippeTurn(args: {
     }
   }
 
-  // ── Vision hard gate: classify BEFORE any kitchen tools / DB ──
-  // Stops Lovable dashboard / staff UI shares from calling list_menu_items.
-  if (args.images.length > 0) {
+  // ── Vision gate: skip for explicit "add from picture" (classifier wastes a round
+  // and 2.5-lite often returns UNCLEAR, blocking the actual create).
+  if (args.images.length > 0 && !askedToAddFromPicture(args.userText, args.images.length)) {
     const verdict = await classifyBloxburgFridge({
       model: args.model,
       images: args.images,
@@ -2680,8 +2790,6 @@ export async function runSkippeTurn(args: {
         model: args.model,
       };
     }
-
-    // verdict === "fridge" → continue with tools enabled for restock
   }
 
   const vendor = MODEL_VENDOR[args.model];
