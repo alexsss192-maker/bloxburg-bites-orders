@@ -967,10 +967,20 @@ function PandaPage() {
   async function send() {
     if (!input.trim() && images.length === 0) return;
     // Cap frames per send so the request stays fast/reliable
-    const sendImages = images.slice(0, 3);
+    const sendImages = images.slice(0, 3).filter((d) =>
+      typeof d === "string" && d.startsWith("data:image/"),
+    );
+    if (sendImages.length === 0 && !input.trim()) {
+      toast.error("No valid photos to send — try Fridge share or upload again");
+      return;
+    }
     const userMsg: Msg = {
       role: "user",
-      content: input.trim() || "(scan these images)",
+      content:
+        input.trim() ||
+        (sendImages.length
+          ? "Scan these images and help with the menu / stock"
+          : ""),
       images: [...sendImages],
     };
     setMessages((m) => [...m, userMsg]);
@@ -1080,36 +1090,57 @@ function PandaPage() {
           : "lg:grid-cols-[1.4fr_1fr]"
       }`}
     >
-      {/* Shine status — pure CSS, no LLM credits */}
+      {/* Thinking status — readable text + soft sparkle (zero LLM credits) */}
       <style>{`
         @keyframes skippe-shine {
           0% { background-position: 200% center; }
           100% { background-position: -200% center; }
         }
+        @keyframes skippe-bob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-2px); }
+        }
+        @keyframes skippe-dot {
+          0%, 80%, 100% { transform: scale(0.65); opacity: 0.35; }
+          40% { transform: scale(1); opacity: 1; }
+        }
+        /* Base text stays solid; shine is a soft highlight layer */
         .skippe-shine {
+          position: relative;
           display: inline-block;
+          color: rgba(40, 30, 35, 0.78);
+          -webkit-text-fill-color: rgba(40, 30, 35, 0.78);
+        }
+        .skippe-shine::after {
+          content: attr(data-text);
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          height: 100%;
           background-image: linear-gradient(
-            110deg,
-            rgba(40, 30, 35, 0.45) 0%,
-            rgba(40, 30, 35, 0.45) 35%,
-            rgba(255, 255, 255, 0.95) 50%,
-            rgba(40, 30, 35, 0.45) 65%,
-            rgba(40, 30, 35, 0.45) 100%
+            105deg,
+            transparent 0%,
+            transparent 38%,
+            rgba(255, 255, 255, 0.85) 50%,
+            transparent 62%,
+            transparent 100%
           );
-          background-size: 200% 100%;
+          background-size: 220% 100%;
           background-clip: text;
           -webkit-background-clip: text;
           color: transparent;
           -webkit-text-fill-color: transparent;
-          animation: skippe-shine 2s linear infinite;
+          animation: skippe-shine 2.4s linear infinite;
+          pointer-events: none;
         }
+        .skippe-bob { animation: skippe-bob 1.8s ease-in-out infinite; }
+        .skippe-dot { animation: skippe-dot 1.25s ease-in-out infinite; }
+        .skippe-dot:nth-child(2) { animation-delay: 0.15s; }
+        .skippe-dot:nth-child(3) { animation-delay: 0.3s; }
         @media (prefers-reduced-motion: reduce) {
-          .skippe-shine {
-            animation: none;
-            color: rgba(40, 30, 35, 0.65);
-            -webkit-text-fill-color: rgba(40, 30, 35, 0.65);
-            background: none;
-          }
+          .skippe-shine::after { animation: none; opacity: 0; }
+          .skippe-bob, .skippe-dot { animation: none; }
         }
       `}</style>
       <div className="flex h-[calc(100vh-9rem)] flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
@@ -1227,15 +1258,32 @@ function PandaPage() {
               </motion.div>
             ))}
             {loading && (
-              <div className="flex items-center gap-3 py-1" aria-live="polite">
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-cherry" />
-                <span
-                  key={liveActivities[activityIndex]?.id ?? "on-it"}
-                  className="skippe-shine text-sm font-medium"
-                >
-                  {liveActivities[activityIndex]?.label ?? "Skippe is on it"}
-                </span>
-              </div>
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-start py-1"
+                aria-live="polite"
+              >
+                <div className="flex max-w-[90%] items-center gap-3 rounded-2xl border border-cherry/15 bg-blossom/80 px-3.5 py-2.5 shadow-sm">
+                  <div className="skippe-bob grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-cherry/12 text-base">
+                    {liveActivities[activityIndex]?.emoji ?? "💭"}
+                  </div>
+                  <div className="min-w-0">
+                    <p
+                      key={liveActivities[activityIndex]?.id ?? "on-it"}
+                      className="skippe-shine text-sm font-medium leading-snug"
+                      data-text={liveActivities[activityIndex]?.label ?? "Skippe is on it"}
+                    >
+                      {liveActivities[activityIndex]?.label ?? "Skippe is on it"}
+                    </p>
+                    <div className="mt-1 flex items-center gap-1">
+                      <span className="skippe-dot h-1.5 w-1.5 rounded-full bg-cherry/70" />
+                      <span className="skippe-dot h-1.5 w-1.5 rounded-full bg-cherry/70" />
+                      <span className="skippe-dot h-1.5 w-1.5 rounded-full bg-cherry/70" />
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
             )}
           </div>
         </div>
