@@ -652,14 +652,14 @@ function PandaPage() {
     toast.success("Conversation cleared");
   }
 
-  /** Grab one frame from a <video> → JPEG data URL (compact for gateway vision). */
+  /** Grab one frame from a <video> → JPEG data URL. Keep Content text OCR-readable. */
   function frameFromVideo(video: HTMLVideoElement): string | null {
     const w = video.videoWidth;
     const h = video.videoHeight;
     if (!w || !h) return null;
     const canvas = document.createElement("canvas");
-    // Keep under ~640px so 3 frames stay small enough for Lovable → Gemini
-    const max = 640;
+    // 1280px longest edge — tiny 640px frames made Skippe misread / invent names
+    const max = 1280;
     const scale = Math.min(1, max / Math.max(w, h));
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
@@ -667,8 +667,7 @@ function PandaPage() {
     if (!ctx) return null;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     try {
-      // 0.55 keeps fridge text readable while shrinking base64 a lot
-      return canvas.toDataURL("image/jpeg", 0.55);
+      return canvas.toDataURL("image/jpeg", 0.82);
     } catch {
       return null;
     }
