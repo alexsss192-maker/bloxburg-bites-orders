@@ -65,6 +65,77 @@ export const Route = createFileRoute("/staff/panda")({
 });
 
 type ToolRun = { name: string; ok: boolean; summary: string; detail?: string };
+
+function runEmoji(name: string, ok: boolean): string {
+  if (!ok) return "⚠️";
+  const n = name.toLowerCase();
+  if (n.includes("delete")) return "🗑️";
+  if (n.includes("create")) return "✨";
+  if (n.includes("update") || n.includes("set_order")) return "📦";
+  if (n.includes("list_menu") || n.includes("list_order")) return "📋";
+  if (n.includes("discount")) return "🏷️";
+  if (n.includes("priority")) return "⚡";
+  if (n.includes("bulk") || n.includes("fee")) return "💰";
+  return "✅";
+}
+
+/** Cute animated tool-result chips (matches thinking-pad vibe). */
+function RunChips({ runs, compact = false }: { runs: ToolRun[]; compact?: boolean }) {
+  return (
+    <ul className={compact ? "mt-2 flex flex-col gap-1.5" : "mt-4 space-y-2"}>
+      {runs.map((r, idx) => (
+        <motion.li
+          key={`${r.name}-${idx}-${r.summary}`}
+          initial={{ opacity: 0, y: 6, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ delay: Math.min(idx * 0.05, 0.35), type: "spring", stiffness: 380, damping: 28 }}
+          className={
+            compact
+              ? `flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-xs ${
+                  r.ok
+                    ? "border-bamboo/25 bg-gradient-to-r from-bamboo/10 to-transparent text-ink/85"
+                    : "border-destructive/25 bg-destructive/5 text-destructive"
+                }`
+              : `rounded-2xl border p-3 text-sm ${
+                  r.ok
+                    ? "border-bamboo/30 bg-gradient-to-r from-bamboo/10 via-blossom/40 to-transparent"
+                    : "border-destructive/30 bg-destructive/5"
+                }`
+          }
+        >
+          <span
+            className={`grid shrink-0 place-items-center rounded-lg ${
+              compact ? "h-6 w-6 text-sm" : "h-8 w-8 text-base"
+            } ${r.ok ? "bg-bamboo/15" : "bg-destructive/10"}`}
+            aria-hidden
+          >
+            {runEmoji(r.name, r.ok)}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className={`leading-snug ${compact ? "font-medium" : "font-semibold"}`}>
+              {r.summary}
+            </p>
+            {!compact && r.detail && (
+              <p className="mt-0.5 text-xs text-ink/55">{r.detail}</p>
+            )}
+            {!compact && (
+              <p className="mt-1 text-[0.6rem] uppercase tracking-[0.18em] text-ink/40">
+                {r.name.replace(/_/g, " ")}
+              </p>
+            )}
+          </div>
+          <span
+            className={`shrink-0 rounded-full ${compact ? "h-1.5 w-1.5" : "h-2 w-2"} ${
+              r.ok ? "bg-bamboo" : "bg-destructive"
+            }`}
+            title={r.ok ? "ok" : "failed"}
+          />
+        </motion.li>
+      ))}
+    </ul>
+  );
+}
+
 type Msg = {
   role: "user" | "assistant";
   content: string;
@@ -1395,13 +1466,9 @@ function PandaPage() {
                   {m.thinking && <ThinkingBlock text={m.thinking} />}
                   <p className="whitespace-pre-wrap">{m.content}</p>
                   {m.runs && m.runs.length > 0 && (
-                    <ul className="mt-2 space-y-1 border-t border-ink/10 pt-2 text-xs">
-                      {m.runs.map((r, idx) => (
-                        <li key={idx} className={r.ok ? "text-bamboo" : "text-destructive"}>
-                          {r.ok ? "✅" : "⚠️"} {r.summary}
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="mt-2 border-t border-ink/10 pt-2">
+                      <RunChips runs={m.runs} compact />
+                    </div>
                   )}
                 </div>
               </motion.div>
@@ -1654,26 +1721,9 @@ function PandaPage() {
           Skippe only ever touches <b>your own</b> menu items, discounts and assigned orders.
         </p>
         {runs.length === 0 ? (
-          <p className="mt-6 text-sm text-muted-foreground">No changes yet.</p>
+          <p className="mt-6 text-sm text-muted-foreground">No changes yet — ask Skippe to cook something up.</p>
         ) : (
-          <ul className="mt-4 space-y-2">
-            {runs.map((r, i) => (
-              <li
-                key={i}
-                className={`rounded-2xl border p-3 text-sm ${
-                  r.ok ? "border-bamboo/30 bg-bamboo/5" : "border-destructive/30 bg-destructive/5"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{r.summary}</span>
-                  <span className="whitespace-nowrap text-[0.6rem] uppercase tracking-widest text-ink/50">
-                    {r.name.replace(/_/g, " ")}
-                  </span>
-                </div>
-                {r.detail && <p className="mt-1 text-xs text-ink/60">{r.detail}</p>}
-              </li>
-            ))}
-          </ul>
+          <RunChips runs={runs} />
         )}
       </aside>
     </div>
