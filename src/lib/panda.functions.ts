@@ -58,7 +58,7 @@ const pandaInput = z.object({
         data_url: z.string().max(6_500_000),
       }),
     )
-    .max(3)
+    .max(9)
     .default([]),
 
   mode: z
@@ -192,7 +192,7 @@ export const pandaChat = createServerFn({
     const history = (data.history ?? []).slice(-3);
     // Keep only real image data URLs (blank / non-image payloads make models say "no images")
     const images = (data.images ?? [])
-      .slice(0, 3)
+      .slice(0, 9)
       .filter((img: { data_url?: string }) => {
         const u = (img?.data_url || "").trim();
         return (
