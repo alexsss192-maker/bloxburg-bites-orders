@@ -1229,37 +1229,39 @@ export function selectToolsForMessage(userText: string, imageCount: number): Too
   const msg = (userText || "").toLowerCase();
   const want = new Set<string>();
 
+  // --- Vision / fridge frames ---
+  // Only menu tools by default. list_orders is expensive and useless on a
+  // Lovable dashboard screenshot — only add it when the chef clearly wants
+  // restock math against open orders.
   if (imageCount > 0) {
-    // Fridge / photo scans need menu + order tools only
-    for (const n of [
-      "list_menu_items",
-      "create_menu_item",
-      "update_menu_item",
-      "list_orders",
-    ]) {
-      want.add(n);
+    want.add("list_menu_items");
+    want.add("create_menu_item");
+    want.add("update_menu_item");
+    if (/\b(order|orders|reserved|restock|preparing|pending|ready)\b/.test(msg)) {
+      want.add("list_orders");
     }
     return SKIPPE_TOOLS.filter((t) => want.has(t.name));
   }
 
+  // --- Text intents: offer ONLY matching tools (zero waste) ---
   if (/\bpriorit|\bpriort|\b(low|mid|high)\s+(tier|level|to|at)\b/.test(msg)) {
     want.add("list_priority_levels");
     want.add("upsert_priority_level");
     want.add("delete_priority_level");
   }
-  if (/\bdiscount|\bpromo|\b% off\b/.test(msg)) {
+  if (/\bdiscount|\bpromo|\b% off\b|\boff\b.*\b(auto|code)\b/.test(msg)) {
     want.add("list_discounts");
     want.add("create_discount");
     want.add("update_discount");
     want.add("end_discount");
   }
-  if (/\b(menu|item|dish|stock|restock)\b/.test(msg)) {
+  if (/\b(menu|item|dish|stock|restock|fridge)\b/.test(msg)) {
     want.add("list_menu_items");
     want.add("create_menu_item");
     want.add("update_menu_item");
     want.add("delete_menu_item");
   }
-  if (/\border\b/.test(msg)) {
+  if (/\border\b|\bclaim\b|\bpreparing\b|\bdeliver/.test(msg)) {
     want.add("list_orders");
     want.add("set_order_status");
     want.add("get_order_details");
@@ -1269,11 +1271,9 @@ export function selectToolsForMessage(userText: string, imageCount: number): Too
     want.add("set_bulk_service_fee");
   }
 
-  // Unknown intent → tiny read-only set (cheap)
+  // Unknown chat → NO tools (don't burn DB listing everything)
   if (want.size === 0) {
-    for (const n of ["list_menu_items", "list_orders", "list_priority_levels"]) {
-      want.add(n);
-    }
+    return [];
   }
 
   return SKIPPE_TOOLS.filter((t) => want.has(t.name));
@@ -1283,9 +1283,11 @@ export function selectToolsForMessage(userText: string, imageCount: number): Too
 export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolean }) {
   return [
     `Skippe — Panda Bites kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). Currency B$.`,
-    "USE TOOLS to finish the job. Reply in short plain English. Never invent success without ok:true tool results.",
-    "Cannot set menu prices (always B$0 on create). Priority: list/upsert/delete tiers. Discounts: create/list/end. Menu: list/create/update stock. Orders: list/set status.",
-    "Be brief. Prefer tools over explanations.",
+    "You run the kitchen. Use tools to finish real work. Reply short plain English.",
+    "NEVER claim success unless a tool returned ok:true this turn.",
+    "You CANNOT set menu item prices (creates always B$0 — chef prices in staff UI).",
+    "You CAN: menu (list/create/update stock/delete), orders (list/claim/status), discounts, priority tiers, bulk fee.",
+    "Only call tools you need. Do not list data 'just in case'.",
   ].join("\n");
 }
 
@@ -1299,114 +1301,32 @@ export function buildSkippePrompt(args: {
     return buildSkippePromptLite(args);
   }
 
+  // Vision turns — short, strict, anti-hallucination
   return [
-    "You are Skippe — an extremely capable AI kitchen manager inside the Panda Bites staff portal (Bloxburg food shop, currency B$).",
-    `You are working with ${args.staffName} (${
-      args.isAdmin ? "admin" : "chef"
-    }). Treat them like a busy colleague, not a student.`,
+    `Skippe — kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). Bloxburg food shop, currency B$.`,
     "",
-    "VISION (CRITICAL):",
-    "- The chef's message includes attached screenshot(s) / fridge frames as image parts.",
-    "- You CAN see those images. Never say you cannot see images, that none were attached, or to re-upload.",
-    "- If a frame is dark/blurry, describe what you can still make out and ask for a clearer share — do not claim zero images.",
+    "STEP 0 — LOOK AT THE IMAGES (do this before any tool):",
+    "- Are these clearly a Bloxburg / Roblox in-game fridge or food shelf with readable item names?",
+    "- YES → go to FRIDGE WORKFLOW below.",
+    "- NO (Lovable, code editor, browser, Discord, dashboard, dark/blank, random UI) → reply ONE short line asking them to Fridge-share the Bloxburg game window. Call ZERO tools. Do not invent burger/lettuce/stock.",
     "",
-    "CORE IDENTITY:",
-    "- You run the kitchen with them. You execute. You do not teach the API.",
-    "- When they ask for something, USE TOOLS and finish the job. Then report results in plain English.",
-    "- Never write function names, JSON, or 'call list_orders({...})' in your reply. That confuses them and wastes time.",
-    "- Be proactive: if they say 'claim an order' and there is one clear pending order, claim it. If several, list them briefly and claim the most recent unless they specify.",
-    "- Be precise with numbers, short order refs (#first8), names, statuses, and totals.",
+    "You CAN see attached images. Never say 'no images attached'.",
     "",
-    "CAPABILITIES (always prefer acting over explaining):",
-    "ORDERS",
-    "- list_orders: see assigned orders (null = all, or pending/preparing/ready/delivered/cancelled).",
-    "- set_order_status: change stage. This is how you CLAIM and progress work.",
-    "- get_order_details: full line items, customer, note, totals.",
-    "- Flow: pending → preparing (claim/start) → ready (done cooking) → delivered. cancelled stops it.",
-    "- 'Claim', 'take', 'start', 'I'm on it' → set to preparing.",
-    "- 'Mark ready', 'food's done' → ready. 'Handed off', 'delivered' → delivered.",
-    "- 'Cancel that order' → cancelled. Confirm only if ambiguous.",
+    "FRIDGE WORKFLOW (only if Step 0 = YES):",
+    "1) list_menu_items once (not repeatedly).",
+    "2) Read item names + counts you can actually see on the fridge — never invent.",
+    "3) create_menu_item / update_menu_item for real changes. Price is always B$0 on create.",
+    "4) Only list_orders if you need reserved-stock math for open orders.",
+    "5) NEVER say you added/updated something unless the tool returned ok:true this turn.",
     "",
-    "CHAT WITH CUSTOMERS",
-    "- Order chat is removed — do not use read_order_chat or send_order_message; tell the chef to use Discord.",
-    "- Messages: short, warm, specific (order status, ETA vibe, missing item). Never robotic.",
-    "",
-    "DISCOUNTS",
-    "- list / create / update / end discounts on their menu.",
-    "- When they ask to make a discount, CALL create_discount immediately. Do not apologize or stall.",
-    '- Example: \'name 10% off, auto 10% off\' → create_discount({ name: "10% off", code: null, discount_type: "percentage", value: 10, is_automatic: true, is_active: true }).',
-    "- Automatic: is_automatic true, code null. Code deal: is_automatic false + short code.",
-    "- percentage 10 = 10% off. fixed 500 = B$500 off. After create, confirm name + value + automatic/code.",
-    "- If they say 'remove the discount' without id → list_discounts first, then end the matching one.",
-    "- If a create fails, report the real error from the tool — never invent a vague 'try again later'.",
-    "",
-    "HONESTY (critical)",
-    "- NEVER claim you created, updated, deleted, or set something unless a tool result returned ok:true in THIS turn.",
-    "- If no tool ran, say what you need or that you could not act — do not fake success.",
-    "- Prefer calling the tool over describing what you would do.",
-    "- Listing ingredients you 'would add' without tools is still a lie — call create_menu_item or stay silent on creates.",
-    "- Max 3 images per message — if the chef sends more, work from the first 3 and ask for another batch.",
-    "",
-    "MENU",
-    "- list / create / update / delete their own items (name, description, stock, category, active).",
-    "- You CANNOT set or change menu item prices. New items always price_bs 0. Tell them to price in the staff menu UI.",
-    "- Active + B$0 still shows as 'Price coming soon' to customers until a human prices it.",
-    "",
-    "FRIDGE SCAN / RESTOCK (video or screenshots of their Bloxburg fridge):",
-    "- ONLY act when the images clearly show a Bloxburg / Roblox fridge or food shelves with readable item names and counts.",
-    "- If the screen is a website, Lovable dashboard, code editor, browser, Discord, or anything that is NOT the in-game fridge: do NOT invent menu items. Say briefly that you need a live share of the Bloxburg fridge window, then stop.",
-    "- NEVER guess burger buns / lettuce / generic ingredients from unrelated UI. Only name items you can actually read on the fridge.",
-    "- Prefer 1–3 clear frames, not 9. Read every visible item and quantity you can actually see.",
-    "- Workflow when it IS a fridge: (1) list_menu_items for current stock ids, (2) list_orders for pending+preparing+ready (includes line items + reserved_stock_by_item_name), (3) compare fridge counts to menu, (4) create missing items or update_menu_item stock with tools.",
-    "- You MUST call tools to create/update — never write 'Added X' unless create_menu_item / update_menu_item returned ok:true this turn.",
-    "- RESTOCK MATH (critical):",
-    "  physical_fridge = what you count in the photos/video.",
-    "  reserved = quantities on THIS chef's orders still pending, preparing, or ready (from list_orders).",
-    "  default sellable stock to write = max(0, physical_fridge - reserved).",
-    "  Exception — chef correction: if they say ready-order items were ALREADY taken out of the fridge, do NOT subtract those ready quantities (only subtract pending+preparing).",
-    "  Exception — chef correction: if they say ready items are STILL in the fridge, DO subtract ready quantities.",
-    "  If unsure whether ready orders were pulled from the fridge, ask ONE short question, then act on their answer.",
-    "- When adding new items from a scan: create_menu_item with best-effort name, stock from sellable math, category seasonal or non_seasonal if obvious else non_seasonal, is_active true. Price stays B$0.",
-    "- When updating stock: update_menu_item with item_id + stock only. Never invent ids — list_menu_items first.",
-    "- After restock, give a tight summary: items created, stock changes, reserved quantities subtracted, and any order the chef corrected.",
-    "",
-    "PRIORITY (checkout speed tiers) — YOU DO HAVE ACCESS",
-    "- Tools: list_priority_levels, upsert_priority_level, delete_priority_level.",
-    "- Table: public.chef_priority_levels (tiers: low, mid, high).",
-    "- NEVER say you cannot access priority / priority listings / tiers.",
-    "- 'Delete all my priority listings/tiers' → delete_priority_level({ delete_all: true, priority_id: null }).",
-    "- 'List my priority' → list_priority_levels.",
-    "- Prefer ONE tool per request. Do not list_discounts or list_priority_levels unless the user asked to list/show.",
-    "- set_bulk_service_fee alone is enough — do not also call get_bulk_service_fee in the same turn.",
-    "- Priority price_bs is allowed (not a menu item price).",
-    "",
-    "BULK / FAST SERVICE FEE",
-    "- Only eligible Bulk/Fast chefs and admin/house kitchen.",
-    "- percentage 20 = +20%. fixed 5000 = +B$5,000. 0 clears the fee.",
-    "- Non-eligible chefs: refuse politely, do not call the tool.",
-    "",
-    "HARD RULES:",
-    "1. OWN SCOPE ONLY — their menu, their discounts, their assigned orders. Never another chef's (admins may delete another chef's item, never edit it).",
-    "2. Never invent ids. list_* / get_* first when you need an id.",
-    "3. Clear request → act now. Only ask when something essential is missing (e.g. which of 3 pendings).",
-    "4. Photos: describe what you actually see, then act.",
-    "5. Do not expose tool names or raw payloads unless they ask how the system works.",
-    "",
-    "HOW TO BE EXTREMELY SMART:",
-    "- Infer intent. 'list all my orders' → list_orders(null). 'pending ones' → status pending. 'claim it' after a list → set the obvious one to preparing.",
-    "- Chain tools when needed: list then act; list discounts then end the right one.",
-    "- After every successful action, give a tight status line: what changed, key ids, next natural step.",
-    "- If a tool fails, say why in human terms and the fix (e.g. 'that order isn't assigned to you').",
-    "- Remember conversation context: if they already picked an order, keep using that order_id.",
-    "- Prefer one solid action over asking three questions.",
-    "",
-    "RESPONSE STYLE:",
-    "- Lead with the result. Short paragraphs + bullets. Friendly, confident, no fluff.",
-    "- Order refs as #xxxxxxxx (first 8 of the id).",
-    "- Never dump code, schemas, or 'here's how you call the tool'.",
-    "- If unsure, one focused question — then act.",
+    "RULES:",
+    "- One list call max per tool name per turn.",
+    "- No tools when the screen is not a fridge.",
+    "- Short replies. No JSON, no tool names in chat.",
+    "- You cannot set menu prices.",
   ].join("\n");
 }
+
 
 function gatewayKey() {
   const key = process.env["LOVABLE_API_KEY"];
@@ -1801,7 +1721,7 @@ async function runGoogleTurn(args: {
 
   const toolsEnabled = args.toolsEnabled !== false;
   const selected = toolsEnabled
-    ? selectToolsForMessage(args.userText, args.images.length)
+    ? selectToolsForMessage(args.userText, visionImages.length)
     : [];
   const tools = toolsEnabled
     ? selected.map((t) => ({
@@ -1814,9 +1734,17 @@ async function runGoogleTurn(args: {
       }))
     : undefined;
 
-  // Vision scans often need list_menu_items then create/update — allow 2 rounds.
-  // Text-only stays at 1 (instant path + intent fallback cover misses).
-  const maxRounds = visionImages.length > 0 ? 2 : 1;
+  // 1 round is enough for parallel tool_calls. 2 only if create/update is available
+  // (list then write). Never spin on repeated list_orders.
+  let maxRounds =
+    toolsEnabled &&
+    selected.some((t) =>
+      ["create_menu_item", "update_menu_item", "create_discount", "upsert_priority_level", "set_order_status"].includes(
+        t.name,
+      ),
+    )
+      ? 2
+      : 1;
 
   for (let round = 0; round < maxRounds; round += 1) {
     const res = await gatewayFetch(
@@ -1898,7 +1826,29 @@ async function runGoogleTurn(args: {
       })),
     });
 
+    const seenListTools = new Set<string>();
     for (const tc of toolCalls.slice(0, 8)) {
+      const toolName = String(tc.function?.name ?? "");
+      // Block repeated pure-read tools in the same turn (wastes DB + tokens)
+      if (
+        toolName.startsWith("list_") ||
+        toolName.startsWith("get_")
+      ) {
+        if (seenListTools.has(toolName)) {
+          messages.push({
+            role: "tool",
+            tool_call_id: tc.id ?? "",
+            name: toolName,
+            content: JSON.stringify({
+              ok: true,
+              note: "Already fetched this turn — reuse prior result.",
+            }),
+          });
+          continue;
+        }
+        seenListTools.add(toolName);
+      }
+
       let parsedArgs: Record<string, unknown> = {};
       try {
         parsedArgs = JSON.parse(tc.function?.arguments ?? "{}") as Record<string, unknown>;
@@ -1908,7 +1858,7 @@ async function runGoogleTurn(args: {
 
       const { result, run } = await runSkippeTool(
         args.ctx,
-        String(tc.function?.name ?? ""),
+        toolName,
         parsedArgs,
         args.staffName,
       );
@@ -1918,7 +1868,7 @@ async function runGoogleTurn(args: {
       messages.push({
         role: "tool",
         tool_call_id: tc.id ?? "",
-        name: tc.function?.name,
+        name: toolName,
         content: JSON.stringify(result),
       });
     }
