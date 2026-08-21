@@ -691,6 +691,15 @@ function PandaPage() {
   }
 
   function stopShare() {
+    try {
+      if (persistentRecorder && persistentRecorder.state !== "inactive") {
+        persistentRecorder.stop();
+      }
+    } catch {
+      /* ignore */
+    }
+    persistentRecorder = null;
+    // Keep chunks until Send can finalize; cleared after frames extracted
     persistentShareStream?.getTracks().forEach((t) => t.stop());
     persistentShareStream = null;
     shareStreamRef.current = null;
@@ -731,30 +740,62 @@ function PandaPage() {
     };
   }, [sharing, splitScreen]);
 
-  // Auto-capture frames while fridge share is live so the chef can scroll
-  // without pressing Snap. Stops at 9 frames. Dedupes near-identical frames
-  // by skipping if the last capture was < 1.2s ago and tray is filling.
+  // Fridge share = continuous VIDEO of the scroll (not sparse stills).
+  // Fast scrolling misses items with 2.5s snapshots; a recording does not.
+  // On Send we sample dense frames from the recorded clip.
   useEffect(() => {
     if (!sharing || !splitScreen) return;
-    let cancelled = false;
-    // Cap auto-frames at 6 to keep gateway payloads reliable (520s on huge batches)
-    const intervalMs = 2500;
-    const id = window.setInterval(() => {
-      if (cancelled) return;
-      const video = shareVideoRef.current;
-      if (!video || video.videoWidth === 0) return;
-      setImages((prev) => {
-        if (prev.length >= 4) return prev;
-        const dataUrl = frameFromVideo(video);
-        if (!dataUrl) return prev;
-        // Skip exact duplicate of the last frame (user not scrolling)
-        if (prev.length > 0 && prev[prev.length - 1] === dataUrl) return prev;
-        return [...prev, dataUrl].slice(0, 3);
+    const stream = shareStreamRef.current || persistentShareStream;
+    if (!stream) return;
+
+    // Already recording
+    if (persistentRecorder && persistentRecorder.state !== "inactive") return;
+
+    const mimeCandidates = [
+      "video/webm;codecs=vp9",
+      "video/webm;codecs=vp8",
+      "video/webm",
+    ];
+    const mime =
+      mimeCandidates.find((m) =>
+        typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m),
+      ) || "";
+    if (!mime || typeof MediaRecorder === "undefined") {
+      // Fallback: denser still capture if MediaRecorder unavailable
+      const id = window.setInterval(() => {
+        const video = shareVideoRef.current;
+        if (!video || video.videoWidth === 0) return;
+        setImages((prev) => {
+          if (prev.length >= 9) return prev;
+          const dataUrl = frameFromVideo(video);
+          if (!dataUrl) return prev;
+          if (prev.length > 0 && prev[prev.length - 1] === dataUrl) return prev;
+          return [...prev, dataUrl].slice(0, 9);
+        });
+      }, 400);
+      return () => window.clearInterval(id);
+    }
+
+    persistentRecordChunks = [];
+    persistentRecordMime = mime;
+    try {
+      const rec = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: 1_200_000,
       });
-    }, intervalMs);
+      persistentRecorder = rec;
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) persistentRecordChunks.push(e.data);
+      };
+      rec.start(500); // timeslice so we keep data even if share ends abruptly
+      toast.message("Recording fridge scroll as video — scroll the Content list, then Send");
+    } catch (err) {
+      console.error(err);
+      persistentRecorder = null;
+    }
+
     return () => {
-      cancelled = true;
-      window.clearInterval(id);
+      // Don't stop on effect cleanup during normal share — stopShare handles it.
     };
   }, [sharing, splitScreen]);
 
@@ -965,14 +1006,108 @@ function PandaPage() {
     toast.success("Frame snapped for Skippe");
   }
 
+
+  /** Dense frames from a recorded fridge-scroll video (or uploaded file). */
+  async function framesFromBlob(
+    blob: Blob,
+    maxFrames = 9,
+  ): Promise<string[]> {
+    const url = URL.createObjectURL(blob);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.src = url;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error("Couldn’t read fridge video"));
+      });
+      const duration =
+        Number.isFinite(video.duration) && video.duration > 0
+          ? Math.min(video.duration, 45) // cap long shares
+          : 1;
+      // Aim ~1 frame every 0.4s so fast scrolls still land items
+      const byTime = Math.max(1, Math.ceil(duration / 0.4));
+      const count = Math.max(1, Math.min(maxFrames, byTime, 9));
+      const out: string[] = [];
+      for (let i = 0; i < count; i++) {
+        const t = Math.min(
+          duration * ((i + 0.5) / count),
+          Math.max(0, duration - 0.05),
+        );
+        video.currentTime = t;
+        await new Promise<void>((resolve) => {
+          const onSeeked = () => {
+            video.removeEventListener("seeked", onSeeked);
+            resolve();
+          };
+          video.addEventListener("seeked", onSeeked);
+        });
+        const frame = frameFromVideo(video);
+        if (frame) out.push(frame);
+      }
+      return out;
+    } finally {
+      URL.revokeObjectURL(url);
+      video.src = "";
+    }
+  }
+
+  async function finalizeFridgeRecording(): Promise<string[]> {
+    const rec = persistentRecorder;
+    if (!rec || rec.state === "inactive") {
+      // Fall back to whatever stills are already in the tray
+      return [];
+    }
+    const blob: Blob = await new Promise((resolve) => {
+      rec.onstop = () => {
+        resolve(
+          new Blob(persistentRecordChunks, {
+            type: persistentRecordMime || "video/webm",
+          }),
+        );
+      };
+      try {
+        if (rec.state === "recording") rec.requestData();
+        rec.stop();
+      } catch {
+        resolve(
+          new Blob(persistentRecordChunks, {
+            type: persistentRecordMime || "video/webm",
+          }),
+        );
+      }
+    });
+    persistentRecorder = null;
+    persistentRecordChunks = [];
+    if (!blob || blob.size < 1000) return [];
+    toast.message("Reading your fridge scroll video…");
+    return framesFromBlob(blob, 9);
+  }
+
   async function send() {
-    if (!input.trim() && images.length === 0) return;
-    // Cap frames per send so the request stays fast/reliable
-    const sendImages = images.slice(0, 3).filter((d) =>
-      typeof d === "string" && d.startsWith("data:image/"),
+    // Prefer fridge-scroll VIDEO → dense frames (captures fast scrolling)
+    let tray = images.filter(
+      (d) => typeof d === "string" && d.startsWith("data:image/"),
     );
+    if (sharing || (persistentRecorder && persistentRecorder.state !== "inactive")) {
+      try {
+        const fromVideo = await finalizeFridgeRecording();
+        if (fromVideo.length > 0) {
+          tray = fromVideo;
+          setImages(fromVideo);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    if (!input.trim() && tray.length === 0) return;
+
+    const sendImages = tray.slice(0, 9);
     if (sendImages.length === 0 && !input.trim()) {
-      toast.error("No valid photos to send — try Fridge share or upload again");
+      toast.error("No fridge video/frames — Fridge share the Roblox window, scroll Content, then Send");
       return;
     }
     const userMsg: Msg = {
@@ -980,7 +1115,7 @@ function PandaPage() {
       content:
         input.trim() ||
         (sendImages.length
-          ? "Scan these images and help with the menu / stock"
+          ? "Scan this Bloxburg fridge Content scroll (video frames). Add/update menu stock from every row you can read."
           : ""),
       images: [...sendImages],
     };
@@ -1481,10 +1616,10 @@ function PandaPage() {
             )}
           </div>
           <p className="border-t border-cream/10 px-4 py-2 text-[11px] text-cream/45">
-            Share your Roblox/Bloxburg window, then scroll the fridge — frames
-            auto-capture every ~1.6s (max 3). Snap still works for a manual
-            frame. Nothing is uploaded until you Send. For restock, say e.g.
-            “update stock from this scan” so I also check open orders.
+            Share the Roblox/Bloxburg window (not this tab). Open fridge → View
+            Content, then scroll the list — Skippe records your scroll as video
+            so fast scrolling doesn&apos;t miss items. On Send it reads up to 9
+            frames from that clip. Snap still works for a single frame.
           </p>
         </aside>
       )}
