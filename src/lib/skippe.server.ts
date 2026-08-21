@@ -1270,9 +1270,11 @@ export function selectToolsForMessage(
     return SKIPPE_TOOLS.filter((t) => want.has(t.name));
   }
 
-  // Bare "add those" / "add them" even without rich history — still menu tools
+  // Bare "add those" / typos ("add thosew") / "add them" — always menu tools
   if (
-    /\b(add|create|update|restock)\s+(those|them|these|all)\b/.test(msg) ||
+    /\b(add|create|update|restock)\s+thos/i.test(msg) ||
+    /\b(add|create|update|restock)\s+(those|them|these|all|it|that)\b/.test(msg) ||
+    /\b(add|create)\s+\w{0,6}$/.test(msg) ||
     msg === "add those" ||
     msg === "add them" ||
     msg === "update those" ||
@@ -1330,6 +1332,7 @@ export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolea
     "You CANNOT set menu item prices (creates always B$0 — chef prices in staff UI).",
     "You CAN: menu (list/create/update stock/delete), orders (list/claim/status), discounts, priority tiers, bulk fee.",
     "Only call tools you need. Do not list data 'just in case'.",
+    "If the chef says 'add those/them' after a fridge scan, CALL create_menu_item for each food named in recent chat — do not reply without tools.",
   ].join("\n");
 }
 
@@ -1697,7 +1700,7 @@ async function runOpenAiTurn(args: {
 /** Build a human reply when the model forgets to write one after tools. */
 function synthesizeReplyFromRuns(runs: SkippeToolRun[]): string {
   if (runs.length === 0) {
-    return "I couldn't complete that — try again with a bit more detail?";
+    return "I need a clearer ask — e.g. add Gingerbread Hot Chocolate stock 213, or Fridge-share the Content panel first so I know what 'those' are.";
   }
 
   const lines = runs.map((r) => {
@@ -1827,13 +1830,10 @@ async function runGoogleTurn(args: {
           model: args.model,
           messages,
           ...(tools ? { tools } : {}),
-          ...(tools
+          ...(tools && tools.length > 0
             ? {
-                tool_choice: /\b(discount|order|claim|menu|stock|list|create|make|add|mark|set|priority|tier|restock)\b/i.test(
-                  args.userText,
-                )
-                  ? "required"
-                  : "auto",
+                // Always require tools when we selected any — stops empty "couldn't complete" replies
+                tool_choice: "required",
               }
             : {}),
           stream: false,
