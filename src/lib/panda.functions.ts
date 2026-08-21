@@ -201,21 +201,25 @@ export const pandaChat = createServerFn({
           u.startsWith("http://")
         );
       });
-    const visionOnly =
-      images.length > 0 && !KITCHEN_ACTION_RE.test(data.message || "");
-
-    const { model, auto } = resolveModel(
-      data.mode,
-      images.length,
-      data.message,
-    );
-
-    // When chef only drops frames, give the model a clear vision instruction
+    // When chef only drops frames, give a clear fridge-scan instruction
+    // (must include action words so tools stay ON — empty message used to
+    // set visionOnly=true and the model would *pretend* to create items).
     const userText =
       (data.message || "").trim() ||
       (images.length > 0
         ? "Scan these fridge / menu images and add or update items as needed."
         : "");
+
+    // Tools OFF only for pure look-at-this chats with no kitchen intent.
+    // Always check the *effective* userText (including the default above).
+    const visionOnly =
+      images.length > 0 && !KITCHEN_ACTION_RE.test(userText);
+
+    const { model, auto } = resolveModel(
+      data.mode,
+      images.length,
+      userText,
+    );
 
     try {
       const turn = await runSkippeTurn({
