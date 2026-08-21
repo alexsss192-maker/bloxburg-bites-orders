@@ -6,14 +6,6 @@ import {
   SKIPPE_MODEL_LABELS,
 } from "@/lib/skippe-models";
 
-/**
- * Kitchen tools stay ON when this matches (menu edit, discounts, orders, …).
- * Tools turn OFF only for pure “look at this screenshot” chats (no action words)
- * so vision scans skip the database. All create/update/delete tools still exist.
- */
-const KITCHEN_ACTION_RE =
-  /\b(discount|order|claim|menu|stock|message|list|create|make|add|mark|set|priority|tier|delete|update|price|fee|bulk|edit|change|rename|remove|put|save|enable|disable|activate|deactivate|prepare|ready|deliver|cancel|item|items|them)\b/i;
-
 export type { SkippeMode } from "@/lib/skippe-models";
 
 export {
@@ -23,13 +15,7 @@ export {
   modelShowsThinking,
 } from "@/lib/skippe-models";
 
-/** Local type — do NOT import from skippe.server (keeps LLM/DB code off the client graph). */
-export type SkippeToolRun = {
-  name: string;
-  ok: boolean;
-  summary: string;
-  detail?: string;
-};
+import type { SkippeToolRun } from "@/lib/skippe.server";
 
 export type SkippeSavedMessage = {
   id: string;
@@ -78,212 +64,378 @@ const pandaInput = z.object({
     .default([]),
 });
 
-/**
- * Soft reply helper — pandaChat must NEVER throw (throws become bare HTTP 500).
- */
-function skippeFail(reply: string, model = "none"): SkippeReply {
-  return {
-    reply,
-    thinking: "",
-    runs: [],
-    model,
-    model_label: SKIPPE_MODEL_LABELS[model] ?? "Skippe",
-    auto: false,
-  };
-}
-
-/**
- * pandaChat — no auth middleware, no zod throw.
- * Auth + validation run inside and always return SkippeReply.
- */
 export const pandaChat = createServerFn({
   method: "POST",
-}).handler(async (ctx): Promise<SkippeReply> => {
-  try {
-    // ── 1) Soft-parse input (never throw Zod errors as HTTP 500) ──
-    const parsed = pandaInput.safeParse(
-      // TanStack may pass { data: payload } or payload directly
-      (ctx as { data?: unknown }).data ?? ctx,
-    );
-    if (!parsed.success) {
-      return skippeFail(
-        `⚠️ Bad Skippe request: ${parsed.error.issues[0]?.message ?? "invalid input"}`,
-      );
-    }
-    const data = parsed.data;
+})
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    pandaInput.parse(d),
+  )
+  .handler(async ({ context, data }): Promise<SkippeReply> => {
+    /*
+     * IMPORTANT:
+     * Keep Skippe's server-only implementation out of the
+     * module-level import graph.
+     *
+     * staff.panda.tsx is part of the generated route tree,
+     * so importing skippe.server.ts at the top of this file
+     * can affect SSR for unrelated public routes.
+     */
+    const {
+      buildSkippePrompt,
+      resolveModel,
+      runSkippeTurn,
+    } = await import("@/lib/skippe.server");
 
-    // ── 2) Soft auth (copy of requireSupabaseAuth, but returns reply on fail) ──
-    const SUPABASE_URL = process.env["SUPABASE_URL"];
-    const SUPABASE_PUBLISHABLE_KEY = process.env["SUPABASE_PUBLISHABLE_KEY"];
-    if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-      return skippeFail(
-        "⚠️ Missing SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY — connect Supabase in Lovable Cloud.",
-      );
-    }
+    const { data: roleRows } =
+      await context.supabase
+        .from("user_roles" as never)
+        .select("role")
+        .eq("user_id", context.userId);
 
-    const { getRequest } = await import("@tanstack/react-start/server");
-    const { createClient } = await import("@supabase/supabase-js");
-    const request = getRequest();
-    const authHeader = request?.headers?.get("authorization") ?? "";
-    if (!authHeader.startsWith("Bearer ")) {
-      return skippeFail(
-        "⚠️ Not signed in — refresh the page and log into staff again.",
-      );
-    }
-    const token = authHeader.slice("Bearer ".length).trim();
-    if (!token || token.split(".").length !== 3) {
-      return skippeFail("⚠️ Invalid session — sign out and back into staff.");
-    }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-      auth: {
-        storage: undefined,
-        persistSession: false,
-        autoRefreshToken: false,
-      },
-    });
-
-    const { data: claimData, error: claimErr } =
-      await supabase.auth.getClaims(token);
-    if (claimErr || !claimData?.claims?.sub) {
-      return skippeFail("⚠️ Session expired — sign in again.");
-    }
-    const userId = claimData.claims.sub as string;
-    const actorEmail =
-      (claimData.claims as { email?: string }).email ?? null;
-
-    // ── 3) Staff gate ──
-    const { data: roleRows, error: roleError } = await supabase
-      .from("user_roles" as never)
-      .select("role")
-      .eq("user_id", userId);
-    if (roleError) {
-      return skippeFail(
-        `⚠️ Could not verify staff role: ${roleError.message}`,
-      );
-    }
     const roles =
-      (roleRows as unknown as Array<{ role: string }> | null)?.map(
-        (r) => r.role,
-      ) ?? [];
+      (
+        (roleRows as unknown as Array<{
+          role: string;
+        }> | null) ?? []
+      ).map((r) => r.role);
+
     const isAdmin = roles.includes("admin");
-    const isChef = roles.includes("chef");
-    if (!isAdmin && !isChef) {
-      return skippeFail("⚠️ Chef or admin only — Skippe is for staff.");
+
+    if (
+      !roles.includes("chef") &&
+      !isAdmin
+    ) {
+      throw new Error(
+        "Chef or admin only",
+      );
     }
 
-    const staffName = actorEmail?.split("@")[0] || "Chef";
+    const actorEmail =
+      (
+        context.claims as
+          | { email?: string }
+          | undefined
+      )?.email ?? null;
 
-    // ── 4) Load Skippe engine (dynamic — keeps it off the public graph) ──
-    let buildSkippePrompt: any;
-    let resolveModel: any;
-    let runSkippeTurn: any;
-    try {
-      const mod = await import("@/lib/skippe.server");
-      buildSkippePrompt = mod.buildSkippePrompt;
-      resolveModel = mod.resolveModel;
-      runSkippeTurn = mod.runSkippeTurn;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return skippeFail(`⚠️ Skippe module failed to load: ${msg}`);
-    }
+    const { data: profile } =
+      await context.supabase
+        .from("staff_profiles" as never)
+        .select("username")
+        .eq(
+          "user_id",
+          context.userId,
+        )
+        .maybeSingle();
 
-    const history = (data.history ?? []).slice(-3);
-    // Keep only real image data URLs (blank / non-image payloads make models say "no images")
-    const images = (data.images ?? [])
-      .slice(0, 9)
-      .filter((img: { data_url?: string }) => {
-        const u = (img?.data_url || "").trim();
-        return (
-          u.startsWith("data:image/") ||
-          u.startsWith("https://") ||
-          u.startsWith("http://")
-        );
-      });
-    // When chef only drops frames, give a clear fridge-scan instruction
-    // (must include action words so tools stay ON — empty message used to
-    // set visionOnly=true and the model would *pretend* to create items).
-    const userText =
-      (data.message || "").trim() ||
-      (images.length > 0
-        ? "Look at these images. Restock ONLY if this is the Bloxburg fridge View Content panel (title Content, qty numbers, blue Take buttons). Read each row name+qty and create/update menu stock. If Lovable/dashboard/anything else: one-line refuse, no tools."
-        : "");
+    const staffName =
+      (
+        profile as unknown as
+          | {
+              username?: string;
+            }
+          | null
+      )?.username ??
+      actorEmail?.split("@")[0] ??
+      "Chef";
 
-    // Tools OFF only for pure look-at-this chats with no kitchen intent.
-    // Always check the *effective* userText (including the default above).
-    const visionOnly =
-      images.length > 0 && !KITCHEN_ACTION_RE.test(userText);
+    // History comes from the browser (localStorage) — no skippe_messages read.
+    const history = (data.history ?? []).slice(-16);
 
-    const { model, auto } = resolveModel(
+    const {
+      model,
+      auto,
+    } = resolveModel(
       data.mode,
-      images.length,
-      userText,
+      data.images.length,
+      data.message,
     );
 
-    try {
-      const turn = await runSkippeTurn({
+    const turn =
+      await runSkippeTurn({
         model,
-        instructions: buildSkippePrompt({
-          staffName,
-          isAdmin,
-          withVision: images.length > 0,
-        }),
+
+        instructions:
+          buildSkippePrompt({
+            staffName,
+            isAdmin,
+            withVision: data.images.length > 0,
+          }),
+
         history,
-        userText,
-        images,
+
+        userText: data.message,
+
+        images: data.images,
+
         staffName,
-        toolsEnabled: !visionOnly,
+
         ctx: {
-          supabase: supabase as never,
-          userId,
+          supabase:
+            context.supabase as never,
+
+          userId:
+            context.userId,
+
           isAdmin,
+
           actorEmail,
-          _cache: new Map(),
         },
       });
 
-      const reply =
-        turn.reply ||
-        (turn.runs.length > 0
+    const reply =
+      turn.reply ||
+      (
+        turn.runs.length > 0
           ? turn.runs
-              .map((r: SkippeToolRun) => `${r.ok ? "✅" : "⚠️"} ${r.summary}`)
+              .map(
+                (r) =>
+                  `${
+                    r.ok
+                      ? "✅"
+                      : "⚠️"
+                  } ${r.summary}`,
+              )
               .join("\n")
-          : "I couldn't put a reply together — try asking again?");
+          : "I couldn't put a reply together — try asking again?"
+      );
+
+        return {
+      reply,
+
+      thinking:
+        turn.thinking,
+
+      runs:
+        turn.runs,
+
+      model,
+
+      model_label:
+        SKIPPE_MODEL_LABELS[model] ??
+        model,
+
+      auto,
+    };
+  });
+
+export const listSkippeChat =
+  createServerFn({
+    method: "GET",
+  })
+    .middleware([
+      requireSupabaseAuth,
+    ])
+    .handler(async ({ context }) => {
+      const {
+        data,
+        error,
+      } = await context.supabase
+        .from(
+          "skippe_messages" as never,
+        )
+        .select(
+          "id, role, content, image_count, model, created_at",
+        )
+        .eq(
+          "owner_id",
+          context.userId,
+        )
+        .order("created_at", {
+          ascending: true,
+        })
+        .limit(200);
+
+      if (error) {
+        throw new Error(
+          error.message,
+        );
+      }
+
+      return (
+        data ?? []
+      ) as unknown as SkippeSavedMessage[];
+    });
+
+export const clearSkippeChat =
+  createServerFn({
+    method: "POST",
+  })
+    .middleware([
+      requireSupabaseAuth,
+    ])
+    .handler(async ({ context }) => {
+      const {
+        error,
+      } = await context.supabase
+        .from(
+          "skippe_messages" as never,
+        )
+        .delete()
+        .eq(
+          "owner_id",
+          context.userId,
+        );
+
+      if (error) {
+        throw new Error(
+          error.message,
+        );
+      }
 
       return {
-        reply,
-        thinking: turn.thinking ?? "",
-        runs: turn.runs ?? [],
-        model,
-        model_label: SKIPPE_MODEL_LABELS[model] ?? model,
-        auto: Boolean(auto),
+        ok: true,
       };
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return skippeFail(
-        msg.startsWith("Skippe") ? msg : `Skippe hit a problem: ${msg}`,
-        model,
-      );
-    }
-  } catch (err) {
-    // Absolute last resort — still HTTP 200 with a message
-    const msg = err instanceof Error ? err.message : String(err);
-    return skippeFail(`⚠️ Skippe crashed: ${msg}`);
-  }
-});
+    });
 
-/** Skippe history is browser localStorage only — no DB. */
-export const listSkippeChat = createServerFn({
-  method: "GET",
-}).handler(async () => [] as SkippeSavedMessage[]);
+export const listPandaAudit =
+  createServerFn({
+    method: "POST",
+  })
+    .middleware([
+      requireSupabaseAuth,
+    ])
+    .inputValidator((d: unknown) =>
+      z
+        .object({
+          limit: z
+            .number()
+            .int()
+            .min(1)
+            .max(200)
+            .default(50),
 
-/** Clear is client-side (localStorage); server is a no-op. */
-export const clearSkippeChat = createServerFn({
-  method: "POST",
-}).handler(async () => ({ ok: true as const }));
+          action: z
+            .string()
+            .max(64)
+            .optional()
+            .nullable(),
 
-/** Audit log DB removed — no reads. */
-export const listPandaAudit = createServerFn({
-  method: "POST",
-}).handler(async () => ({ entries: [] as Array<Record<string, unknown>> }));
+          actor: z
+            .string()
+            .max(64)
+            .optional()
+            .nullable(),
+        })
+        .parse(d ?? {}),
+    )
+    .handler(async ({ context, data }) => {
+      const {
+        data: roleRows,
+      } = await context.supabase
+        .from("user_roles" as never)
+        .select("role")
+        .eq(
+          "user_id",
+          context.userId,
+        );
+
+      const roles =
+        (
+          (roleRows as unknown as Array<{
+            role: string;
+          }> | null) ?? []
+        ).map(
+          (r) => r.role,
+        );
+
+      if (
+        !roles.includes("admin")
+      ) {
+        throw new Error(
+          "Admins only",
+        );
+      }
+
+
+      let q =
+        context.supabase
+          .from(
+            "panda_audit_log" as never,
+          )
+          .select(
+            "id, actor_user_id, actor_email, action, target_type, target_id, payload, created_at",
+          )
+          .order("created_at", {
+            ascending: false,
+          })
+          .limit(data.limit);
+
+      if (data.action) {
+        q = q.ilike(
+          "action",
+          `%${data.action}%`,
+        );
+      }
+
+      if (data.actor) {
+        q = q.ilike(
+          "actor_email",
+          `%${data.actor}%`,
+        );
+      }
+
+      const {
+        data: rows,
+        error,
+      } = await q;
+
+      if (error) {
+        throw new Error(
+          error.message,
+        );
+      }
+
+      const raw =
+        (
+          rows ?? []
+        ) as unknown as Array<{
+          id: string;
+          actor_user_id:
+            | string
+            | null;
+          actor_email:
+            | string
+            | null;
+          action: string;
+          target_type:
+            | string
+            | null;
+          target_id:
+            | string
+            | null;
+          payload: unknown;
+          created_at: string;
+        }>;
+
+      return {
+        entries: raw.map(
+          (r) => ({
+            id: r.id,
+
+            actor_user_id:
+              r.actor_user_id,
+
+            actor_email:
+              r.actor_email,
+
+            action:
+              r.action,
+
+            target_type:
+              r.target_type,
+
+            target_id:
+              r.target_id,
+
+            payload_json:
+              JSON.stringify(
+                r.payload ?? {},
+              ),
+
+            created_at:
+              r.created_at,
+          }),
+        ),
+      };
+    });
