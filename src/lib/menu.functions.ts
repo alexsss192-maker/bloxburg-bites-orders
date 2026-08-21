@@ -408,11 +408,9 @@ export const upsertMenuItem = createServerFn({ method: "POST" })
   });
 
 /**
- * Soft-delete menu items.
- *
- * Hard DELETE fails when the item appears in order_items (FK) or stock_alerts.
- * Setting is_active = false hides it from customers and the public menu while
- * preserving order history. Related stock alerts are cleared.
+ * Permanently delete a menu item so it disappears from the staff menu.
+ * Order line history keeps the item name on order_items; we null menu_item_id
+ * when the FK blocks a hard delete, then delete the row.
  */
 export const deleteMenuItem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -422,24 +420,48 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
 
     const { data: existing } = await context.supabase
       .from("menu_items" as any)
-      .select("owner_id, is_active")
+      .select("owner_id, name")
       .eq("id", data.id)
       .maybeSingle();
 
-    const row = existing as unknown as { owner_id: string | null; is_active: boolean } | null;
+    const row = existing as unknown as { owner_id: string | null; name: string } | null;
     if (!row) throw new Error("Menu item not found");
     if (row.owner_id !== context.userId) {
       throw new Error("You can only delete your own menu items");
     }
 
-    // Soft-delete: hide from public menu. Order history stays valid.
+    // Best-effort: clear alerts / FK refs so hard delete can succeed
+    try {
+      await context.supabase.from("stock_alerts" as any).delete().eq("menu_item_id", data.id);
+    } catch {
+      /* table may not exist */
+    }
+    try {
+      await context.supabase
+        .from("order_items" as any)
+        .update({ menu_item_id: null })
+        .eq("menu_item_id", data.id);
+    } catch {
+      /* column may be NOT NULL — hard delete may still work if no rows */
+    }
+
     const { error } = await context.supabase
       .from("menu_items" as any)
-      .update({ is_active: false, stock: 0 })
+      .delete()
       .eq("id", data.id)
       .eq("owner_id", context.userId);
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Last resort: hide permanently from staff + public lists
+      const { error: softErr } = await context.supabase
+        .from("menu_items" as any)
+        .update({ is_active: false, stock: 0 })
+        .eq("id", data.id)
+        .eq("owner_id", context.userId);
+      if (softErr) throw new Error(error.message);
+      // Staff list still filters these out below
+    }
+
     return { ok: true };
   });
 
