@@ -353,7 +353,7 @@ function loadSkippeChat(): Msg[] {
       thinking: typeof m.thinking === "string" ? m.thinking : undefined,
       runs: Array.isArray(m.runs) ? m.runs : undefined,
       images: Array.isArray(m.images)
-        ? m.images.filter((x): x is string => typeof x === "string").slice(0, 3)
+        ? m.images.filter((x): x is string => typeof x === "string").slice(0, 9)
         : undefined,
     }));
   } catch {
@@ -1213,15 +1213,38 @@ function PandaPage() {
 
     if (!input.trim() && tray.length === 0) return;
 
-    const sendImages = tray.slice(0, 9);
-    if (sendImages.length === 0 && !input.trim()) {
+    // If the chef refers to prior pictures ("add these", "in the picture") but
+    // the tray is empty, re-attach the most recent user images from chat so
+    // Skippe can still see them (models only receive images on the current turn).
+    const text = input.trim();
+    const refersToPriorImages =
+      /\b(these|those|the picture|the photo|the image|same picture|from (the )?picture|in (the )?picture|menu items in the picture)\b/i.test(
+        text,
+      ) ||
+      (/\b(add|create|import|use)\b/i.test(text) &&
+        /\b(picture|photo|image|screenshot|above)\b/i.test(text));
+
+    let sendImages = tray.slice(0, 9);
+    if (sendImages.length === 0 && refersToPriorImages) {
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const m = messages[i];
+        if (m.role === "user" && m.images && m.images.length > 0) {
+          sendImages = m.images
+            .filter((d) => typeof d === "string" && d.startsWith("data:image/"))
+            .slice(0, 9);
+          break;
+        }
+      }
+    }
+
+    if (sendImages.length === 0 && !text) {
       toast.error("No fridge video/frames — Fridge share the Roblox window, scroll Content, then Send");
       return;
     }
     const userMsg: Msg = {
       role: "user",
       content:
-        input.trim() ||
+        text ||
         (sendImages.length
           ? "Scan this Bloxburg fridge Content scroll (video frames). Add/update menu stock from every row you can read."
           : ""),
@@ -1233,14 +1256,27 @@ function PandaPage() {
     );
     setActivityIndex(0);
     setLoading(true);
-    // Short history keeps gateway fast — even shorter when images are attached
-    const historyWindow = sendImages.length > 0 ? 4 : 6;
+    // Keep more history so Skippe can follow multi-step kitchen jobs
+    const historyWindow = 12;
     const history = messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .slice(-historyWindow)
-      .map((m) => ({ role: m.role, content: m.content.slice(0, 800) }));
+      .map((m) => {
+        const imgNote =
+          m.role === "user" && m.images && m.images.length > 0
+            ? `\n[Attached ${m.images.length} image(s) in that message — if the chef refers back to them, they may be re-sent on a later turn.]`
+            : "";
+        return {
+          role: m.role as "user" | "assistant",
+          content: (m.content + imgNote).slice(0, 2000),
+        };
+      });
     const payload = {
-      message: input.trim(),
+      message:
+        text +
+        (tray.length === 0 && sendImages.length > 0
+          ? "\n\n(Re-attached the previous picture(s) from this chat so you can still see them.)"
+          : ""),
       images: sendImages.map((d) => ({ data_url: d })),
       mode,
       history,
