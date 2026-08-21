@@ -1,10 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  Loader2,
+  Pencil,
+  Plus,
+  Send,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { listAllMenu, upsertMenuItem, deleteMenuItem } from "@/lib/menu.functions";
+import { pandaChat } from "@/lib/panda.functions";
+import {
+  SKIPPE_MODE_OPTIONS,
+  type SkippeMode,
+} from "@/lib/skippe-models";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,8 +27,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { StockAlertsPanel } from "@/components/stock-alerts-panel";
+import { GoogleGlyph } from "@/components/google-glyph";
 
 export const Route = createFileRoute("/staff/menu")({
   head: () => ({
@@ -61,16 +88,161 @@ const emptyItem: Partial<Item> = {
   is_active: true,
 };
 
+/** Menu-editor Skippe: Auto + Gemini 2.5 + Gemini 3.1 only (no GPT-5 Nano). */
+const MENU_SKIPPE_MODES = SKIPPE_MODE_OPTIONS.filter(
+  (o) => o.value === "auto" || o.value === "lite_25" || o.value === "lite_31",
+);
+
+const SKIPPE_PLACEHOLDERS = [
+  "Add New Year's Cake as a seasonal with a stock of 12",
+  "Add Donuts as a non-seasonal with a stock of 64",
+  "Add Heart Cake as a seasonal with a stock of 99",
+  "Add Heart Shaped Pizza as a seasonal with a stock of 93",
+  "Add P.N.D.A Bundle which is a bundle of P.N.D.A Soda & P.N.D.A Popcorn for 10 of each with a stock of 5",
+];
+
+type SkippePromptKind =
+  | "edit"
+  | "delete"
+  | "deactivate"
+  | "restock"
+  | "seasonal";
+
+type PendingPrompt = {
+  kind: SkippePromptKind;
+  item: Item;
+  title: string;
+  placeholder: string;
+  build: (extra: string) => string;
+};
+
+/** Skippe creates at B$0 — treat zero-price items as Skippe-stocked. */
+function isSkippeStocked(item: Item): boolean {
+  return item.price_bs <= 0;
+}
+
 function MenuEditor() {
   const listFn = useServerFn(listAllMenu);
   const upsertFn = useServerFn(upsertMenuItem);
   const delFn = useServerFn(deleteMenuItem);
+  const chatFn = useServerFn(pandaChat);
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["staff-menu"],
     queryFn: () => listFn(),
   });
   const [editing, setEditing] = useState<Partial<Item> | null>(null);
+
+  const [skippeMode, setSkippeMode] = useState<SkippeMode>("lite_25");
+  const [skippeInput, setSkippeInput] = useState("");
+  const [skippeBusy, setSkippeBusy] = useState(false);
+  const [skippeLastReply, setSkippeLastReply] = useState<string | null>(null);
+  const [placeholderIdx, setPlaceholderIdx] = useState(0);
+  const [pendingPrompt, setPendingPrompt] = useState<PendingPrompt | null>(
+    null,
+  );
+  const [promptExtra, setPromptExtra] = useState("");
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setPlaceholderIdx((i) => (i + 1) % SKIPPE_PLACEHOLDERS.length);
+    }, 4200);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const activePlaceholder = SKIPPE_PLACEHOLDERS[placeholderIdx];
+
+  async function runSkippeMessage(message: string) {
+    const text = message.trim();
+    if (!text || skippeBusy) return;
+    setSkippeBusy(true);
+    setSkippeLastReply(null);
+    try {
+      const res = await chatFn({
+        data: {
+          message: text,
+          images: [],
+          mode: skippeMode,
+          history: [],
+        },
+      });
+      setSkippeLastReply(res.reply);
+      const ok = (res.runs ?? []).filter((r) => r.ok).length;
+      if (ok > 0) {
+        toast.success(`Skippe made ${ok} change${ok === 1 ? "" : "s"}`);
+      } else {
+        toast.message("Skippe replied");
+      }
+      qc.invalidateQueries({ queryKey: ["staff-menu"] });
+      qc.invalidateQueries({ queryKey: ["public-menu"] });
+      qc.invalidateQueries({ queryKey: ["stock-alerts"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Skippe failed");
+    } finally {
+      setSkippeBusy(false);
+    }
+  }
+
+  function openPrompt(kind: SkippePromptKind, item: Item) {
+    if (kind === "delete") {
+      void runSkippeMessage(
+        `Delete the menu item named "${item.name}" (id ${item.id}).`,
+      );
+      return;
+    }
+    if (kind === "deactivate") {
+      void runSkippeMessage(
+        `Set menu item "${item.name}" (id ${item.id}) to inactive — hide it from customers.`,
+      );
+      return;
+    }
+    if (kind === "edit") {
+      setPendingPrompt({
+        kind,
+        item,
+        title: `Edit “${item.name}”`,
+        placeholder: "e.g. rename to Blueberry Pancakes, or set description…",
+        build: (extra) =>
+          `Edit menu item "${item.name}" (id ${item.id}): ${extra}`,
+      });
+      setPromptExtra("");
+      return;
+    }
+    if (kind === "restock") {
+      setPendingPrompt({
+        kind,
+        item,
+        title: `Restock “${item.name}”`,
+        placeholder: "e.g. 24",
+        build: (extra) =>
+          `Set stock of menu item "${item.name}" (id ${item.id}) to ${extra.trim()}.`,
+      });
+      setPromptExtra("");
+      return;
+    }
+    setPendingPrompt({
+      kind,
+      item,
+      title: `Category for “${item.name}”`,
+      placeholder: "type seasonal or non_seasonal",
+      build: (extra) =>
+        `Set category of menu item "${item.name}" (id ${item.id}) to ${extra.trim()}.`,
+    });
+    setPromptExtra(item.category === "seasonal" ? "non_seasonal" : "seasonal");
+  }
+
+  async function submitPendingPrompt() {
+    if (!pendingPrompt) return;
+    const extra = promptExtra.trim();
+    if (!extra) {
+      toast.message("Tell Skippe what to change");
+      return;
+    }
+    const msg = pendingPrompt.build(extra);
+    setPendingPrompt(null);
+    setPromptExtra("");
+    await runSkippeMessage(msg);
+  }
 
   const save = useMutation({
     mutationFn: (v: Partial<Item>) =>
@@ -106,16 +278,94 @@ function MenuEditor() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Failed"),
   });
 
-  // Server already returns only this user's items — no other chefs.
   const items = data?.items ?? [];
   const myId = data?.my_user_id ?? "";
   const needsPrice = items.filter(
     (i) => i.price_bs <= 0 && i.owner_id === myId,
   );
 
+  const modeLabel = useMemo(() => {
+    const o = MENU_SKIPPE_MODES.find((m) => m.value === skippeMode);
+    return o?.label ?? "Gemini";
+  }, [skippeMode]);
+
   return (
     <div className="space-y-6">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      {/* Compact Skippe — no chat history */}
+      <div className="rounded-2xl border border-cherry/20 bg-gradient-to-r from-blossom/80 to-white px-3 py-2.5 shadow-sm">
+        <div className="mb-1.5 flex items-center gap-2">
+          <Sparkles className="h-3.5 w-3.5 text-cherry" />
+          <span className="text-[10px] font-black uppercase tracking-[0.22em] text-cherry">
+            Skippe · quick add
+          </span>
+          <span className="text-[10px] text-ink/40">no history · menu only</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Select
+            value={skippeMode}
+            onValueChange={(v) => setSkippeMode(v as SkippeMode)}
+          >
+            <SelectTrigger className="h-9 w-[11.5rem] shrink-0 rounded-xl border-ink/10 bg-white text-xs font-semibold">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              {MENU_SKIPPE_MODES.map((o) => (
+                <SelectItem
+                  key={o.value}
+                  value={o.value}
+                  className="rounded-lg text-xs"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <GoogleGlyph className="h-3 w-3" />
+                    <span>{o.label}</span>
+                    <span className="text-ink/40">{o.cost}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={skippeInput}
+            onChange={(e) => setSkippeInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                const t = skippeInput;
+                setSkippeInput("");
+                void runSkippeMessage(t);
+              }
+            }}
+            placeholder={activePlaceholder}
+            maxLength={2000}
+            disabled={skippeBusy}
+            className="h-9 flex-1 rounded-xl border-ink/10 bg-white text-sm transition-opacity placeholder:text-ink/35"
+          />
+          <Button
+            type="button"
+            disabled={skippeBusy || !skippeInput.trim()}
+            onClick={() => {
+              const t = skippeInput;
+              setSkippeInput("");
+              void runSkippeMessage(t);
+            }}
+            className="h-9 shrink-0 rounded-xl bg-ink px-3 text-cream hover:bg-cherry"
+          >
+            {skippeBusy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+          </Button>
+        </div>
+        {skippeLastReply && (
+          <p className="mt-2 line-clamp-3 rounded-xl bg-white/80 px-2.5 py-1.5 text-xs text-ink/70">
+            <span className="font-semibold text-cherry">{modeLabel}: </span>
+            {skippeLastReply}
+          </p>
+        )}
+      </div>
+
+      <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-cherry">
             Chef menu editor
@@ -156,7 +406,11 @@ function MenuEditor() {
                     e.preventDefault();
                     const fd = new FormData(e.currentTarget);
                     const price = Number(fd.get("price")) || 0;
-                    save.mutate({ ...item, category: item.category as "non_seasonal" | "seasonal", price_bs: price });
+                    save.mutate({
+                      ...item,
+                      category: item.category as "non_seasonal" | "seasonal",
+                      price_bs: price,
+                    });
                   }}
                   className="flex items-center gap-2"
                 >
@@ -186,7 +440,7 @@ function MenuEditor() {
         <div className="rounded-3xl border border-dashed border-ink/20 bg-white p-16 text-center">
           <p className="font-display text-3xl">No items yet</p>
           <p className="mt-2 text-muted-foreground">
-            Tap &quot;New item&quot; to add your first dish.
+            Tap &quot;New item&quot; or ask Skippe above to add your first dish.
           </p>
         </div>
       ) : (
@@ -228,6 +482,60 @@ function MenuEditor() {
                         Needs a price
                       </span>
                     )}
+                    {isSkippeStocked(item) && (
+                      <div className="mt-1.5">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              disabled={skippeBusy}
+                              className="skippe-stocked-badge inline-flex items-center gap-1 rounded-full border border-cherry/25 bg-cherry/5 px-2 py-0.5 text-[0.65rem] font-semibold text-cherry outline-none transition hover:bg-cherry/10 focus-visible:ring-2 focus-visible:ring-cherry/30"
+                            >
+                              <Sparkles className="h-3 w-3 skippe-sparkle" />
+                              <span className="skippe-shimmer-text">
+                                Stocked by Skippe
+                              </span>
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="start"
+                            className="w-56 rounded-xl"
+                          >
+                            <DropdownMenuItem
+                              className="rounded-lg text-xs"
+                              onSelect={() => openPrompt("edit", item)}
+                            >
+                              Edit this menu item…
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="rounded-lg text-xs"
+                              onSelect={() => openPrompt("restock", item)}
+                            >
+                              Restock (set quantity)…
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="rounded-lg text-xs"
+                              onSelect={() => openPrompt("seasonal", item)}
+                            >
+                              Change seasonal / non-seasonal…
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="rounded-lg text-xs"
+                              onSelect={() => openPrompt("deactivate", item)}
+                            >
+                              Make inactive (hide from customers)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="rounded-lg text-xs text-destructive focus:text-destructive"
+                              onSelect={() => openPrompt("delete", item)}
+                            >
+                              Delete this menu item
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-1">
                     <button
@@ -258,6 +566,55 @@ function MenuEditor() {
           ))}
         </div>
       )}
+
+      <Dialog
+        open={!!pendingPrompt}
+        onOpenChange={(v) => {
+          if (!v) {
+            setPendingPrompt(null);
+            setPromptExtra("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-2xl">
+              {pendingPrompt?.title ?? "Tell Skippe"}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-ink/60">
+            Skippe will run this on your menu. Add the details it needs below.
+          </p>
+          <Input
+            value={promptExtra}
+            onChange={(e) => setPromptExtra(e.target.value)}
+            placeholder={pendingPrompt?.placeholder}
+            className="mt-2"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void submitPendingPrompt();
+              }
+            }}
+            autoFocus
+          />
+          <Button
+            type="button"
+            disabled={skippeBusy || !promptExtra.trim()}
+            onClick={() => void submitPendingPrompt()}
+            className="mt-3 w-full rounded-full bg-ink py-5 text-cream hover:bg-cherry"
+          >
+            {skippeBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Sparkles className="mr-1.5 h-4 w-4" />
+                Send to Skippe
+              </>
+            )}
+          </Button>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
         <DialogContent className="max-w-lg rounded-3xl">
@@ -376,6 +733,39 @@ function MenuEditor() {
           )}
         </DialogContent>
       </Dialog>
+
+      <style>{`
+        @keyframes skippe-shimmer {
+          0% { background-position: 0% 50%; }
+          100% { background-position: 200% 50%; }
+        }
+        @keyframes skippe-sparkle-spin {
+          0%, 100% { transform: rotate(0deg) scale(1); opacity: 1; }
+          50% { transform: rotate(15deg) scale(1.15); opacity: 0.85; }
+        }
+        .skippe-shimmer-text {
+          background: linear-gradient(
+            90deg,
+            #c41e5a 0%,
+            #e85d8a 35%,
+            #c41e5a 50%,
+            #e85d8a 65%,
+            #c41e5a 100%
+          );
+          background-size: 200% 100%;
+          -webkit-background-clip: text;
+          background-clip: text;
+          color: transparent;
+          animation: skippe-shimmer 2.8s linear infinite;
+        }
+        .skippe-sparkle {
+          animation: skippe-sparkle-spin 2.2s ease-in-out infinite;
+        }
+        .skippe-stocked-badge:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+      `}</style>
     </div>
   );
 }
