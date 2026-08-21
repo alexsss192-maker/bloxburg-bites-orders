@@ -1570,6 +1570,19 @@ export function selectToolsForMessage(
     want.add("update_discount");
     want.add("end_discount");
   }
+  // Single-item remove/delete/hide by name (e.g. "Remove spooky cake pops")
+  // must get menu tools even when the message never says "menu" or "item".
+  if (
+    /\b(remove|delete|drop|trash|get rid of|take off|hide|deactivate)\b/.test(msg) &&
+    !/\b(priority|tier|level|discount|promo|order)\b/.test(msg)
+  ) {
+    want.add("list_menu_items");
+    want.add("delete_menu_item");
+    want.add("update_menu_item");
+    if (/\b(all|every|entire)\b/.test(msg)) {
+      want.add("delete_all_my_menu_items");
+    }
+  }
   if (/\b(menu|item|dish|stock|restock|fridge|add|picture|photo|image|these|those)\b/.test(msg)) {
     want.add("list_menu_items");
     want.add("create_menu_item");
@@ -1609,8 +1622,9 @@ export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolea
   return [
     `Skippe — Panda Bites kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). B$.`,
     "Call tools. Never narrate fake success.",
-    "NEVER say Added/Created/Done unless a tool returned ok:true this turn.",
+    "NEVER say Added/Created/Done/Deleted unless a tool returned ok:true this turn.",
     "Prices on create are always B$0.",
+    "Remove/delete a named dish → list_menu_items then delete_menu_item with that id.",
     "Pictures → create_menu_items_batch with food names READ from the image, never the chat sentence as a name.",
     "Do not list_discounts or list_orders unless asked.",
     "If you cannot read the image, say so in one line — do not invent items.",
@@ -2595,22 +2609,104 @@ async function maybeRunIntentFallback(
     };
   }
 
-  // "add item lobster stock 20" / "create menu item pizza with stock 5"
+  // "Remove spooky cake pops" / "delete the heart pizza" / "trash donuts"
+  // List → fuzzy name match → delete_menu_item (or deactivate if they said hide).
+  const deleteMenuIntent =
+    /\b(remove|delete|drop|trash|get rid of|take off)\b/i.test(msg) &&
+    !/\b(priority|tier|level|discount|promo|order|all|every|entire)\b/i.test(msg);
+  const hideMenuIntent =
+    /\b(hide|deactivate)\b/i.test(msg) &&
+    !/\b(priority|tier|level|discount|promo|order|all|every|entire)\b/i.test(msg);
+
+  if (deleteMenuIntent || hideMenuIntent) {
+    const nameMatch =
+      userText.match(
+        /\b(?:remove|delete|drop|trash|hide|deactivate|get rid of|take off)\s+(?:the\s+|my\s+|a\s+|an\s+)?[\"']?([a-z0-9][a-z0-9 \-'.]{1,50}?)[\"']?\s*$/i,
+      ) ||
+      userText.match(
+        /\b(?:remove|delete|drop|trash|hide|deactivate)\s+(?:the\s+|my\s+)?[\"']([^\"']{2,50})[\"']/i,
+      );
+    let itemName = (nameMatch?.[1] ?? "").trim().toLowerCase();
+    // strip trailing filler words
+    itemName = itemName
+      .replace(/\s+(from\s+(my\s+)?menu|please|now|item|dish)\s*$/i, "")
+      .trim();
+    if (itemName.length >= 2) {
+      const { result, run: listRun } = await runSkippeTool(
+        ctx,
+        "list_menu_items",
+        {},
+        staffName,
+      );
+      const items =
+        (result as {
+          items?: Array<{ id: string; name: string; is_active?: boolean }>;
+        })?.items ?? [];
+      const hit =
+        items.find((i) => i.name.toLowerCase() === itemName) ||
+        items.find((i) => i.name.toLowerCase().includes(itemName)) ||
+        items.find((i) => itemName.includes(i.name.toLowerCase()));
+      if (!hit) {
+        return {
+          runs: [listRun],
+          reply: listRun.ok
+            ? `⚠️ No menu item matching “${itemName}”. Say **list my menu** to see names.`
+            : `⚠️ ${listRun.summary}`,
+        };
+      }
+      if (hideMenuIntent) {
+        const { run } = await runSkippeTool(
+          ctx,
+          "update_menu_item",
+          { item_id: hit.id, is_active: false },
+          staffName,
+        );
+        return {
+          runs: [listRun, run],
+          reply: run.ok
+            ? `✅ Hid “${hit.name}” from customers`
+            : `⚠️ ${run.summary}`,
+        };
+      }
+      const { run } = await runSkippeTool(
+        ctx,
+        "delete_menu_item",
+        { item_id: hit.id },
+        staffName,
+      );
+      return {
+        runs: [listRun, run],
+        reply: run.ok ? `✅ ${run.summary}` : `⚠️ ${run.summary}`,
+      };
+    }
+  }
+
+  // "add item lobster stock 20" / "Add Heart Shaped Pizza as a seasonal with a stock of 93"
   const addMenu =
     /\b(add|create|make|new)\b/i.test(msg) &&
-    /\b(item|dish|food|menu)\b/i.test(msg);
+    !/\b(those|them|these|all|back|order|discount|priority)\b/i.test(msg);
   if (addMenu) {
     const nameMatch =
       userText.match(
         /\b(?:item|dish|food|named?|called)\s+[\"']?([a-z0-9][a-z0-9 \-']{0,40})[\"']?/i,
       ) ||
+      userText.match(
+        /\badd\s+[\"']?([a-z0-9][a-z0-9 \-'.]{1,50}?)[\"']?(?:\s+as\b|\s+with\b|\s+stock\b|$)/i,
+      ) ||
       userText.match(/\badd\s+[\"']?([a-z0-9][a-z0-9 \-']{0,40})[\"']?/i);
     let name = nameMatch?.[1]?.trim() ?? "";
-    // strip trailing "stock …"
-    name = name.replace(/\s+stock\b.*$/i, "").trim();
-    const stockMatch = userText.match(/\bstock\s*[:=]?\s*(\d{1,7})\b/i);
+    // strip trailing "as a seasonal…", "with a stock…", "stock …"
+    name = name
+      .replace(/\s+as\s+(a\s+)?(non[_\s-]?seasonal|seasonal).*$/i, "")
+      .replace(/\s+with\s+(a\s+)?stock\b.*$/i, "")
+      .replace(/\s+stock\b.*$/i, "")
+      .trim();
+    const stockMatch =
+      userText.match(/\bstock\s*(?:of\s+)?[:=]?\s*(\d{1,7})\b/i) ||
+      userText.match(/\bwith\s+(?:a\s+)?stock\s+of\s+(\d{1,7})\b/i);
     const stock = stockMatch ? parseInt(stockMatch[1], 10) : 0;
-    const seasonal = /\bseasonal\b/i.test(msg);
+    const seasonal =
+      /\bseasonal\b/i.test(msg) && !/\bnon[_\s-]?seasonal\b/i.test(msg);
     if (name && name.length >= 2) {
       const { run } = await runSkippeTool(
         ctx,
