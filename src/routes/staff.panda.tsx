@@ -95,77 +95,63 @@ function contentWithoutRunLines(content: string, runs?: ToolRun[]): string {
   return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** Playful tool-result chips — bounce in, soft glow, sparkle on success. */
+/** Clean tool-result chips — bounce in, no harsh lighting. */
 function RunChips({ runs, compact = false }: { runs: ToolRun[]; compact?: boolean }) {
   return (
-    <ul className={compact ? "mt-1.5 flex flex-col gap-2" : "mt-4 flex flex-col gap-2.5"}>
+    <ul className={compact ? "mt-1.5 flex flex-col gap-1.5" : "mt-4 flex flex-col gap-2"}>
       {runs.map((r, idx) => (
         <motion.li
           key={`${r.name}-${idx}-${r.summary}`}
-          initial={{ opacity: 0, x: -12, scale: 0.88, rotate: -1.5 }}
-          animate={{ opacity: 1, x: 0, scale: 1, rotate: 0 }}
+          initial={{ opacity: 0, y: 8, scale: 0.94 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{
-            delay: Math.min(idx * 0.07, 0.5),
+            delay: Math.min(idx * 0.06, 0.4),
             type: "spring",
-            stiffness: 420,
-            damping: 22,
-            mass: 0.7,
+            stiffness: 400,
+            damping: 26,
           }}
-          whileHover={{ scale: 1.02, x: 2 }}
           className={
             compact
-              ? `group relative flex items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-2 text-xs shadow-sm ${
+              ? `flex items-center gap-2.5 rounded-2xl border px-3 py-2 text-xs ${
                   r.ok
-                    ? "border-bamboo/30 bg-gradient-to-r from-bamboo/20 via-white/80 to-blossom/50 text-ink"
-                    : "border-destructive/30 bg-gradient-to-r from-destructive/10 to-white/50 text-destructive"
+                    ? "border-bamboo/25 bg-bamboo/10 text-ink"
+                    : "border-destructive/25 bg-destructive/5 text-destructive"
                 }`
-              : `group relative overflow-hidden rounded-2xl border p-3.5 text-sm shadow-sm ${
+              : `flex items-center gap-3 rounded-2xl border p-3 text-sm ${
                   r.ok
-                    ? "border-bamboo/35 bg-gradient-to-br from-bamboo/15 via-blossom/60 to-white"
-                    : "border-destructive/30 bg-gradient-to-br from-destructive/10 to-white"
+                    ? "border-bamboo/25 bg-bamboo/10"
+                    : "border-destructive/25 bg-destructive/5"
                 }`
           }
         >
-          {/* soft shine sweep */}
-          <span
-            className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/50 to-transparent opacity-0 transition duration-700 group-hover:translate-x-full group-hover:opacity-100"
-            aria-hidden
-          />
           <motion.span
-            initial={{ scale: 0, rotate: -20 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ delay: Math.min(idx * 0.07, 0.5) + 0.08, type: "spring", stiffness: 500, damping: 16 }}
-            className={`relative grid shrink-0 place-items-center rounded-xl shadow-inner ${
-              compact ? "h-8 w-8 text-base" : "h-10 w-10 text-lg"
-            } ${r.ok ? "bg-bamboo/25 ring-1 ring-bamboo/20" : "bg-destructive/15 ring-1 ring-destructive/20"}`}
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: Math.min(idx * 0.06, 0.4) + 0.05, type: "spring", stiffness: 480, damping: 20 }}
+            className={`grid shrink-0 place-items-center rounded-xl ${
+              compact ? "h-7 w-7 text-sm" : "h-9 w-9 text-base"
+            } ${r.ok ? "bg-bamboo/20" : "bg-destructive/10"}`}
             aria-hidden
           >
             {runEmoji(r.name, r.ok)}
           </motion.span>
-          <div className="relative min-w-0 flex-1">
-            <p
-              className={`leading-snug ${compact ? "font-semibold" : "font-bold"} ${
-                r.ok ? "text-ink/90" : ""
-              }`}
-            >
+          <div className="min-w-0 flex-1">
+            <p className={`leading-snug ${compact ? "font-medium" : "font-semibold"}`}>
               {r.summary}
             </p>
             {!compact && r.detail && (
               <p className="mt-0.5 text-xs text-ink/55">{r.detail}</p>
             )}
             {!compact && (
-              <p className="mt-1 text-[0.6rem] uppercase tracking-[0.2em] text-ink/40">
+              <p className="mt-1 text-[0.6rem] uppercase tracking-[0.18em] text-ink/40">
                 {r.name.replace(/_/g, " ")}
               </p>
             )}
           </div>
-          <motion.span
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: Math.min(idx * 0.07, 0.5) + 0.15, type: "spring", stiffness: 600 }}
-            className={`relative shrink-0 rounded-full shadow ${
-              compact ? "h-2 w-2" : "h-2.5 w-2.5"
-            } ${r.ok ? "bg-bamboo shadow-bamboo/40" : "bg-destructive"}`}
+          <span
+            className={`shrink-0 rounded-full ${compact ? "h-1.5 w-1.5" : "h-2 w-2"} ${
+              r.ok ? "bg-bamboo" : "bg-destructive"
+            }`}
             title={r.ok ? "ok" : "failed"}
           />
         </motion.li>
