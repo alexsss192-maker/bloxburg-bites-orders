@@ -1,7 +1,7 @@
 /** Google "G" mark in Google's brand colors, used on the Skippe model picker. */
-export function GoogleGlyph({ className = "h-4 w-4" }: { className?: string }) {
+export function GoogleGlyph({ className = "h-4 w-4 shrink-0" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 48 48" className={className} aria-hidden focusable="false">
+    <svg viewBox="0 0 48 48" className={`${className} shrink-0`} aria-hidden focusable="false">
       <path
         fill="#EA4335"
         d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.1.5 24 .5 14.6.5 6.5 5.8 2.6 13.6l7.9 6.1C12.4 13.6 17.7 9.5 24 9.5z"
