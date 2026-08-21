@@ -291,78 +291,92 @@ function MenuEditor() {
 
   return (
     <div className="space-y-6">
-      {/* Compact Skippe — no chat history */}
-      <div className="rounded-2xl border border-cherry/20 bg-gradient-to-r from-blossom/80 to-white px-3 py-2.5 shadow-sm">
-        <div className="mb-1.5 flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5 text-cherry" />
-          <span className="text-[10px] font-black uppercase tracking-[0.22em] text-cherry">
-            Skippe · quick add
-          </span>
-          <span className="text-[10px] text-ink/40">no history · menu only</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select
-            value={skippeMode}
-            onValueChange={(v) => setSkippeMode(v as SkippeMode)}
-          >
-            <SelectTrigger className="h-9 w-[11.5rem] shrink-0 rounded-xl border-ink/10 bg-white text-xs font-semibold">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="rounded-xl">
-              {MENU_SKIPPE_MODES.map((o) => (
-                <SelectItem
-                  key={o.value}
-                  value={o.value}
-                  className="rounded-lg text-xs"
+      {/* Compact Skippe — no chat history · animated placeholder + glow */}
+      <div className="skippe-quick-shell relative overflow-hidden rounded-2xl border border-cherry/25 px-3 py-2.5 shadow-sm">
+        <div className="skippe-quick-glow pointer-events-none absolute inset-0" aria-hidden />
+        <div className="relative z-[1]">
+          <div className="mb-1.5 flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-cherry skippe-sparkle" />
+            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-cherry">
+              Skippe · quick add
+            </span>
+            <span className="text-[10px] text-ink/40">no history · menu only</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={skippeMode}
+              onValueChange={(v) => setSkippeMode(v as SkippeMode)}
+            >
+              <SelectTrigger className="h-9 w-[11.5rem] shrink-0 rounded-xl border-ink/10 bg-white/90 text-xs font-semibold backdrop-blur-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="rounded-xl">
+                {MENU_SKIPPE_MODES.map((o) => (
+                  <SelectItem
+                    key={o.value}
+                    value={o.value}
+                    className="rounded-lg text-xs"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <GoogleGlyph className="h-3 w-3" />
+                      <span>{o.label}</span>
+                      <span className="text-ink/40">{o.cost}</span>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="relative min-w-0 flex-1">
+              {!skippeInput && (
+                <span
+                  key={placeholderIdx}
+                  className="skippe-ph-slide pointer-events-none absolute inset-y-0 left-3 right-10 z-[1] flex items-center truncate text-sm text-ink/40"
+                  aria-hidden
                 >
-                  <span className="flex items-center gap-1.5">
-                    <GoogleGlyph className="h-3 w-3" />
-                    <span>{o.label}</span>
-                    <span className="text-ink/40">{o.cost}</span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input
-            value={skippeInput}
-            onChange={(e) => setSkippeInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
+                  {activePlaceholder}
+                </span>
+              )}
+              <Input
+                value={skippeInput}
+                onChange={(e) => setSkippeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    const t = skippeInput;
+                    setSkippeInput("");
+                    void runSkippeMessage(t);
+                  }
+                }}
+                placeholder=""
+                maxLength={2000}
+                disabled={skippeBusy}
+                className="h-9 w-full rounded-xl border-ink/10 bg-white/90 text-sm backdrop-blur-sm"
+              />
+            </div>
+            <Button
+              type="button"
+              disabled={skippeBusy || !skippeInput.trim()}
+              onClick={() => {
                 const t = skippeInput;
                 setSkippeInput("");
                 void runSkippeMessage(t);
-              }
-            }}
-            placeholder={activePlaceholder}
-            maxLength={2000}
-            disabled={skippeBusy}
-            className="h-9 flex-1 rounded-xl border-ink/10 bg-white text-sm transition-opacity placeholder:text-ink/35"
-          />
-          <Button
-            type="button"
-            disabled={skippeBusy || !skippeInput.trim()}
-            onClick={() => {
-              const t = skippeInput;
-              setSkippeInput("");
-              void runSkippeMessage(t);
-            }}
-            className="h-9 shrink-0 rounded-xl bg-ink px-3 text-cream hover:bg-cherry"
-          >
-            {skippeBusy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Send className="h-3.5 w-3.5" />
-            )}
-          </Button>
+              }}
+              className="h-9 shrink-0 rounded-xl bg-ink px-3 text-cream hover:bg-cherry"
+            >
+              {skippeBusy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
+          {skippeLastReply && (
+            <p className="mt-2 line-clamp-3 rounded-xl bg-white/80 px-2.5 py-1.5 text-xs text-ink/70">
+              <span className="font-semibold text-cherry">{modeLabel}: </span>
+              {skippeLastReply}
+            </p>
+          )}
         </div>
-        {skippeLastReply && (
-          <p className="mt-2 line-clamp-3 rounded-xl bg-white/80 px-2.5 py-1.5 text-xs text-ink/70">
-            <span className="font-semibold text-cherry">{modeLabel}: </span>
-            {skippeLastReply}
-          </p>
-        )}
       </div>
 
       <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
@@ -742,6 +756,56 @@ function MenuEditor() {
         @keyframes skippe-sparkle-spin {
           0%, 100% { transform: rotate(0deg) scale(1); opacity: 1; }
           50% { transform: rotate(15deg) scale(1.15); opacity: 0.85; }
+        }
+        @keyframes skippe-quick-glow {
+          0% {
+            background-position: 0% 50%;
+            opacity: 0.85;
+          }
+          50% {
+            background-position: 100% 50%;
+            opacity: 1;
+          }
+          100% {
+            background-position: 200% 50%;
+            opacity: 0.85;
+          }
+        }
+        @keyframes skippe-ph-in {
+          0% {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .skippe-quick-shell {
+          background: linear-gradient(
+            110deg,
+            rgba(255, 240, 246, 0.95) 0%,
+            rgba(255, 255, 255, 0.92) 40%,
+            rgba(255, 230, 240, 0.9) 70%,
+            rgba(255, 245, 250, 0.95) 100%
+          );
+          background-size: 200% 200%;
+          animation: skippe-quick-glow 6s ease-in-out infinite;
+        }
+        .skippe-quick-glow {
+          background: linear-gradient(
+            120deg,
+            transparent 0%,
+            rgba(196, 30, 90, 0.08) 25%,
+            rgba(232, 93, 138, 0.14) 50%,
+            rgba(196, 30, 90, 0.08) 75%,
+            transparent 100%
+          );
+          background-size: 220% 100%;
+          animation: skippe-quick-glow 4.5s ease-in-out infinite;
+        }
+        .skippe-ph-slide {
+          animation: skippe-ph-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
         .skippe-shimmer-text {
           background: linear-gradient(
