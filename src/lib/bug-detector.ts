@@ -25,6 +25,8 @@ export type BugFamily =
   | "network"
   | "tanstack"
   | "type_null"
+  | "reference"
+  | "syntax"
   | "constraint"
   | "gateway"
   | "stack_overflow"
@@ -60,6 +62,14 @@ export type BugDiagnosis = {
   isSecurityRelated: boolean;
   fingerprint: string;
   sqlHints?: string[];
+  /** Module-eval vs runtime */
+  phase: "module_load" | "runtime" | "async" | "unknown";
+  /** Ordered recovery steps */
+  playbook: string[];
+  /** User-visible impact */
+  impact: string;
+  /** Likely related files/patterns */
+  relatedHints: string[];
 };
 
 export type ErrorFeatures = {
@@ -91,6 +101,8 @@ export type ErrorFeatures = {
   /** e.g. "volume" from "reading 'volume'" */
   nullProp: string | null;
   nullBase: "null" | "undefined" | null;
+  /** e.g. "c" from "c is not defined" */
+  undefinedIdent: string | null;
   tokens: string[];
   tables: string[];
   functions: string[];
@@ -304,6 +316,19 @@ export function extractFeatures(error: unknown): ErrorFeatures {
   const pg = readPostgrest(error);
   const reactMini = message.match(/minified react error #(\d+)/i);
   const nullAccess = parseNullAccess(message);
+  const undefIdent =
+    message.match(
+      /(?:ReferenceError:\s*)?([A-Za-z_$][\w$]*)\s+is not defined/i,
+    )?.[1] ?? null;
+  const isRef =
+    name === "ReferenceError" ||
+    /referenceerror/i.test(name) ||
+    /referenceerror/i.test(message) ||
+    Boolean(undefIdent);
+  const isSyn =
+    name === "SyntaxError" ||
+    /syntaxerror/i.test(name) ||
+    /unexpected token/i.test(message);
 
   return {
     name,
@@ -326,12 +351,13 @@ export function extractFeatures(error: unknown): ErrorFeatures {
     pgHint: pg.hint,
     httpStatus: readHttpStatus(error, fullText),
     isTypeError: name === "TypeError" || /typeerror/i.test(name),
-    isReferenceError: name === "ReferenceError",
-    isSyntaxError: name === "SyntaxError",
+    isReferenceError: isRef,
+    isSyntaxError: isSyn,
     isAggregate: name === "AggregateError",
     reactMinifiedCode: reactMini?.[1] ?? null,
     nullProp: nullAccess.prop,
     nullBase: nullAccess.base,
+    undefinedIdent: undefIdent,
     tokens: fullText
       .toLowerCase()
       .replace(/[^a-z0-9_./@-]+/g, " ")
@@ -599,7 +625,98 @@ const scoreStackOverflow: Scorer = (f) => {
   };
 };
 
+/** ReferenceError: identifier is not defined (incl. stray chars like trailing `c`). */
+const scoreReferenceError: Scorer = (f) => {
+  if (!f.isReferenceError && !f.undefinedIdent) return null;
+  const evidence = ["reference-error"];
+  if (f.undefinedIdent) evidence.push(`ident:${f.undefinedIdent}`);
+  if (f.primaryFile) evidence.push(`file:${f.primaryFile}`);
+  if (f.primaryLine != null) evidence.push(`line:${f.primaryLine}`);
+  // Single-letter / tiny idents at end of a module are almost always typos/stray keystrokes
+  const stray =
+    Boolean(f.undefinedIdent) &&
+    (f.undefinedIdent!.length <= 2 ||
+      (f.primaryLine != null && f.primaryLine <= 3));
+  if (stray) evidence.push("likely-stray-token");
+  return {
+    family: "reference",
+    level: "critical",
+    score: f.undefinedIdent && f.primaryFile ? 98 : f.undefinedIdent ? 90 : 80,
+    evidence,
+    titleHint: f.undefinedIdent
+      ? `Undefined identifier: ${f.undefinedIdent}`
+      : "ReferenceError — identifier not defined",
+  };
+};
+
+/** SyntaxError — broken source before runtime logic runs. */
+const scoreSyntaxError: Scorer = (f) => {
+  if (!f.isSyntaxError) return null;
+  const evidence = ["syntax-error"];
+  if (f.primaryFile) evidence.push(`file:${f.primaryFile}`);
+  if (f.primaryLine != null) evidence.push(`line:${f.primaryLine}`);
+  return {
+    family: "syntax",
+    level: "critical",
+    score: f.primaryFile ? 96 : 85,
+    evidence,
+    titleHint: "SyntaxError — file failed to parse",
+  };
+};
+
+
+/** Bare HTTPError JSON from TanStack server fns */
+const scoreHttpErrorBare: Scorer = (f) => {
+  if (!has(f, "httperror") && !/unhandled["']?\s*:\s*true/i.test(f.fullText)) {
+    return null;
+  }
+  const evidence = ["tanstack-http-error"];
+  if (f.httpStatus) evidence.push(`http:${f.httpStatus}`);
+  return {
+    family: "tanstack",
+    level: f.httpStatus && f.httpStatus >= 500 ? "high" : "medium",
+    score: 88,
+    evidence,
+    titleHint: "TanStack server function HTTPError",
+  };
+};
+
+/** Vite / module runner eval failures */
+const scoreModuleEval: Scorer = (f) => {
+  if (
+    !has(f, "module-runner", "runinlinedmodule", "esmodulesevaluator", "failed to fetch dynamically imported")
+  ) {
+    return null;
+  }
+  const evidence = ["module-eval"];
+  if (f.primaryFile) evidence.push(`file:${f.primaryFile}`);
+  return {
+    family: "react",
+    level: "critical",
+    score: 94,
+    evidence,
+    titleHint: "Module failed while evaluating (Vite runner)",
+  };
+};
+
+/** Zod validation failures bubbling as 500 */
+const scoreZodValidation: Scorer = (f) => {
+  if (!has(f, "zoderror", "invalid_type", "too_big", "unrecognized_keys")) return null;
+  return {
+    family: "tanstack",
+    level: "medium",
+    score: 82,
+    evidence: ["zod-validation"],
+    titleHint: "Schema validation failed (zod)",
+  };
+};
+
 const ALL_SCORERS: Scorer[] = [
+  scoreReferenceError,
+  scoreSyntaxError,
+  scoreHttpErrorBare,
+  scoreModuleEval,
+  scoreZodValidation,
   scoreNullAccess,
   scorePostgrest,
   scoreAuth,
@@ -631,6 +748,41 @@ function synthesizeConfirmed(
       location: loc,
       anchor: security.title,
       confidence: 0.9,
+    };
+  }
+
+  // ReferenceError — e.g. "c is not defined" from a stray character at EOF
+  if (f.isReferenceError || f.undefinedIdent || top?.family === "reference") {
+    const id = f.undefinedIdent ?? "unknown";
+    const short = id.length <= 2;
+    return {
+      statement: short
+        ? `ReferenceError: '${id}' is not defined — almost always a stray character or unfinished edit (not a missing import).`
+        : `ReferenceError: '${id}' was used but never declared or imported in this scope.`,
+      fix: loc
+        ? short
+          ? `Open ${loc}. Delete the lone '${id}' (often the last line of the file after a closing }). Save and hard-refresh.`
+          : `Open ${loc}. Either import/declare '${id}', or remove the reference if it was accidental.`
+        : short
+          ? `Search the broken route file for a lone '${id}' (check the very last lines). Delete it, save, hard-refresh.`
+          : `Find where '${id}' is used without import/const/let/function. Add the missing binding or remove the call.`,
+      location: loc,
+      anchor: id,
+      confidence: short ? 0.97 : 0.93,
+    };
+  }
+
+  // SyntaxError
+  if (f.isSyntaxError || top?.family === "syntax") {
+    return {
+      statement:
+        "SyntaxError: the source file could not be parsed (unclosed bracket, bad token, or broken template).",
+      fix: loc
+        ? `Open ${loc}, fix the syntax around that line, save, and reload.`
+        : "Open the file named in the stack, fix the parse error, save, reload.",
+      location: loc,
+      anchor: "syntax",
+      confidence: 0.94,
     };
   }
 
@@ -734,6 +886,32 @@ function synthesizeConfirmed(
     };
   }
 
+  // TanStack bare HTTPError
+  if (top?.family === "tanstack" || has(f, "httperror")) {
+    return {
+      statement:
+        "A server function threw before returning a structured body (TanStack surfaces this as HTTPError).",
+      fix: "Find the server fn in the Network tab; wrap handler paths so they return data instead of throw; check auth middleware and zod validators.",
+      location: loc,
+      anchor: f.httpStatus ? `http:${f.httpStatus}` : "HTTPError",
+      confidence: 0.9,
+    };
+  }
+
+  // Module evaluation
+  if (top?.evidence.includes("module-eval")) {
+    return {
+      statement:
+        "The route/module crashed while evaluating (before React could render) — often a stray token or bad top-level import.",
+      fix: loc
+        ? `Open ${loc}, fix the top-level syntax/reference, save, hard refresh.`
+        : "Open the file named in the stack (often a routes/*.tsx), fix the top-level error, hard refresh.",
+      location: loc,
+      anchor: "module_load",
+      confidence: 0.94,
+    };
+  }
+
   // Network
   if (top?.family === "network") {
     return {
@@ -827,6 +1005,44 @@ export function diagnoseBug(error: unknown): BugDiagnosis | null {
     score = 80;
   }
 
+  const phase: BugDiagnosis["phase"] = features.fullText.match(
+    /module-runner|runInlinedModule|ESModulesEvaluator/i,
+  )
+    ? "module_load"
+    : features.fullText.match(/unhandledrejection|promise/i)
+      ? "async"
+      : features.stackDepth > 0
+        ? "runtime"
+        : "unknown";
+
+  const playbook = [
+    confirmed.fix,
+    confirmed.location
+      ? `Jump to ${confirmed.location} and inspect ±15 lines.`
+      : "Copy the stack and open the top app frame in the repo.",
+    phase === "module_load"
+      ? "Hard refresh after save — module-load bugs cache aggressively in Vite."
+      : "Reproduce once with Console + Network open.",
+    security && (security.level === "critical" || security.level === "high")
+      ? "Treat as security-relevant until proven otherwise; avoid pasting secrets into tickets."
+      : "If it persists, capture a minimal reproduction message/route.",
+  ];
+
+  const impact =
+    level === "critical"
+      ? "Blank screen or total route failure until fixed."
+      : level === "high"
+        ? "Core staff/customer flow is broken or unsafe."
+        : "Degraded UX; some actions may fail.";
+
+  const relatedHints = [
+    features.primaryFile ? `file:${features.primaryFile}` : "",
+    features.undefinedIdent ? `ident:${features.undefinedIdent}` : "",
+    features.nullProp ? `nullProp:${features.nullProp}` : "",
+    features.tables[0] ? `table:${features.tables[0]}` : "",
+    phase !== "unknown" ? `phase:${phase}` : "",
+  ].filter(Boolean);
+
   const confidence = Math.min(
     0.97,
     Math.max(confirmed.confidence, (top?.score ?? 20) / 120 + 0.35),
@@ -861,6 +1077,10 @@ export function diagnoseBug(error: unknown): BugDiagnosis | null {
           family === "security"),
     ),
     fingerprint: fingerprintError(features),
+    phase,
+    playbook,
+    impact,
+    relatedHints,
     sqlHints:
       top?.evidence.includes("schema-cache") || top?.evidence.includes("rls")
         ? ["NOTIFY pgrst, 'reload schema';"]
@@ -904,6 +1124,14 @@ export function formatBugDiagnosisForCopy(d: BugDiagnosis): string {
   ) {
     lines.push("", "── Security ──", formatSecurityDiagnosisForCopy(d.security));
   }
+  lines.push("", `Phase: ${d.phase}`, `Impact: ${d.impact}`);
+  if (d.relatedHints?.length) {
+    lines.push(`Hints: ${d.relatedHints.join(", ")}`);
+  }
+  if (d.playbook?.length) {
+    lines.push("", "Playbook:");
+    d.playbook.forEach((step, i) => lines.push(`  ${i + 1}. ${step}`));
+  }
   lines.push("", "Raw:", d.message);
   return lines.join("\n");
 }
@@ -925,6 +1153,87 @@ export function bugBannerProps(error: unknown): {
 
 let globalInstalled = false;
 
+/** Visible overlay so blank-screen crashes still show Why / Fix (zero DB). */
+function showBugOverlay(d: BugDiagnosis) {
+  if (typeof document === "undefined") return;
+  const id = "pb-global-bug-overlay";
+  let root = document.getElementById(id);
+  if (!root) {
+    root = document.createElement("div");
+    root.id = id;
+    root.setAttribute("role", "alert");
+    document.body?.appendChild(root);
+  }
+  const isSec = d.isSecurityRelated || d.family === "security";
+  const border = isSec ? "#f59e0b" : d.level === "critical" ? "#ef4444" : "#e11d48";
+  root.innerHTML = "";
+  root.style.cssText = [
+    "position:fixed",
+    "inset:auto 12px 12px 12px",
+    "z-index:2147483646",
+    "max-width:520px",
+    "margin:0 auto",
+    "left:12px",
+    "right:12px",
+    `border:1px solid ${border}`,
+    "border-radius:12px",
+    "background:rgba(15,10,12,0.96)",
+    "color:#faf7f5",
+    "padding:14px 16px",
+    "font:13px/1.45 system-ui,sans-serif",
+    "box-shadow:0 12px 40px rgba(0,0,0,0.45)",
+  ].join(";");
+  const title = document.createElement("div");
+  title.style.cssText =
+    "font-weight:700;font-size:12px;letter-spacing:0.06em;text-transform:uppercase;opacity:0.9;margin-bottom:6px";
+  title.textContent = isSec
+    ? `Security · ${d.level}`
+    : `Bug detector · ${d.level} · ${d.family}`;
+  const why = document.createElement("div");
+  why.style.marginBottom = "6px";
+  why.innerHTML = `<strong>Why:</strong> ${escapeHtml(d.confirmed.statement)}`;
+  const fix = document.createElement("div");
+  fix.style.marginBottom = "6px";
+  fix.innerHTML = `<strong>Fix:</strong> ${escapeHtml(d.confirmed.fix)}`;
+  const where = document.createElement("div");
+  where.style.cssText = "opacity:0.75;font-size:12px;margin-bottom:10px";
+  where.textContent = d.confirmed.location
+    ? `Where: ${d.confirmed.location} · ${d.phase} · impact: ${d.impact}`
+    : `${d.message.slice(0, 160)} · ${d.phase}`;
+  const steps = document.createElement("ol");
+  steps.style.cssText = "margin:0 0 10px 18px;padding:0;opacity:0.9";
+  (d.playbook || []).slice(0, 3).forEach((s) => {
+    const li = document.createElement("li");
+    li.textContent = s;
+    steps.appendChild(li);
+  });
+  const row = document.createElement("div");
+  row.style.cssText = "display:flex;gap:8px;flex-wrap:wrap";
+  const copyBtn = document.createElement("button");
+  copyBtn.textContent = "Copy diagnosis";
+  copyBtn.style.cssText =
+    "border:0;border-radius:8px;padding:6px 10px;background:#fff;color:#111;font-weight:600;cursor:pointer";
+  copyBtn.onclick = () => {
+    void navigator.clipboard?.writeText(formatBugDiagnosisForCopy(d));
+    copyBtn.textContent = "Copied";
+  };
+  const closeBtn = document.createElement("button");
+  closeBtn.textContent = "Dismiss";
+  closeBtn.style.cssText =
+    "border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:6px 10px;background:transparent;color:#fff;cursor:pointer";
+  closeBtn.onclick = () => root?.remove();
+  row.append(copyBtn, closeBtn);
+  root.append(title, why, fix, where, steps, row);
+}
+
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 /** Call once from RootComponent — covers every file without per-page edits. */
 export function installGlobalBugDetector(): () => void {
   if (typeof window === "undefined" || globalInstalled) {
@@ -932,58 +1241,58 @@ export function installGlobalBugDetector(): () => void {
   }
   globalInstalled = true;
 
-  const onError = (event: ErrorEvent) => {
-    const err = event.error ?? event.message;
+  const handle = (err: unknown, source: string) => {
     const d = diagnoseBug(err);
-    if (d) {
-      console.warn(
-        "[GlobalBug]",
-        d.fingerprint,
-        d.confirmed.statement,
-        d.confirmed.fix,
-      );
+    if (!d) return;
+    console.warn(
+      "[GlobalBug]",
+      source,
+      d.fingerprint,
+      d.confirmed.statement,
+      d.confirmed.fix,
+    );
+    // Always show UI for critical/high (blank screens otherwise hide console)
+    if (
+      d.level === "critical" ||
+      d.level === "high" ||
+      d.family === "reference" ||
+      d.family === "syntax" ||
+      d.isSecurityRelated
+    ) {
       try {
-        void import("./lovable-error-reporting").then((m) => {
-          m.reportLovableError?.(err, {
-            source: "window.onerror",
-            bug_family: d.family,
-            bug_score: d.score,
-            bug_fingerprint: d.fingerprint,
-            confirmed_cause: d.confirmed.statement,
-            confirmed_fix: d.confirmed.fix,
-          });
-        });
+        showBugOverlay(d);
       } catch {
         /* ignore */
       }
+    }
+    try {
+      void import("./lovable-error-reporting").then((m) => {
+        m.reportLovableError?.(err, {
+          source,
+          bug_family: d.family,
+          bug_score: d.score,
+          bug_fingerprint: d.fingerprint,
+          confirmed_cause: d.confirmed.statement,
+          confirmed_fix: d.confirmed.fix,
+        });
+      });
+    } catch {
+      /* ignore */
     }
   };
 
+  const onError = (event: ErrorEvent) => {
+    // Prefer Error object; fall back to message string (module-load ReferenceErrors)
+    const err =
+      event.error ??
+      (event.message
+        ? Object.assign(new Error(event.message), { name: "ReferenceError" })
+        : null);
+    handle(err, "window.onerror");
+  };
+
   const onRejection = (event: PromiseRejectionEvent) => {
-    const err = event.reason;
-    const d = diagnoseBug(err);
-    if (d) {
-      console.warn(
-        "[GlobalBug:rejection]",
-        d.fingerprint,
-        d.confirmed.statement,
-        d.confirmed.fix,
-      );
-      try {
-        void import("./lovable-error-reporting").then((m) => {
-          m.reportLovableError?.(err, {
-            source: "unhandledrejection",
-            bug_family: d.family,
-            bug_score: d.score,
-            bug_fingerprint: d.fingerprint,
-            confirmed_cause: d.confirmed.statement,
-            confirmed_fix: d.confirmed.fix,
-          });
-        });
-      } catch {
-        /* ignore */
-      }
-    }
+    handle(event.reason, "unhandledrejection");
   };
 
   window.addEventListener("error", onError);
@@ -993,6 +1302,7 @@ export function installGlobalBugDetector(): () => void {
     window.removeEventListener("error", onError);
     window.removeEventListener("unhandledrejection", onRejection);
     globalInstalled = false;
+    document.getElementById("pb-global-bug-overlay")?.remove();
   };
 }
 
