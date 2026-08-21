@@ -667,16 +667,18 @@ function PandaPage() {
     const h = video.videoHeight;
     if (!w || !h) return null;
     const canvas = document.createElement("canvas");
-    // 1280px longest edge — tiny 640px frames made Skippe misread / invent names
-    const max = 1280;
+    // 1600px + higher JPEG quality — soft 1280/0.82 frames caused invent-not-read
+    const max = 1600;
     const scale = Math.min(1, max / Math.max(w, h));
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     try {
-      return canvas.toDataURL("image/jpeg", 0.82);
+      return canvas.toDataURL("image/jpeg", 0.92);
     } catch {
       return null;
     }
