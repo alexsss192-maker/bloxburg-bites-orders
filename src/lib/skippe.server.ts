@@ -1305,6 +1305,11 @@ export function buildSkippePrompt(args: {
       args.isAdmin ? "admin" : "chef"
     }). Treat them like a busy colleague, not a student.`,
     "",
+    "VISION (CRITICAL):",
+    "- The chef's message includes attached screenshot(s) / fridge frames as image parts.",
+    "- You CAN see those images. Never say you cannot see images, that none were attached, or to re-upload.",
+    "- If a frame is dark/blurry, describe what you can still make out and ask for a clearer share — do not claim zero images.",
+    "",
     "CORE IDENTITY:",
     "- You run the kitchen with them. You execute. You do not teach the API.",
     "- When they ask for something, USE TOOLS and finish the job. Then report results in plain English.",
@@ -1766,22 +1771,23 @@ async function runGoogleTurn(args: {
       ? `Please look at the ${visionImages.length} image(s) I attached and help with the kitchen task.`
       : "(empty)");
 
-  const userContent: Array<Record<string, unknown>> = [
-    {
-      type: "text",
-      text:
-        visionImages.length > 0
-          ? `${userText}\n\n(${visionImages.length} image${visionImages.length === 1 ? "" : "s"} attached below — use them.)`
-          : userText,
-    },
-  ];
+  const userContent: Array<Record<string, unknown>> = [];
 
+  // Images first — some gateways / models attend better this way
   for (const image of visionImages) {
     userContent.push({
       type: "image_url",
       image_url: { url: image.data_url },
     });
   }
+
+  userContent.push({
+    type: "text",
+    text:
+      visionImages.length > 0
+        ? `${userText}\n\n(${visionImages.length} image${visionImages.length === 1 ? "" : "s"} attached above — you can see them. Describe / act on what is in the photos.)`
+        : userText,
+  });
 
   messages.push({
     role: "user",
@@ -1926,6 +1932,19 @@ async function runGoogleTurn(args: {
 
   if (!reply.trim()) {
     reply = synthesizeReplyFromRuns(runs);
+  }
+
+  // Model sometimes hallucinates "no images" even when parts were sent.
+  // If we delivered vision frames, never let that dead-end answer through.
+  const deniedVision =
+    visionImages.length > 0 &&
+    /can'?t see any images?|no images? attached|don'?t see any images?|please upload them/i.test(
+      reply,
+    );
+  if (deniedVision) {
+    reply =
+      `I received ${visionImages.length} frame${visionImages.length === 1 ? "" : "s"} from your fridge share, but the vision pass came back unclear (often the share was paused or the window was dark). ` +
+      `Hit Resume on Live Share, make sure the full Bloxburg fridge is visible, wait for 2–3 fresh frames, then Send again.`;
   }
 
   return {
