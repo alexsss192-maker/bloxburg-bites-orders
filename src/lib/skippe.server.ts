@@ -87,7 +87,7 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   {
     name: "create_menu_item",
     description:
-      "Create a new menu item on your own menu. Price is always set to B$0 (you cannot set prices — the chef sets them in the staff UI). New items can still be made active; customers see them as 'Price coming soon' until a human prices them.",
+      "Create ONE menu item. name MUST be a real food label from the image or an explicit dish the chef typed — NEVER the instruction sentence (never 'these menu items in the picture'). Price always B$0.",
     parameters: obj({
       name: { type: "string" },
       description: { type: "string" },
@@ -135,7 +135,7 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   {
     name: "create_menu_items_batch",
     description:
-      "Create many menu items in one call from a fridge/Content picture or list. Price is always B$0. Pass an array of {name, stock, category, is_active}. Use this after reading items from images instead of many create_menu_item calls.",
+      "PREFERRED when the chef attaches fridge/Content pictures: create many items in one call. Each name must be a food you READ in the image (e.g. 'Pancakes'), never the chat sentence. Price always B$0. Pass items: [{name, stock, category, is_active}, ...].",
     parameters: obj({
       items: {
         type: "array",
@@ -311,6 +311,40 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   },
 ];
 
+/** Reject names that are clearly the chef's instruction, not a food from the image. */
+function isBogusMenuName(name: string): boolean {
+  const n = name.trim().toLowerCase().replace(/\s+/g, " ");
+  if (n.length < 2) return true;
+  if (n.length > 80) return true;
+  const badExact = new Set([
+    "these menu items in the picture",
+    "menu items in the picture",
+    "items in the picture",
+    "these menu items",
+    "the menu items",
+    "add these",
+    "add those",
+    "from the picture",
+    "in the picture",
+    "in the photo",
+    "in the image",
+    "menu item",
+    "menu items",
+    "new item",
+    "test",
+    "untitled",
+  ]);
+  if (badExact.has(n)) return true;
+  if (/\b(these|those|the)\s+menu\s+items?\b/.test(n)) return true;
+  if (/\b(in|from)\s+the\s+(picture|photo|image|screenshot)\b/.test(n)) return true;
+  if (/^(add|create|remove|delete|update|scan|import)\b/.test(n)) return true;
+  if (/\bpicture\b|\bphoto\b|\bimage\b|\bscreenshot\b/.test(n) && /\b(item|menu|these|those|add)\b/.test(n)) {
+    return true;
+  }
+  return false;
+}
+
+
 function clampInt(v: unknown, min: number, max: number, fallback: number) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return fallback;
@@ -476,6 +510,11 @@ export async function runSkippeTool(
       if (!payload.name) {
         return fail("A name is required");
       }
+      if (isBogusMenuName(payload.name)) {
+        return fail(
+          `Refused name "${payload.name}" — that looks like the chef's instruction, not a food from the fridge picture. Read the item names in the image(s) and create those instead.`,
+        );
+      }
 
       const { data, error } = await ctx.supabase.from("menu_items").insert(payload).select("id").single();
 
@@ -621,12 +660,17 @@ export async function runSkippeTool(
       }
 
       const rows = [];
+      const skipped: string[] = [];
       for (const it of rawItems.slice(0, 80)) {
         const rec = (it ?? {}) as Record<string, unknown>;
         const name = String(rec.name ?? "")
           .trim()
           .slice(0, 100);
         if (!name) continue;
+        if (isBogusMenuName(name)) {
+          skipped.push(name);
+          continue;
+        }
         rows.push({
           name,
           description: "",
@@ -639,7 +683,11 @@ export async function runSkippeTool(
       }
 
       if (rows.length === 0) {
-        return fail("No valid item names in the batch");
+        return fail(
+          skipped.length
+            ? `No valid food names — refused instruction-like names (${skipped.slice(0, 3).join(", ")}). Read the actual dish names from the image(s).`
+            : "No valid item names in the batch",
+        );
       }
 
       const { data, error } = await ctx.supabase
@@ -1353,13 +1401,29 @@ export function selectToolsForMessage(
   const want = new Set<string>();
 
   // --- Vision / fridge frames ---
+  // Menu tools only — never discounts/priority unless the chef asks in the same message.
   if (imageCount > 0) {
-    want.add("list_menu_items");
+    want.add("create_menu_items_batch");
     want.add("create_menu_item");
     want.add("update_menu_item");
-    if (/\b(order|orders|reserved|restock|preparing|pending|ready)\b/.test(msg)) {
-      want.add("list_orders");
+    want.add("list_menu_items");
+
+    if (
+      /\b(remove|delete|clear)\s+all\b/.test(msg) ||
+      /\bdelete\s+every\b/.test(msg) ||
+      /\brebuild\b/.test(msg) ||
+      /\breplace\b/.test(msg)
+    ) {
+      want.add("delete_all_my_menu_items");
+      want.add("delete_menu_item");
     }
+
+    if (/\b(order|orders|reserved|preparing|pending|ready|deliver)\b/.test(msg)) {
+      want.add("list_orders");
+      want.add("set_order_status");
+      want.add("get_order_details");
+    }
+
     return SKIPPE_TOOLS.filter((t) => want.has(t.name));
   }
 
@@ -1385,6 +1449,7 @@ export function selectToolsForMessage(
   if (followUpAction && historyAboutMenu) {
     want.add("list_menu_items");
     want.add("create_menu_item");
+    want.add("create_menu_items_batch");
     want.add("update_menu_item");
     return SKIPPE_TOOLS.filter((t) => want.has(t.name));
   }
@@ -1397,10 +1462,13 @@ export function selectToolsForMessage(
     msg === "add those" ||
     msg === "add them" ||
     msg === "update those" ||
-    msg === "restock those"
+    msg === "restock those" ||
+    /\bmenu items in the picture\b/.test(msg) ||
+    /\badd these menu items\b/.test(msg)
   ) {
     want.add("list_menu_items");
     want.add("create_menu_item");
+    want.add("create_menu_items_batch");
     want.add("update_menu_item");
     return SKIPPE_TOOLS.filter((t) => want.has(t.name));
   }
@@ -1463,6 +1531,7 @@ export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolea
     "If the chef says 'add those/them' after a fridge scan, CALL create_menu_items_batch (or create_menu_item) for each food — do not reply without tools.",
     "For 'remove all then add from picture': delete_all_my_menu_items then create_menu_items_batch. Never claim Added without ok:true tool results.",
     "Never invent success. If tools were not called, say what you still need (e.g. re-attach the fridge picture).",
+    "NEVER name a menu item after the chef's instruction text. Only real food names from images or explicit food names the chef typed.",
   ].join("\n");
 }
 
@@ -1523,6 +1592,9 @@ export function buildSkippePrompt(args: {
     "7) If the chef says remove/delete ALL menu items then add from the picture: call delete_all_my_menu_items once, then create_menu_items_batch with every readable row from the image(s).",
     "8) Prefer create_menu_items_batch over many create_menu_item calls when adding more than 2 items from a picture.",
     "9) If this message has images, you MUST read them. If the chef refers to 'the picture' and images are attached, use them — do not say you cannot see prior chat images unless none are attached this turn.",
+    "10) NEVER create a menu item whose name is the chef's sentence (e.g. 'these menu items in the picture', 'add these', 'from the photo'). Names must be the food labels you read in the Bloxburg Content list (e.g. 'Pancakes', 'Taco').",
+    "11) Workflow when images show a menu/fridge list: (a) look at every readable row in the image(s), (b) create_menu_items_batch with those exact food names + stocks if visible, (c) only list_menu_items if you need ids to update. Do not stop after list_menu_items alone.",
+    "12) If text is too small to read, say so — do not invent one fake item named after the request.",
     "",
     "Hard rules: no tools on non-Content screens · no inventing foods · cannot set menu prices · one list_menu_items max.",
   ].join("\n");
