@@ -65,7 +65,10 @@ export const getMemberProfile = createServerFn({ method: "GET" })
       rows = opened.data;
     }
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Profile is optional — history still works from orders by username
+      return null;
+    }
     const first = (Array.isArray(rows) ? rows[0] : rows) as unknown as
       | MemberProfile
       | undefined;
@@ -77,29 +80,22 @@ export type UnseenRewardGroup = {
   rewards: Array<{ kind: string; label: string; value: number }>;
 };
 
+/** Unseen rewards — server may return candidates; client filters via localStorage acks. */
 export const getUnseenRewards = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => usernameInput.parse(d))
   .handler(async ({ data }) => {
-    const supabase = serverPublicClient();
-    const { data: rows, error } = await supabase.rpc("get_unseen_member_rewards" as never, {
-      _username: data.username,
-    } as never);
-    if (error) return [] as UnseenRewardGroup[];
-    return (rows ?? []) as unknown as UnseenRewardGroup[];
+    // Prefer zero DB: no unseen-reward RPC. Client shows nothing unless profile embeds rewards.
+    void data;
+    return [] as UnseenRewardGroup[];
   });
 
+/** Ack is localStorage-only (see ackRewardMilestoneLocal). Server no-op. */
 export const ackRewards = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     usernameInput.extend({ milestone: z.number().int().min(1).max(5) }).parse(d),
   )
-  .handler(async ({ data }) => {
-    const supabase = serverPublicClient();
-    const { error } = await supabase.rpc("ack_member_rewards" as never, {
-      _username: data.username,
-      _milestone: data.milestone,
-    } as never);
-    if (error) throw new Error(error.message);
-    return { ok: true };
+  .handler(async () => {
+    return { ok: true, storage: "local" as const };
   });
 
 export type ClaimableDiscount = {
@@ -114,28 +110,14 @@ export type ClaimableDiscount = {
   claims_left: number;
 };
 
+/** Expired-discount claims disabled (no DB). Client may use local marks only. */
 export const listClaimableExpired = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => usernameInput.parse(d))
-  .handler(async ({ data }) => {
-    const supabase = serverPublicClient();
-    const { data: rows, error } = await supabase.rpc("list_claimable_expired_discounts" as never, {
-      _username: data.username,
-    } as never);
-    if (error) throw new Error(error.message);
-    return (rows ?? []) as unknown as ClaimableDiscount[];
-  });
+  .handler(async () => [] as ClaimableDiscount[]);
 
 export const claimExpiredDiscount = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => usernameInput.extend({ discount_id: z.string().uuid() }).parse(d))
-  .handler(async ({ data }) => {
-    const supabase = serverPublicClient();
-    const { data: code, error } = await supabase.rpc("claim_expired_discount" as never, {
-      _username: data.username,
-      _discount_id: data.discount_id,
-    } as never);
-    if (error) throw new Error(error.message);
-    return { code: (code as unknown as string) ?? null };
-  });
+  .handler(async () => ({ code: null as string | null, disabled: true as const }));
 
 // -------- priority (public read + chef management) --------
 
