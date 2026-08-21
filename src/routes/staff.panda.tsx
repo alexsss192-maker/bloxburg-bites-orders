@@ -21,7 +21,13 @@ import {
   activitiesFromRuns,
   type SkippeActivity,
 } from "@/lib/skippe-activity";
-import { SKIPPE_MODE_OPTIONS, modelShowsThinking, MODEL_BY_MODE, type SkippeMode } from "@/lib/skippe-models";
+import {
+  SKIPPE_MODE_OPTIONS,
+  modelShowsThinking,
+  MODEL_BY_MODE,
+  modeSupportsVisionCapture,
+  type SkippeMode,
+} from "@/lib/skippe-models";
 import { GoogleGlyph } from "@/components/google-glyph";
 import { ChatGptGlyph } from "@/components/chatgpt-glyph";
 import { Button } from "@/components/ui/button";
@@ -171,7 +177,7 @@ type Msg = {
 const GREETING: Msg = {
   role: "assistant",
   content:
-    "Hi chef — I’m Skippe. Ask me to add or edit menu items, run discounts, or move orders pending → preparing → ready → delivered. For fridge restock: hit Fridge share (Gemini 2.5 Flash Lite), scroll your Bloxburg fridge — I auto-capture frames (no extra clicks). I’ll list open orders, subtract reserved stock for pending/preparing/ready unless you correct me, then create items or update stock. You can also upload up to 2 short videos.",
+    "Hi chef — I’m Skippe. Ask me to add or edit menu items, run discounts, or move orders pending → preparing → ready → delivered. For fridge restock: hit Fridge share (Gemini 2.5 or 3.1 Flash Lite), scroll your Bloxburg fridge — I auto-capture frames (no extra clicks). I’ll list open orders, subtract reserved stock for pending/preparing/ready unless you correct me, then create items or update stock. You can also upload up to 2 short videos.",
 };
 
 function ModeGlyph({ vendor }: { vendor: "openai" | "google" }) {
@@ -628,11 +634,14 @@ function PandaPage() {
     } catch {
       /* storage unavailable */
     }
-    // Vision tools only on lite_25 — drop any live share if they leave it
-    if (next !== "lite_25" && (sharing || splitScreen)) {
+    // Fridge share / screenshots work on Auto + Gemini 2.5 + Gemini 3.1.
+    // Drop live share only when switching to a mode without vision (e.g. GPT-5 Nano).
+    if (!modeSupportsVisionCapture(next) && (sharing || splitScreen)) {
       stopShare();
       setSplitScreen(false);
-      toast.message("Fridge share closed — only available on Gemini 2.5 Flash Lite ($)");
+      toast.message(
+        "Fridge share closed — pick Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for vision",
+      );
     }
   }
 
@@ -758,7 +767,7 @@ function PandaPage() {
       if (remaining <= 0) break;
 
       if (file.type.startsWith("video/")) {
-        if (!requireCheapVision()) return;
+        if (!requireVisionCapture()) return;
         toast.message(`Reading video frames from ${file.name}…`);
         try {
           const frames = await framesFromVideoFile(file, remaining);
@@ -911,7 +920,7 @@ function PandaPage() {
    * Prefer a *different* window than Skippe — capturing this tab often goes black.
    */
   async function captureScreenshot() {
-    if (!requireCheapVision()) return;
+    if (!requireVisionCapture()) return;
     if (images.length >= 3) {
       toast.error("Max 3 images — remove one first");
       return;
@@ -983,7 +992,7 @@ function PandaPage() {
    * Snap frames into the image tray — Skippe reads those on Send.
    */
   async function startFridgeShare() {
-    if (!requireCheapVision()) return;
+    if (!requireVisionCapture()) return;
     if (!navigator.mediaDevices?.getDisplayMedia) {
       toast.error("Screen share isn’t supported in this browser");
       return;
@@ -1350,13 +1359,13 @@ function PandaPage() {
 
   const activeModel = mode === "auto" ? "" : MODEL_BY_MODE[mode];
   const thinkingCapable = activeModel ? modelShowsThinking(activeModel) : false;
-  // Vision capture only on the cheapest fixed model (not Auto / 3.1 / GPT).
-  const visionCaptureAllowed = mode === "lite_25";
+  // Vision capture on Auto + Gemini 2.5 + Gemini 3.1 (Google path). GPT-5 Nano is chat/tools only.
+  const visionCaptureAllowed = modeSupportsVisionCapture(mode);
 
-  function requireCheapVision(): boolean {
+  function requireVisionCapture(): boolean {
     if (visionCaptureAllowed) return true;
     toast.message(
-      "Screenshot, fridge share & video frames only work on Gemini 2.5 Flash Lite ($)",
+      "Screenshot, fridge share & video frames need Auto, Gemini 2.5, or Gemini 3.1 Flash Lite",
     );
     return false;
   }
@@ -1454,7 +1463,7 @@ function PandaPage() {
               title={
                 visionCaptureAllowed
                   ? "Split screen — share your Bloxburg fridge (or any window)"
-                  : "Switch model to Gemini 2.5 Flash Lite ($) to use fridge share"
+                  : "Switch model to Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for fridge share"
               }
             >
               {sharing ? (
@@ -1605,7 +1614,7 @@ function PandaPage() {
             <button
               type="button"
               onClick={() => {
-                if (!requireCheapVision()) return;
+                if (!requireVisionCapture()) return;
                 if (fileRef.current) {
                   fileRef.current.accept = "video/*";
                   fileRef.current.click();
@@ -1621,7 +1630,7 @@ function PandaPage() {
               title={
                 visionCaptureAllowed
                   ? "Upload a video — Skippe reads several frames"
-                  : "Switch to Gemini 2.5 Flash Lite ($) for video frames"
+                  : "Switch to Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for video frames"
               }
             >
               <Film className="h-4 w-4" />
@@ -1636,7 +1645,7 @@ function PandaPage() {
               title={
                 visionCaptureAllowed
                   ? "Screenshot a window/screen for Skippe"
-                  : "Switch to Gemini 2.5 Flash Lite ($) for screenshots"
+                  : "Switch to Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for screenshots"
               }
             >
               {snapBusy ? (
@@ -1681,15 +1690,16 @@ function PandaPage() {
           <p className="mt-2 text-[0.7rem] text-ink/45">
             {visionCaptureAllowed ? (
               <>
-                📷 Screenshot / 🖥️ Fridge share / 🎬 Video frames: only on{" "}
-                <b>Gemini 2.5 Flash Lite ($)</b>. Pick the{" "}
+                📷 Screenshot / 🖥️ Fridge share / 🎬 Video frames work on{" "}
+                <b>Auto</b>, <b>Gemini 2.5 Flash Lite ($)</b>, and{" "}
+                <b>Gemini 3.1 Flash Lite ($$)</b>. Pick the{" "}
                 <b>Roblox/game window</b> (not this tab). Max 9 frames.
               </>
             ) : (
               <>
-                Switch the model to <b>Gemini 2.5 Flash Lite ($)</b> to unlock
-                screenshot, fridge share, and video frames (keeps vision on the
-                cheapest path).
+                Switch the model to <b>Auto</b>, <b>Gemini 2.5</b>, or{" "}
+                <b>Gemini 3.1 Flash Lite</b> to unlock screenshot, fridge share,
+                and video frames.
               </>
             )}
           </p>
