@@ -1344,6 +1344,7 @@ export function buildSkippePrompt(args: {
     "- NEVER claim you created, updated, deleted, or set something unless a tool result returned ok:true in THIS turn.",
     "- If no tool ran, say what you need or that you could not act — do not fake success.",
     "- Prefer calling the tool over describing what you would do.",
+    "- Listing ingredients you 'would add' without tools is still a lie — call create_menu_item or stay silent on creates.",
     "- Max 3 images per message — if the chef sends more, work from the first 3 and ask for another batch.",
     "",
     "MENU",
@@ -1352,8 +1353,12 @@ export function buildSkippePrompt(args: {
     "- Active + B$0 still shows as 'Price coming soon' to customers until a human prices it.",
     "",
     "FRIDGE SCAN / RESTOCK (video or screenshots of their Bloxburg fridge):",
+    "- ONLY act when the images clearly show a Bloxburg / Roblox fridge or food shelves with readable item names and counts.",
+    "- If the screen is a website, Lovable dashboard, code editor, browser, Discord, or anything that is NOT the in-game fridge: do NOT invent menu items. Say briefly that you need a live share of the Bloxburg fridge window, then stop.",
+    "- NEVER guess burger buns / lettuce / generic ingredients from unrelated UI. Only name items you can actually read on the fridge.",
     "- Prefer 1–3 clear frames, not 9. Read every visible item and quantity you can actually see.",
-    "- Workflow: (1) list_menu_items for current stock ids, (2) list_orders for pending+preparing+ready (includes line items + reserved_stock_by_item_name), (3) compare fridge counts to menu, (4) create missing items or update_menu_item stock.",
+    "- Workflow when it IS a fridge: (1) list_menu_items for current stock ids, (2) list_orders for pending+preparing+ready (includes line items + reserved_stock_by_item_name), (3) compare fridge counts to menu, (4) create missing items or update_menu_item stock with tools.",
+    "- You MUST call tools to create/update — never write 'Added X' unless create_menu_item / update_menu_item returned ok:true this turn.",
     "- RESTOCK MATH (critical):",
     "  physical_fridge = what you count in the photos/video.",
     "  reserved = quantities on THIS chef's orders still pending, preparing, or ready (from list_orders).",
@@ -1588,8 +1593,8 @@ async function runOpenAiTurn(args: {
     ],
   });
 
-  // 1 round keeps cost low; instant path already handled clear kitchen intents.
-  const maxRounds = 1;
+  // Vision may need list then create; text stays 1 round.
+  const maxRounds = visionImages.length > 0 ? 2 : 1;
   const selected = toolsEnabled
     ? selectToolsForMessage(args.userText, args.images.length)
     : [];
@@ -1809,8 +1814,9 @@ async function runGoogleTurn(args: {
       }))
     : undefined;
 
-  // Single round — cheaper & faster. Instant path + intent fallback cover misses.
-  const maxRounds = 1;
+  // Vision scans often need list_menu_items then create/update — allow 2 rounds.
+  // Text-only stays at 1 (instant path + intent fallback cover misses).
+  const maxRounds = visionImages.length > 0 ? 2 : 1;
 
   for (let round = 0; round < maxRounds; round += 1) {
     const res = await gatewayFetch(
