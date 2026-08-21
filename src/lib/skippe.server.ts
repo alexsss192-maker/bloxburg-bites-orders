@@ -2232,6 +2232,86 @@ async function maybeRunIntentFallback(
 }
 
 
+
+/**
+ * Phase-1 vision gate: NO tools, NO DB.
+ * Forces a FRIDGE / NOT_FRIDGE verdict before any kitchen tools can run.
+ * Stops Lovable/dashboard screens from burning list_menu_items credits.
+ */
+async function classifyBloxburgFridge(args: {
+  model: string;
+  images: Img[];
+  userText: string;
+}): Promise<"fridge" | "not_fridge" | "unclear"> {
+  const visionImages = args.images.filter((img) => {
+    const u = (img?.data_url || "").trim();
+    return (
+      u.startsWith("data:image/") ||
+      u.startsWith("https://") ||
+      u.startsWith("http://")
+    );
+  });
+  if (visionImages.length === 0) return "unclear";
+
+  const key = gatewayKey();
+  const system = [
+    "You classify screenshots for a Bloxburg restaurant tool.",
+    "Reply with EXACTLY one token: FRIDGE or NOT_FRIDGE.",
+    "FRIDGE only if you see the Bloxburg fridge View Content GUI:",
+    "- white panel titled Content",
+    "- rows with food icon + quantity number + name + blue Take button",
+    "NOT_FRIDGE for: Lovable, code editors, dashboards, browsers, Discord, Skippe UI, dark IDE, blank frames, or anything without Content+Take+qty.",
+    "No explanation. One word only.",
+  ].join("\n");
+
+  const content: Array<Record<string, unknown>> = [];
+  for (const image of visionImages.slice(0, 3)) {
+    content.push({
+      type: "image_url",
+      image_url: { url: image.data_url },
+    });
+  }
+  content.push({
+    type: "text",
+    text: "Classify this screen. FRIDGE or NOT_FRIDGE only.",
+  });
+
+  try {
+    const res = await gatewayFetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Lovable-API-Key": key,
+          Authorization: `Bearer ${key}`,
+          "X-Lovable-AIG-SDK": "fetch",
+        },
+        body: JSON.stringify({
+          model: args.model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content },
+          ],
+          max_tokens: 8,
+          temperature: 0,
+        }),
+      },
+      "fridge-classify",
+    );
+    if (!res.ok) return "unclear";
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+    };
+    const raw = (data.choices?.[0]?.message?.content || "").trim().toUpperCase();
+    if (raw.includes("NOT_FRIDGE") || raw.includes("NOT FRIDGE")) return "not_fridge";
+    if (raw.includes("FRIDGE")) return "fridge";
+    return "unclear";
+  } catch {
+    return "unclear";
+  }
+}
+
 export async function runSkippeTurn(args: {
   model: string;
   instructions: string;
@@ -2244,7 +2324,6 @@ export async function runSkippeTurn(args: {
   toolsEnabled?: boolean;
 }): Promise<SkippeTurn> {
   // Instant kitchen path: priority / clear intents before any LLM gateway call.
-  // Huge win for latency and stops "I set it" lies when no tool ran.
   if (
     (args.toolsEnabled !== false) &&
     args.images.length === 0 &&
@@ -2265,12 +2344,41 @@ export async function runSkippeTurn(args: {
     }
   }
 
-  // OpenAI models → /v1/responses
-  // Google (and any other) → /v1/chat/completions
-  // (Lovable rejects non-OpenAI models on /v1/responses)
+  // ── Vision hard gate: classify BEFORE any kitchen tools / DB ──
+  // Stops Lovable dashboard / staff UI shares from calling list_menu_items.
+  if (args.images.length > 0) {
+    const verdict = await classifyBloxburgFridge({
+      model: args.model,
+      images: args.images,
+      userText: args.userText,
+    });
+
+    if (verdict === "not_fridge") {
+      return {
+        reply:
+          "That's not a Bloxburg fridge Content panel. Open the fridge in-game → View Content (white panel, qty numbers, blue Take buttons), Fridge-share the **Roblox** window — not Lovable or this staff tab — then Send.",
+        thinking: "",
+        runs: [],
+        model: args.model,
+      };
+    }
+
+    if (verdict === "unclear") {
+      return {
+        reply:
+          "I can't confirm a Bloxburg Content panel from these frames (too dark, wrong window, or share paused). Resume share on the Roblox window, open View Content, capture clear rows with Take buttons, then Send.",
+        thinking: "",
+        runs: [],
+        model: args.model,
+      };
+    }
+
+    // verdict === "fridge" → continue with tools enabled for restock
+  }
+
   const vendor = MODEL_VENDOR[args.model];
   if (vendor === "openai") {
-    return runOpenAiTurn(args);
+    return runOpenAiTurn({ ...args, toolsEnabled: args.toolsEnabled !== false });
   }
-  return runGoogleTurn(args);
+  return runGoogleTurn({ ...args, toolsEnabled: args.toolsEnabled !== false });
 }
