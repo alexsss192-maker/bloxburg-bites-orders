@@ -126,6 +126,38 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   },
 
   {
+    name: "delete_all_my_menu_items",
+    description:
+      "Delete EVERY menu item you own in one call. Use when the chef says remove/clear/delete all my menu items before rebuilding from a fridge picture. Prefer this over many delete_menu_item calls.",
+    parameters: obj({}),
+  },
+
+  {
+    name: "create_menu_items_batch",
+    description:
+      "Create many menu items in one call from a fridge/Content picture or list. Price is always B$0. Pass an array of {name, stock, category, is_active}. Use this after reading items from images instead of many create_menu_item calls.",
+    parameters: obj({
+      items: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string" },
+            stock: { type: "integer" },
+            category: {
+              type: "string",
+              enum: ["non_seasonal", "seasonal"],
+            },
+            is_active: { type: "boolean" },
+          },
+          required: ["name", "stock", "category", "is_active"],
+          additionalProperties: false,
+        },
+      },
+    }),
+  },
+
+  {
     name: "get_bulk_service_fee",
     description:
       "Get your current Bulk / Fast Service fee. Only Bulk / Fast Service chefs and the house/admin kitchen can use this tool.",
@@ -548,6 +580,93 @@ export async function runSkippeTool(
       return done(`Deleted ${item.name}`, {
         ok: true,
       });
+    }
+
+    case "delete_all_my_menu_items": {
+      const { data: mine, error: listErr } = await ctx.supabase
+        .from("menu_items")
+        .select("id,name")
+        .eq("owner_id", ctx.userId);
+
+      if (listErr) return fail(listErr.message);
+
+      const rows = (mine ?? []) as Array<{ id: string; name: string }>;
+      if (rows.length === 0) {
+        ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
+        return done("No menu items to delete (your menu was already empty)", {
+          ok: true,
+          deleted: 0,
+        });
+      }
+
+      const ids = rows.map((r) => r.id);
+      const { error } = await ctx.supabase.from("menu_items").delete().in("id", ids);
+      if (error) return fail(error.message);
+
+      await log("skippe_delete_all_my_menu_items", "menu_item", ctx.userId, {
+        count: ids.length,
+      });
+      ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
+
+      return done(`Deleted all ${ids.length} of your menu items`, {
+        ok: true,
+        deleted: ids.length,
+      });
+    }
+
+    case "create_menu_items_batch": {
+      const rawItems = Array.isArray(rawArgs.items) ? rawArgs.items : [];
+      if (rawItems.length === 0) {
+        return fail("Pass items: [{ name, stock, category, is_active }, ...]");
+      }
+
+      const rows = [];
+      for (const it of rawItems.slice(0, 80)) {
+        const rec = (it ?? {}) as Record<string, unknown>;
+        const name = String(rec.name ?? "")
+          .trim()
+          .slice(0, 100);
+        if (!name) continue;
+        rows.push({
+          name,
+          description: "",
+          price_bs: 0,
+          stock: clampInt(rec.stock, 0, 1_000_000, 0),
+          category: rec.category === "seasonal" ? "seasonal" : "non_seasonal",
+          is_active: rec.is_active !== false,
+          owner_id: ctx.userId,
+        });
+      }
+
+      if (rows.length === 0) {
+        return fail("No valid item names in the batch");
+      }
+
+      const { data, error } = await ctx.supabase
+        .from("menu_items")
+        .insert(rows)
+        .select("id,name");
+
+      if (error) return fail(error.message);
+
+      const created = (data ?? []) as Array<{ id: string; name: string }>;
+      await log("skippe_create_menu_items_batch", "menu_item", ctx.userId, {
+        count: created.length,
+        names: created.map((c) => c.name).slice(0, 40),
+      });
+      ctx._cache?.delete(`list_menu_items:${ctx.userId}`);
+
+      const preview = created
+        .slice(0, 12)
+        .map((c) => c.name)
+        .join(", ");
+      const more = created.length > 12 ? ` (+${created.length - 12} more)` : "";
+
+      return done(`Added ${created.length} items: ${preview}${more}`, {
+        ok: true,
+        count: created.length,
+        item_ids: created.map((c) => c.id),
+      }, "All at B$0 — set prices in staff menu");
     }
 
     case "get_bulk_service_fee": {
@@ -1298,11 +1417,20 @@ export function selectToolsForMessage(
     want.add("update_discount");
     want.add("end_discount");
   }
-  if (/\b(menu|item|dish|stock|restock|fridge|add)\b/.test(msg)) {
+  if (/\b(menu|item|dish|stock|restock|fridge|add|picture|photo|image|these|those)\b/.test(msg)) {
     want.add("list_menu_items");
     want.add("create_menu_item");
+    want.add("create_menu_items_batch");
     want.add("update_menu_item");
     want.add("delete_menu_item");
+    want.add("delete_all_my_menu_items");
+  }
+  if (/\b(remove|delete|clear)\s+all\b/.test(msg) || /\bdelete\s+every\b/.test(msg)) {
+    want.add("list_menu_items");
+    want.add("delete_all_my_menu_items");
+    want.add("delete_menu_item");
+    want.add("create_menu_item");
+    want.add("create_menu_items_batch");
   }
   if (/\border\b|\bclaim\b|\bpreparing\b|\bdeliver/.test(msg)) {
     want.add("list_orders");
@@ -1332,7 +1460,9 @@ export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolea
     "You CANNOT set menu item prices (creates always B$0 — chef prices in staff UI).",
     "You CAN: menu (list/create/update stock/delete), orders (list/claim/status), discounts, priority tiers, bulk fee.",
     "Only call tools you need. Do not list data 'just in case'.",
-    "If the chef says 'add those/them' after a fridge scan, CALL create_menu_item for each food named in recent chat — do not reply without tools.",
+    "If the chef says 'add those/them' after a fridge scan, CALL create_menu_items_batch (or create_menu_item) for each food — do not reply without tools.",
+    "For 'remove all then add from picture': delete_all_my_menu_items then create_menu_items_batch. Never claim Added without ok:true tool results.",
+    "Never invent success. If tools were not called, say what you still need (e.g. re-attach the fridge picture).",
   ].join("\n");
 }
 
@@ -1390,6 +1520,9 @@ export function buildSkippePrompt(args: {
     "4) Do NOT list_orders unless chef asked about open/reserved orders.",
     "5) Never claim Added/Updated without ok:true tool results this turn.",
     "6) Short summary after tools: names + stocks only.",
+    "7) If the chef says remove/delete ALL menu items then add from the picture: call delete_all_my_menu_items once, then create_menu_items_batch with every readable row from the image(s).",
+    "8) Prefer create_menu_items_batch over many create_menu_item calls when adding more than 2 items from a picture.",
+    "9) If this message has images, you MUST read them. If the chef refers to 'the picture' and images are attached, use them — do not say you cannot see prior chat images unless none are attached this turn.",
     "",
     "Hard rules: no tools on non-Content screens · no inventing foods · cannot set menu prices · one list_menu_items max.",
   ].join("\n");
@@ -1538,7 +1671,7 @@ async function runOpenAiTurn(args: {
   const toolsEnabled = args.toolsEnabled !== false;
 
   // Keep context tight — less tokens = less latency.
-  const recent = args.history.slice(-3);
+  const recent = args.history.slice(-10);
 
   const input: Array<Record<string, unknown>> = recent.map((h) => ({
     role: h.role,
@@ -1583,7 +1716,7 @@ async function runOpenAiTurn(args: {
   });
 
   // Vision may need list then create; text stays 1 round.
-  const maxRounds = visionImages.length > 0 ? 2 : 1;
+  const maxRounds = visionImages.length > 0 ? 3 : toolsEnabled ? 2 : 1;
   const selected = toolsEnabled
     ? selectToolsForMessage(args.userText, args.images.length, args.history)
     : [];
@@ -1743,9 +1876,9 @@ async function runGoogleTurn(args: {
       role: "system",
       content: args.instructions,
     },
-    ...args.history.slice(-3).map((h) => ({
+    ...args.history.slice(-10).map((h) => ({
       role: h.role,
-      content: h.content.slice(0, 600),
+      content: h.content.slice(0, 2000),
     })),
   ];
 
@@ -1808,12 +1941,25 @@ async function runGoogleTurn(args: {
   let maxRounds =
     toolsEnabled &&
     selected.some((t) =>
-      ["create_menu_item", "update_menu_item", "create_discount", "upsert_priority_level", "set_order_status"].includes(
-        t.name,
-      ),
+      [
+        "create_menu_item",
+        "create_menu_items_batch",
+        "delete_all_my_menu_items",
+        "update_menu_item",
+        "create_discount",
+        "upsert_priority_level",
+        "set_order_status",
+      ].includes(t.name),
     )
-      ? 2
+      ? 3
       : 1;
+  // Rebuild from pictures needs list/delete + batch create
+  if (
+    toolsEnabled &&
+    selected.some((t) => t.name === "create_menu_items_batch" || t.name === "delete_all_my_menu_items")
+  ) {
+    maxRounds = Math.max(maxRounds, 3);
+  }
 
   for (let round = 0; round < maxRounds; round += 1) {
     const res = await gatewayFetch(
