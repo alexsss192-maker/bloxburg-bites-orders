@@ -41,7 +41,7 @@ export const SKIPPE_MODE_OPTIONS: Array<{
     label: "Auto",
     cost: "$-$$",
     vendor: "google",
-    note: "Gemini 2.5 Flash Lite (escalates on big scans)",
+    note: "2.5 or 3.1 — full vision (share / screenshots / frames)",
     recommended: true,
   },
   {
@@ -49,7 +49,7 @@ export const SKIPPE_MODE_OPTIONS: Array<{
     label: "Gemini 2.5 Flash Lite",
     cost: "$",
     vendor: "google",
-    note: "Default — fast, cheap, kitchen-ready",
+    note: "Default — fast, cheap, full vision (share / screenshots)",
     recommended: true,
   },
   {
@@ -57,13 +57,18 @@ export const SKIPPE_MODE_OPTIONS: Array<{
     label: "Gemini 3.1 Flash Lite",
     cost: "$$",
     vendor: "google",
-    note: "Bigger photo / bulk batches",
+    note: "Stronger OCR — full vision (share / screenshots / frames)",
   },
   {
     value: "gpt5_nano",
     label: "GPT-5 Nano",
     cost: "$$$",
     vendor: "openai",
-    note: "Optional — stronger tool following",
+    note: "Optional — stronger tool following (no live fridge share)",
   },
 ];
+
+/** Google vision modes: fridge share, screenshot, video frames. GPT-5 Nano is chat/tools only. */
+export function modeSupportsVisionCapture(mode: SkippeMode): boolean {
+  return mode === "auto" || mode === "lite_25" || mode === "lite_31";
+}
