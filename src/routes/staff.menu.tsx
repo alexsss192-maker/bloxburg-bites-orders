@@ -95,11 +95,11 @@ const MENU_SKIPPE_MODES = SKIPPE_MODE_OPTIONS.filter(
 );
 
 const SKIPPE_PLACEHOLDERS = [
-  "Add New Year's Cake as a seasonal with a stock of 12",
-  "Add Donuts as a non-seasonal with a stock of 64",
-  "Add Heart Cake as a seasonal with a stock of 99",
   "Add Heart Shaped Pizza as a seasonal with a stock of 93",
-  "Add P.N.D.A Bundle which is a bundle of P.N.D.A Soda & P.N.D.A Popcorn for 10 of each with a stock of 5",
+  "Remove spooky cake pops",
+  "Add Donuts as a non-seasonal with a stock of 64",
+  "Set stock of Heart Cake to 24",
+  "Hide New Year's Cake from the menu",
 ];
 
 type SkippePromptKind =
@@ -292,15 +292,15 @@ function MenuEditor() {
 
   return (
     <div className="space-y-6">
-      {/* Compact Skippe — animated placeholder + lively background */}
-      <div className="skippe-quick-shell relative overflow-hidden rounded-full border border-cherry/30 px-2 py-1.5 shadow-[0_0_24px_rgba(196,30,90,0.15)]">
+      {/* Compact Skippe — animated placeholder + readable shell */}
+      <div className="skippe-quick-shell relative overflow-hidden rounded-full border border-cherry/40 px-2 py-1.5 shadow-[0_0_20px_rgba(196,30,90,0.18)]">
         <div className="skippe-quick-glow pointer-events-none absolute inset-0" aria-hidden />
         <div className="skippe-quick-shine pointer-events-none absolute inset-0" aria-hidden />
         <div className="relative z-[1] flex items-center gap-2">
           <span className="hidden shrink-0 items-center gap-1 pl-2 sm:inline-flex">
             <Sparkles className="h-3.5 w-3.5 text-cherry skippe-sparkle" />
-            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-cherry">
-              Skippe · quick add
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#8b1038]">
+              Skippe · quick
             </span>
           </span>
           <Select
@@ -780,38 +780,38 @@ function MenuEditor() {
         .skippe-quick-shell {
           background: linear-gradient(
             120deg,
-            #ffe4ef 0%,
-            #ffd0e0 25%,
-            #fff0f6 50%,
-            #ffc4d8 75%,
-            #ffe8f0 100%
+            #ffd6e6 0%,
+            #ffc2d8 25%,
+            #ffe8f0 50%,
+            #ffb8d0 75%,
+            #ffdceb 100%
           );
           background-size: 300% 300%;
-          animation: skippe-shell-flow 5s ease-in-out infinite, skippe-pulse-ring 3.2s ease-in-out infinite;
+          animation: skippe-shell-flow 6s ease-in-out infinite, skippe-pulse-ring 3.2s ease-in-out infinite;
         }
         .skippe-quick-glow {
           background: radial-gradient(
             ellipse 80% 120% at 20% 50%,
-            rgba(255, 255, 255, 0.55) 0%,
+            rgba(255, 255, 255, 0.28) 0%,
             transparent 55%
           ),
           radial-gradient(
             ellipse 70% 100% at 85% 50%,
-            rgba(196, 30, 90, 0.22) 0%,
+            rgba(196, 30, 90, 0.12) 0%,
             transparent 50%
           );
-          animation: skippe-shell-flow 7s ease-in-out infinite reverse;
+          animation: skippe-shell-flow 8s ease-in-out infinite reverse;
         }
         .skippe-quick-shine {
-          width: 45%;
+          width: 40%;
           height: 100%;
           background: linear-gradient(
             90deg,
             transparent,
-            rgba(255, 255, 255, 0.55),
+            rgba(255, 255, 255, 0.28),
             transparent
           );
-          animation: skippe-shine-sweep 3.8s ease-in-out infinite;
+          animation: skippe-shine-sweep 4.2s ease-in-out infinite;
         }
         .skippe-shimmer-text {
           background: linear-gradient(
