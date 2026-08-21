@@ -7,8 +7,6 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import {
   getMemberProfile,
-  listClaimableExpired,
-  claimExpiredDiscount,
   type MemberProfile,
 } from "@/lib/members.functions";
 import { listOrdersForUsername } from "@/lib/orders.functions";
@@ -896,42 +894,17 @@ function BsCard({ profile }: { profile: MemberProfile }) {
 ========================================================= */
 
 function ExpiredClaims({ username }: { username: string }) {
-  const listFn = useServerFn(listClaimableExpired);
-  const claimFn = useServerFn(claimExpiredDiscount);
-  const qc = useQueryClient();
-
-  const { data } = useQuery({
-    queryKey: ["claimable-expired", username],
-    queryFn: () => listFn({ data: { username } }),
-    enabled: username.trim().length >= 2,
-  });
-
-  const mut = useMutation({
-    mutationFn: (discount_id: string) =>
-      claimFn({ data: { username, discount_id } }),
-    onSuccess: (res) => {
-      toast.success(
-        res.code
-          ? `Claimed! Use code ${res.code} at checkout.`
-          : "Claimed!",
-      );
-
-      qc.invalidateQueries({
-        queryKey: ["claimable-expired", username],
-      });
-
-      qc.invalidateQueries({
-        queryKey: ["member-profile", username],
-      });
-    },
-    onError: (e) =>
-      toast.error(
-        e instanceof Error ? e.message : "Could not claim",
-      ),
-  });
-
-  const list = data ?? [];
-  const claimsLeft = list[0]?.claims_left ?? 0;
+  // Feature disabled — no list_claimable_expired_discounts RPC / no DB.
+  void username;
+  const list: Array<{
+    id: string;
+    name: string;
+    discount_type: "percentage" | "fixed";
+    value: number;
+    claimed: boolean;
+    claims_left: number;
+  }> = [];
+  const claimsLeft = 0;
 
   return (
     <Card>
@@ -945,7 +918,7 @@ function ExpiredClaims({ username }: { username: string }) {
           </div>
 
           <p className="mt-1 text-xs text-muted-foreground">
-            Your special ability to claim eligible expired discounts.
+            Expired-discount claims are turned off (no database).
           </p>
         </div>
 
@@ -961,56 +934,7 @@ function ExpiredClaims({ username }: { username: string }) {
             No expired discounts around right now.
           </p>
         </div>
-      ) : (
-        <ul className="mt-5 space-y-2">
-          {list.map((d) => (
-            <li
-              key={d.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-background px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="font-semibold">
-                  🕰️ {d.name} ·{" "}
-                  {d.discount_type === "percentage"
-                    ? `${d.value}% off`
-                    : `B$${d.value.toLocaleString()} off`}
-                </p>
-
-                <p className="text-xs text-muted-foreground">
-                  by @{d.chef_username}
-                  {d.code ? ` · code ${d.code}` : ""}
-                </p>
-              </div>
-
-              {d.claimed ? (
-                <button
-                  onClick={() => {
-                    if (d.code) {
-                      navigator.clipboard
-                        .writeText(d.code)
-                        .catch(() => undefined);
-
-                      toast.success("Code copied");
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-bamboo/15 px-3 py-1.5 text-xs font-bold text-bamboo"
-                >
-                  <Copy className="h-3.5 w-3.5" />
-                  Claimed
-                </button>
-              ) : (
-                <Button
-                  disabled={claimsLeft <= 0 || mut.isPending}
-                  onClick={() => mut.mutate(d.id)}
-                  className="rounded-full bg-ink px-4 py-1.5 text-xs font-bold text-cream hover:bg-cherry disabled:opacity-40"
-                >
-                  Claim
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      ) : null}
     </Card>
   );
 }
