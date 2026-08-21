@@ -207,7 +207,7 @@ export const pandaChat = createServerFn({
     const userText =
       (data.message || "").trim() ||
       (images.length > 0
-        ? "Scan these fridge / menu images and add or update items as needed."
+        ? "Look at these images. If they are a Bloxburg fridge, add or update menu stock from what you can read. If they are NOT a fridge (dashboard, website, editor), say so in one line and do nothing."
         : "");
 
     // Tools OFF only for pure look-at-this chats with no kitchen intent.
