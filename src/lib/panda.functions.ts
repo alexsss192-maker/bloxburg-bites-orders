@@ -207,7 +207,7 @@ export const pandaChat = createServerFn({
     const userText =
       (data.message || "").trim() ||
       (images.length > 0
-        ? "Look at these images. If they are a Bloxburg fridge, add or update menu stock from what you can read. If they are NOT a fridge (dashboard, website, editor), say so in one line and do nothing."
+        ? "Look at these images. Restock ONLY if this is the Bloxburg fridge View Content panel (title Content, qty numbers, blue Take buttons). Read each row name+qty and create/update menu stock. If Lovable/dashboard/anything else: one-line refuse, no tools."
         : "");
 
     // Tools OFF only for pure look-at-this chats with no kitchen intent.
