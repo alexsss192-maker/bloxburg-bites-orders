@@ -362,6 +362,10 @@ function saveRuns(list: ToolRun[]) {
  */
 let persistentShareStream: MediaStream | null = null;
 let persistentSplitOpen = false;
+/** Fridge-share scroll video (MediaRecorder). Must be module-scoped — used across effects/send. */
+let persistentRecorder: MediaRecorder | null = null;
+let persistentRecordChunks: Blob[] = [];
+let persistentRecordMime = "video/webm";
 
 function isShareStreamLive(stream: MediaStream | null | undefined): boolean {
   if (!stream) return false;
