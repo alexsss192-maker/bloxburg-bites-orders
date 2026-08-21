@@ -1972,15 +1972,27 @@ function synthesizeReplyFromRuns(runs: SkippeToolRun[]): string {
 }
 
 function askedToAddFromPicture(userText: string, imageCount: number): boolean {
-  const msg = (userText || "").toLowerCase();
-  if (imageCount > 0) {
+  const msg = (userText || "").toLowerCase().trim();
+  if (imageCount <= 0) {
     return (
-      /\b(add|create|import|rebuild|replace)\b/.test(msg) ||
-      /\bmenu items?\b/.test(msg) ||
-      msg.length < 120
+      /\b(add|create|import)\b/.test(msg) &&
+      /\b(picture|photo|image|these|those)\b/.test(msg)
     );
   }
-  return /\b(add|create|import)\b/.test(msg) && /\b(picture|photo|image|these|those)\b/.test(msg);
+  // Do NOT treat every short complaint / "remove …" as an add — that re-fired
+  // hallucinated batches when leftover frames were still attached.
+  if (
+    /\b(remove|delete|clear|undo|cancel|never\s*mind|stop|wrong|dumb|fix)\b/.test(msg) &&
+    !/\b(add|create|import|scan|restock)\b/.test(msg)
+  ) {
+    return false;
+  }
+  return (
+    /\b(add|create|import|rebuild|replace|scan|restock)\b/.test(msg) ||
+    /\b(fridge|content)\b/.test(msg) ||
+    /scan this bloxburg fridge/i.test(msg) ||
+    msg.length === 0
+  );
 }
 
 function successfulCreates(runs: SkippeToolRun[]): SkippeToolRun[] {
@@ -2948,6 +2960,94 @@ function parseTranscribedItems(raw: string): Array<{ name: string; stock: number
 }
 
 /**
+ * Second-pass gate: given candidate names from OCR, ask the model which ones
+ * are LITERALLY visible on the frames. Drops memory-invented Bloxburg defaults.
+ */
+async function verifyItemsVisible(args: {
+  model: string;
+  images: Img[];
+  candidates: Array<{ name: string; stock: number }>;
+}): Promise<Array<{ name: string; stock: number }>> {
+  if (args.candidates.length === 0) return [];
+  const visionImages = args.images.filter((img) => {
+    const u = (img?.data_url || "").trim();
+    return (
+      u.startsWith("data:image/") ||
+      u.startsWith("https://") ||
+      u.startsWith("http://")
+    );
+  });
+  if (visionImages.length === 0) return [];
+
+  const list = args.candidates
+    .slice(0, 40)
+    .map((c, i) => `${i + 1}. ${c.name}`)
+    .join("\n");
+
+  const system = [
+    "You verify OCR candidates against Bloxburg screenshots.",
+    'Return ONLY JSON: {"visible":["Pancakes","Taco"]}',
+    "Include a name ONLY if you can see those exact letters on a Content row in the image(s).",
+    "If the frame is blank, wrong window, or you are guessing — return {\"visible\":[]}.",
+    "Never add new names. Never keep names you only remember from Bloxburg in general.",
+  ].join("\n");
+
+  const content: Array<Record<string, unknown>> = [];
+  for (const image of visionImages.slice(0, 6)) {
+    content.push({
+      type: "image_url",
+      image_url: { url: image.data_url, detail: "high" },
+    });
+  }
+  content.push({
+    type: "text",
+    text: `Which of these names are visibly written on the screen?\n${list}\n\nJSON only.`,
+  });
+
+  try {
+    const key = gatewayKey();
+    const res = await gatewayFetch(
+      "https://ai.gateway.lovable.dev/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Lovable-API-Key": key,
+          Authorization: `Bearer ${key}`,
+          "X-Lovable-AIG-SDK": "fetch",
+        },
+        body: JSON.stringify({
+          model: args.model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content },
+          ],
+          temperature: 0,
+          max_tokens: 800,
+        }),
+      },
+      "menu-verify",
+    );
+    if (!res.ok) return [];
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string | null } }>;
+    };
+    const raw = (data.choices?.[0]?.message?.content || "").trim();
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return [];
+    const parsed = JSON.parse(jsonMatch[0]) as { visible?: unknown };
+    const visible = Array.isArray(parsed.visible)
+      ? parsed.visible.map((v) => String(v).trim().toLowerCase()).filter(Boolean)
+      : [];
+    if (visible.length === 0) return [];
+    const allow = new Set(visible);
+    return args.candidates.filter((c) => allow.has(c.name.trim().toLowerCase()));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Models love to invent the same "default Bloxburg menu" when frames are
  * blank/wrong-window. If a transcription is mostly one of these packs, treat
  * it as hallucination — never write it to the chef's menu.
@@ -3107,11 +3207,20 @@ async function addMenuFromPictures(args: {
     items = filterEchoes(retry.items);
   }
 
+  // Verify every candidate is actually visible — kills memory-invented menus.
+  if (items.length > 0) {
+    items = await verifyItemsVisible({
+      model: usedModel,
+      images: args.images,
+      candidates: items,
+    });
+  }
+
   // Block the classic "I made up a Bloxburg menu" packs (your exact bug).
   if (looksLikeHallucinatedMenu(items)) {
     return {
       reply:
-        "I almost added a **generic made-up menu** (burgers / milkshakes / flour-eggs-sugar style) that is **not** what I can verify on your Content panel. Nothing was written. Scroll the fridge slowly with **Fridge share** on the Roblox window so each row is sharp, or type names like: `add Pancakes stock 12, Taco stock 5`.",
+        "Those frames didn't show readable Content rows — I refused to invent a fake menu. **Fridge share the Roblox game window** (not this tab), open **View Content**, scroll slowly so each food name is sharp, then Send. Or type: `add Pancakes stock 12, Taco stock 5`.",
       thinking: "",
       runs: [],
       model: usedModel,
@@ -3126,7 +3235,7 @@ async function addMenuFromPictures(args: {
   if (items.length === 0) {
     return {
       reply:
-        "I confirmed a Content-style panel but could not read any food names. Send a closer shot (big text, one panel), or type: `add Pancakes stock 12, Taco stock 5`.",
+        "I couldn't verify any food names on those frames (blurry, wrong window, or share not on Roblox). Nothing was added. Open fridge → **View Content**, share the **game** window, scroll so names are sharp, then Send — or type: `add Pancakes stock 12, Taco stock 5`.",
       thinking: "",
       runs,
       model: usedModel,
