@@ -432,12 +432,6 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
       throw new Error("You can only delete your own menu items");
     }
 
-    // Clear related stock alerts so they don't linger
-    await context.supabase
-      .from("stock_alerts" as any)
-      .delete()
-      .eq("menu_item_id", data.id);
-
     // Soft-delete: hide from public menu. Order history stays valid.
     const { error } = await context.supabase
       .from("menu_items" as any)
@@ -779,7 +773,7 @@ export const resetStaffPassword = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-// -------- low stock alerts --------
+// -------- low stock alerts (DB table removed — empty client API) --------
 
 export type StockAlert = {
   id: string;
@@ -791,39 +785,23 @@ export type StockAlert = {
   created_at: string;
 };
 
-/** Open low-stock alerts: chefs see their own, admins see every kitchen's. */
+/** No stock_alerts table — derive low stock in UI from menu_items.stock if needed. */
 export const listStockAlerts = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { isAdmin } = await assertStaff(context);
-    const { data, error } = await context.supabase
-      .from("stock_alerts" as any)
-      .select("id,menu_item_id,owner_id,item_name,stock,threshold,created_at")
-      .is("resolved_at", null)
-      .order("stock", { ascending: true });
-    if (error) throw new Error(error.message);
-    const names = isAdmin ? await usernameMap(context) : {};
     return {
       is_admin: isAdmin,
       my_user_id: context.userId,
-      owner_names: names,
-      alerts: (data ?? []) as unknown as StockAlert[],
+      owner_names: {} as Record<string, string>,
+      alerts: [] as StockAlert[],
     };
   });
 
 export const dismissStockAlert = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
-  .handler(async ({ context, data }) => {
-    await assertStaff(context);
-    const { error } = await context.supabase
-      .from("stock_alerts" as any)
-      .update({ resolved_at: new Date().toISOString() })
-      .eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
+  .handler(async () => ({ ok: true }));
 /** Cancel one chef's portion of an order: rolls stock back and records the reason (server-side). */
 export const cancelFulfillment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
