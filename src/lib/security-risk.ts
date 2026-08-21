@@ -60,6 +60,12 @@ export type SecurityDiagnosis = {
   priorityAction: string;
   /** Optional safe, idempotent SQL hints (never auto-run) */
   sqlHints?: string[];
+  /** Ordered operator steps (client-only guidance) */
+  playbook?: string[];
+  /** What an attacker could gain if this class is real */
+  blastRadius?: string;
+  /** Defense-in-depth checks beyond the primary fix */
+  hardening?: string[];
 };
 
 export type ExtractedEntities = {
@@ -722,7 +728,172 @@ const RULES: Rule[] = [
   },
 
   {
+    id: "jwt_alg_none_or_weak",
+    category: "auth_session",
+    level: "critical",
+    weight: 92,
+    test: ({ text, lower }) => {
+      if (
+        /\balg\b.*\bnone\b/i.test(text) ||
+        /jwt.*(weak|insecure|invalid signature)/i.test(lower)
+      ) {
+        return ["jwt-integrity"];
+      }
+      return null;
+    },
+    title: "JWT integrity / algorithm risk",
+    risk: "Token validation may accept weak or none algorithms, allowing identity spoofing.",
+    why: "Error text references JWT algorithm or signature failures that often indicate misconfigured verification.",
+    where: "Auth middleware / Supabase JWT verification path.",
+    fix: "Verify tokens only via supabase.auth.getUser/getClaims; never authorize from client-side JWT decode alone.",
+    priorityAction: "Force re-login after confirming server-side JWT verification.",
+  },
+  {
+    id: "privilege_escalation_role",
+    category: "authorization",
+    level: "critical",
+    weight: 90,
+    test: ({ text, lower }) => {
+      if (
+        /\b(admin|service_role|bypass rls|security definer)\b/i.test(text) &&
+        /\b(denied|forbidden|unauthorized|escalat)/i.test(lower)
+      ) {
+        return ["priv-escalation-language"];
+      }
+      return null;
+    },
+    title: "Possible privilege-escalation attempt or mis-role",
+    risk: "A non-admin path may be probing admin RPCs or SECURITY DEFINER functions.",
+    why: "Admin/service_role language combined with denied/unauthorized indicates an authorization boundary was hit.",
+    where: "Staff role checks, RPC grants, or SECURITY DEFINER functions.",
+    fix: "Confirm user_roles for the actor; never trust client-sent role claims.",
+    priorityAction: "Check user_roles for the requesting user_id before changing policies.",
+  },
+  {
+    id: "path_traversal",
+    category: "ssrf_path",
+    level: "high",
+    weight: 84,
+    test: ({ text, lower }) => {
+      if (/\.\.\/|\.\.\\|%2e%2e/i.test(text) || /path traversal/i.test(lower)) {
+        return ["path-traversal"];
+      }
+      return null;
+    },
+    title: "Path traversal signal",
+    risk: "Request may try to read files outside the intended directory.",
+    why: "Traversal sequences appeared in the error/context.",
+    where: "File/storage path construction.",
+    fix: "Resolve paths with a root allowlist; reject '..' segments.",
+    priorityAction: "Block inputs containing '..' and review storage key builders.",
+  },
+  {
+    id: "prototype_pollution",
+    category: "injection",
+    level: "high",
+    weight: 86,
+    test: ({ text }) => {
+      if (/__proto__|constructor\s*\[|prototype pollution/i.test(text)) {
+        return ["prototype-pollution"];
+      }
+      return null;
+    },
+    title: "Prototype pollution signal",
+    risk: "Merging untrusted JSON can overwrite Object.prototype and bypass checks.",
+    why: "Error/context references __proto__/constructor pollution patterns.",
+    where: "Deep merge / Object.assign of request bodies.",
+    fix: "Validate with zod; pick explicit fields; never merge raw JSON into prototypes.",
+    priorityAction: "Locate Object.assign/merge on user input and switch to allowlisted fields.",
+  },
+  {
+    id: "csrf_origin_mismatch",
+    category: "cors_csp",
+    level: "high",
+    weight: 78,
+    test: ({ lower }) => {
+      if (/csrf|invalid origin|origin mismatch|same-site/i.test(lower)) {
+        return ["csrf-origin"];
+      }
+      return null;
+    },
+    title: "CSRF / Origin mismatch",
+    risk: "Cross-site requests may execute state-changing actions without origin checks.",
+    why: "CSRF or origin-mismatch language appeared in the failure.",
+    where: "Server actions / form POSTs.",
+    fix: "Enforce SameSite cookies, Origin checks on mutating routes, and auth on every server fn.",
+    priorityAction: "Confirm the failing request Origin matches your app host.",
+  },
+  {
+    id: "supabase_anon_key_abuse",
+    category: "lovable_supabase",
+    level: "high",
+    weight: 80,
+    test: ({ lower }) => {
+      if (
+        (/anon|publishable/.test(lower) &&
+          /key|apikey/.test(lower) &&
+          /invalid|revoked|denied/.test(lower)) ||
+        /invalid api key/.test(lower)
+      ) {
+        return ["supabase-api-key"];
+      }
+      return null;
+    },
+    title: "Supabase API key rejected",
+    risk: "Wrong or revoked publishable key breaks data access; a leaked secret key is worse.",
+    why: "Supabase rejected the API key presented by the client or server.",
+    where: "Lovable Cloud secrets / createClient config.",
+    fix: "Rotate keys; update SUPABASE_PUBLISHABLE_KEY; never ship service_role to the browser.",
+    priorityAction: "Verify Cloud → Secrets matches the current Supabase project keys.",
+  },
+  {
+    id: "skippe_gateway_auth",
+    category: "lovable_supabase",
+    level: "high",
+    weight: 82,
+    test: ({ text, lower }) => {
+      if (
+        /lovable_api_key|ai\.gateway\.lovable|skippe auth failed|credits exhausted/i.test(
+          text,
+        )
+      ) {
+        return ["skippe-gateway"];
+      }
+      return null;
+    },
+    title: "Skippe / Lovable AI gateway auth or credits",
+    risk: "AI kitchen actions fail depending on key/credits.",
+    why: "Gateway auth, LOVABLE_API_KEY, or credit exhaustion appears in the error.",
+    where: "skippe.server.ts gatewayFetch / Lovable secrets.",
+    fix: "Set valid LOVABLE_API_KEY; add credits if 402; do not hardcode keys.",
+    priorityAction: "Check Lovable AI credits and LOVABLE_API_KEY secret.",
+  },
+  {
+    id: "mass_assignment",
+    category: "idor",
+    level: "high",
+    weight: 81,
+    test: ({ text, lower }) => {
+      if (
+        /mass assignment|unexpected column|could not find the .* column/i.test(
+          lower,
+        ) && /\b(role|is_admin|owner_id|price_bs)\b/i.test(text)
+      ) {
+        return ["mass-assignment-surface"];
+      }
+      return null;
+    },
+    title: "Mass-assignment / unexpected column write",
+    risk: "Clients may try to write privileged columns (role, owner_id, price).",
+    why: "Schema rejected a column that often indicates a privileged field write attempt.",
+    where: "Insert/update payloads from forms or Skippe tools.",
+    fix: "Allowlist columns server-side; never spread req.body into inserts.",
+    priorityAction: "Inspect the failing payload keys and strip privileged fields.",
+  },
+
+  {
     id: "tls_crypto_noise",
+
     category: "crypto_tls",
     level: "low",
     weight: 34,
@@ -885,8 +1056,28 @@ export function diagnoseSecurityRisk(
       ? resolve(topRule.priorityAction, ctx)
       : resolve(topRule.fix, ctx).split(/\. /)[0] + ".",
     sqlHints: sqlHints?.length ? sqlHints : undefined,
+    playbook: [
+      topRule.priorityAction
+        ? resolve(topRule.priorityAction, ctx)
+        : resolve(topRule.fix, ctx).split(/\. /)[0] + ".",
+      resolve(topRule.fix, ctx),
+      "Reproduce once with Network + Console open; save the failing URL and status.",
+      "If user-sensitive, rotate sessions/keys before further debugging.",
+    ],
+    blastRadius:
+      level === "critical"
+        ? "Account takeover, data exfil, or privilege boundary failure is plausible for this class."
+        : level === "high"
+          ? "Unauthorized reads/writes or session abuse may be possible if the signal is confirmed."
+          : "Limited or noisy signal — verify before treating as an incident.",
+    hardening: [
+      "Keep service_role and LOVABLE_API_KEY server-only.",
+      "Prefer allowlisted server-fn inputs (zod) over open JSON spreads.",
+      "Log security-relevant denials without storing secrets in client storage.",
+    ],
   };
 }
+
 
 export function isSecurityRiskError(error: unknown): boolean {
   return diagnoseSecurityRisk(error)?.isSecurityRisk === true;
@@ -902,6 +1093,13 @@ export function formatSecurityDiagnosisForCopy(
     "",
     `Category: ${diagnosis.category}`,
     `Priority: ${diagnosis.priorityAction}`,
+    diagnosis.blastRadius ? `Blast radius: ${diagnosis.blastRadius}` : "",
+    ...(diagnosis.playbook?.length
+      ? ["", "Playbook:", ...diagnosis.playbook.map((s, i) => `  ${i + 1}. ${s}`)]
+      : []),
+    ...(diagnosis.hardening?.length
+      ? ["", "Hardening:", ...diagnosis.hardening.map((s) => `  • ${s}`)]
+      : []),
     "",
     `Risk: ${diagnosis.risk}`,
     `Why: ${diagnosis.why}`,
