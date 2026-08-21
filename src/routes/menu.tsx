@@ -9,16 +9,29 @@ import { isPublicBulkChef } from "@/lib/bulk-department";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { useCart } from "@/lib/cart-store";
+import { cacheGet, cacheSet, TTL_CHEFS, TTL_MENU } from "@/lib/client-cache";
 
 const menuQuery = {
   queryKey: ["public-menu"],
-  queryFn: () => getPublicMenu(),
+  queryFn: async () => {
+    const hit = cacheGet<Awaited<ReturnType<typeof getPublicMenu>>>("public-menu");
+    if (hit) return hit;
+    const data = await getPublicMenu();
+    cacheSet("public-menu", data, TTL_MENU);
+    return data;
+  },
   staleTime: 5 * 60_000,
   gcTime: 30 * 60_000,
 };
 const chefsQuery = {
   queryKey: ["public-chefs"],
-  queryFn: () => getPublicChefs(),
+  queryFn: async () => {
+    const hit = cacheGet<Awaited<ReturnType<typeof getPublicChefs>>>("public-chefs");
+    if (hit) return hit;
+    const data = await getPublicChefs();
+    cacheSet("public-chefs", data, TTL_CHEFS);
+    return data;
+  },
   staleTime: 5 * 60_000,
   gcTime: 30 * 60_000,
 };
