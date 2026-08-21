@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -146,7 +147,7 @@ function MenuEditor() {
   useEffect(() => {
     const id = window.setInterval(() => {
       setPlaceholderIdx((i) => (i + 1) % SKIPPE_PLACEHOLDERS.length);
-    }, 4200);
+    }, 3200);
     return () => window.clearInterval(id);
   }, []);
 
@@ -291,92 +292,96 @@ function MenuEditor() {
 
   return (
     <div className="space-y-6">
-      {/* Compact Skippe — no chat history · animated placeholder + glow */}
-      <div className="skippe-quick-shell relative overflow-hidden rounded-2xl border border-cherry/25 px-3 py-2.5 shadow-sm">
+      {/* Compact Skippe — animated placeholder + lively background */}
+      <div className="skippe-quick-shell relative overflow-hidden rounded-full border border-cherry/30 px-2 py-1.5 shadow-[0_0_24px_rgba(196,30,90,0.15)]">
         <div className="skippe-quick-glow pointer-events-none absolute inset-0" aria-hidden />
-        <div className="relative z-[1]">
-          <div className="mb-1.5 flex items-center gap-2">
+        <div className="skippe-quick-shine pointer-events-none absolute inset-0" aria-hidden />
+        <div className="relative z-[1] flex items-center gap-2">
+          <span className="hidden shrink-0 items-center gap-1 pl-2 sm:inline-flex">
             <Sparkles className="h-3.5 w-3.5 text-cherry skippe-sparkle" />
-            <span className="text-[10px] font-black uppercase tracking-[0.22em] text-cherry">
+            <span className="text-[10px] font-black uppercase tracking-[0.18em] text-cherry">
               Skippe · quick add
             </span>
-            <span className="text-[10px] text-ink/40">no history · menu only</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select
-              value={skippeMode}
-              onValueChange={(v) => setSkippeMode(v as SkippeMode)}
-            >
-              <SelectTrigger className="h-9 w-[11.5rem] shrink-0 rounded-xl border-ink/10 bg-white/90 text-xs font-semibold backdrop-blur-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="rounded-xl">
-                {MENU_SKIPPE_MODES.map((o) => (
-                  <SelectItem
-                    key={o.value}
-                    value={o.value}
-                    className="rounded-lg text-xs"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <GoogleGlyph className="h-3 w-3" />
-                      <span>{o.label}</span>
-                      <span className="text-ink/40">{o.cost}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <div className="relative min-w-0 flex-1">
+          </span>
+          <Select
+            value={skippeMode}
+            onValueChange={(v) => setSkippeMode(v as SkippeMode)}
+          >
+            <SelectTrigger className="h-9 w-[10.5rem] shrink-0 rounded-full border-0 bg-white/95 text-xs font-semibold text-ink shadow-sm dark:bg-white/90">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              {MENU_SKIPPE_MODES.map((o) => (
+                <SelectItem
+                  key={o.value}
+                  value={o.value}
+                  className="rounded-lg text-xs"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <GoogleGlyph className="h-3 w-3" />
+                    <span>{o.label}</span>
+                    <span className="text-ink/40">{o.cost}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="relative min-h-9 min-w-0 flex-1 overflow-hidden rounded-full bg-[#1a1a1f] shadow-inner ring-1 ring-white/10">
+            <AnimatePresence mode="wait" initial={false}>
               {!skippeInput && (
-                <span
+                <motion.span
                   key={placeholderIdx}
-                  className="skippe-ph-slide pointer-events-none absolute inset-y-0 left-3 right-10 z-[1] flex items-center truncate text-sm text-ink/40"
+                  initial={{ opacity: 0, x: 28, filter: "blur(4px)" }}
+                  animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+                  exit={{ opacity: 0, x: -28, filter: "blur(4px)" }}
+                  transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                  className="pointer-events-none absolute inset-y-0 left-3 right-3 z-[1] flex items-center truncate text-sm font-medium text-white/55"
                   aria-hidden
                 >
                   {activePlaceholder}
-                </span>
+                </motion.span>
               )}
-              <Input
-                value={skippeInput}
-                onChange={(e) => setSkippeInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    const t = skippeInput;
-                    setSkippeInput("");
-                    void runSkippeMessage(t);
-                  }
-                }}
-                placeholder=""
-                maxLength={2000}
-                disabled={skippeBusy}
-                className="h-9 w-full rounded-xl border-ink/10 bg-white/90 text-sm backdrop-blur-sm"
-              />
-            </div>
-            <Button
-              type="button"
-              disabled={skippeBusy || !skippeInput.trim()}
-              onClick={() => {
-                const t = skippeInput;
-                setSkippeInput("");
-                void runSkippeMessage(t);
+            </AnimatePresence>
+            <Input
+              value={skippeInput}
+              onChange={(e) => setSkippeInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  const t = skippeInput;
+                  setSkippeInput("");
+                  void runSkippeMessage(t);
+                }
               }}
-              className="h-9 shrink-0 rounded-xl bg-ink px-3 text-cream hover:bg-cherry"
-            >
-              {skippeBusy ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Send className="h-3.5 w-3.5" />
-              )}
-            </Button>
+              placeholder=""
+              maxLength={2000}
+              disabled={skippeBusy}
+              className="h-9 w-full border-0 bg-transparent text-sm text-white caret-cherry shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 placeholder:text-transparent"
+            />
           </div>
-          {skippeLastReply && (
-            <p className="mt-2 line-clamp-3 rounded-xl bg-white/80 px-2.5 py-1.5 text-xs text-ink/70">
-              <span className="font-semibold text-cherry">{modeLabel}: </span>
-              {skippeLastReply}
-            </p>
-          )}
+          <Button
+            type="button"
+            disabled={skippeBusy || !skippeInput.trim()}
+            onClick={() => {
+              const t = skippeInput;
+              setSkippeInput("");
+              void runSkippeMessage(t);
+            }}
+            className="h-9 w-9 shrink-0 rounded-full bg-white/90 p-0 text-ink shadow-sm hover:bg-cherry hover:text-cream"
+          >
+            {skippeBusy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+          </Button>
         </div>
+        {skippeLastReply && (
+          <p className="relative z-[1] mt-2 line-clamp-3 rounded-xl bg-black/20 px-2.5 py-1.5 text-xs text-ink/80 backdrop-blur-sm dark:text-white/80">
+            <span className="font-semibold text-cherry">{modeLabel}: </span>
+            {skippeLastReply}
+          </p>
+        )}
       </div>
 
       <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
@@ -755,75 +760,76 @@ function MenuEditor() {
         }
         @keyframes skippe-sparkle-spin {
           0%, 100% { transform: rotate(0deg) scale(1); opacity: 1; }
-          50% { transform: rotate(15deg) scale(1.15); opacity: 0.85; }
+          50% { transform: rotate(18deg) scale(1.2); opacity: 0.8; }
         }
-        @keyframes skippe-quick-glow {
-          0% {
-            background-position: 0% 50%;
-            opacity: 0.85;
-          }
-          50% {
-            background-position: 100% 50%;
-            opacity: 1;
-          }
-          100% {
-            background-position: 200% 50%;
-            opacity: 0.85;
-          }
+        @keyframes skippe-shell-flow {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
-        @keyframes skippe-ph-in {
-          0% {
-            opacity: 0;
-            transform: translateY(8px);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0);
-          }
+        @keyframes skippe-shine-sweep {
+          0% { transform: translateX(-120%) skewX(-12deg); opacity: 0; }
+          30% { opacity: 0.55; }
+          60% { opacity: 0.35; }
+          100% { transform: translateX(120%) skewX(-12deg); opacity: 0; }
+        }
+        @keyframes skippe-pulse-ring {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(196, 30, 90, 0.35), 0 0 24px rgba(196, 30, 90, 0.12); }
+          50% { box-shadow: 0 0 0 6px rgba(196, 30, 90, 0), 0 0 32px rgba(232, 93, 138, 0.28); }
         }
         .skippe-quick-shell {
           background: linear-gradient(
-            110deg,
-            rgba(255, 240, 246, 0.95) 0%,
-            rgba(255, 255, 255, 0.92) 40%,
-            rgba(255, 230, 240, 0.9) 70%,
-            rgba(255, 245, 250, 0.95) 100%
+            120deg,
+            #ffe4ef 0%,
+            #ffd0e0 25%,
+            #fff0f6 50%,
+            #ffc4d8 75%,
+            #ffe8f0 100%
           );
-          background-size: 200% 200%;
-          animation: skippe-quick-glow 6s ease-in-out infinite;
+          background-size: 300% 300%;
+          animation: skippe-shell-flow 5s ease-in-out infinite, skippe-pulse-ring 3.2s ease-in-out infinite;
         }
         .skippe-quick-glow {
-          background: linear-gradient(
-            120deg,
-            transparent 0%,
-            rgba(196, 30, 90, 0.08) 25%,
-            rgba(232, 93, 138, 0.14) 50%,
-            rgba(196, 30, 90, 0.08) 75%,
-            transparent 100%
+          background: radial-gradient(
+            ellipse 80% 120% at 20% 50%,
+            rgba(255, 255, 255, 0.55) 0%,
+            transparent 55%
+          ),
+          radial-gradient(
+            ellipse 70% 100% at 85% 50%,
+            rgba(196, 30, 90, 0.22) 0%,
+            transparent 50%
           );
-          background-size: 220% 100%;
-          animation: skippe-quick-glow 4.5s ease-in-out infinite;
+          animation: skippe-shell-flow 7s ease-in-out infinite reverse;
         }
-        .skippe-ph-slide {
-          animation: skippe-ph-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+        .skippe-quick-shine {
+          width: 45%;
+          height: 100%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.55),
+            transparent
+          );
+          animation: skippe-shine-sweep 3.8s ease-in-out infinite;
         }
         .skippe-shimmer-text {
           background: linear-gradient(
             90deg,
             #c41e5a 0%,
-            #e85d8a 35%,
+            #ff8ab0 30%,
             #c41e5a 50%,
-            #e85d8a 65%,
+            #ff8ab0 70%,
             #c41e5a 100%
           );
           background-size: 200% 100%;
           -webkit-background-clip: text;
           background-clip: text;
           color: transparent;
-          animation: skippe-shimmer 2.8s linear infinite;
+          animation: skippe-shimmer 2.2s linear infinite;
         }
         .skippe-sparkle {
-          animation: skippe-sparkle-spin 2.2s ease-in-out infinite;
+          animation: skippe-sparkle-spin 1.8s ease-in-out infinite;
         }
         .skippe-stocked-badge:disabled {
           opacity: 0.5;
