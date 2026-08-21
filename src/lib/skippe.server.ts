@@ -1225,14 +1225,15 @@ export async function runSkippeTool(
 }
 
 /** Only tools relevant to this message — smaller payload = cheaper + fewer bad calls. */
-export function selectToolsForMessage(userText: string, imageCount: number): ToolDef[] {
-  const msg = (userText || "").toLowerCase();
+export function selectToolsForMessage(
+  userText: string,
+  imageCount: number,
+  history?: Array<{ role: string; content: string }>,
+): ToolDef[] {
+  const msg = (userText || "").toLowerCase().trim();
   const want = new Set<string>();
 
   // --- Vision / fridge frames ---
-  // Only menu tools by default. list_orders is expensive and useless on a
-  // Lovable dashboard screenshot — only add it when the chef clearly wants
-  // restock math against open orders.
   if (imageCount > 0) {
     want.add("list_menu_items");
     want.add("create_menu_item");
@@ -1240,6 +1241,46 @@ export function selectToolsForMessage(userText: string, imageCount: number): Too
     if (/\b(order|orders|reserved|restock|preparing|pending|ready)\b/.test(msg)) {
       want.add("list_orders");
     }
+    return SKIPPE_TOOLS.filter((t) => want.has(t.name));
+  }
+
+  // --- Short follow-ups after a fridge/menu turn ("add those", "yes", "do it") ---
+  const followUpAction =
+    /^(add|update|create|restock|save|do)\s+(those|them|it|that|these|all)\b/.test(msg) ||
+    /^(yes|yep|yeah|ok|okay|sure|please|go ahead|do it|add them|add those|update those)\b/.test(
+      msg,
+    ) ||
+    /\b(add|update|create|restock)\s+(those|them|these|all)\b/.test(msg);
+
+  const recentContext = (history || [])
+    .slice(-6)
+    .map((h) => h.content || "")
+    .join("\n")
+    .toLowerCase();
+
+  const historyAboutMenu =
+    /\b(fridge|content|menu|stock|item|items|boba|hot chocolate|popcorn|cheesecake|restock)\b/.test(
+      recentContext,
+    ) || /\b(create_menu_item|list_menu_items|update_menu_item)\b/.test(recentContext);
+
+  if (followUpAction && historyAboutMenu) {
+    want.add("list_menu_items");
+    want.add("create_menu_item");
+    want.add("update_menu_item");
+    return SKIPPE_TOOLS.filter((t) => want.has(t.name));
+  }
+
+  // Bare "add those" / "add them" even without rich history — still menu tools
+  if (
+    /\b(add|create|update|restock)\s+(those|them|these|all)\b/.test(msg) ||
+    msg === "add those" ||
+    msg === "add them" ||
+    msg === "update those" ||
+    msg === "restock those"
+  ) {
+    want.add("list_menu_items");
+    want.add("create_menu_item");
+    want.add("update_menu_item");
     return SKIPPE_TOOLS.filter((t) => want.has(t.name));
   }
 
@@ -1255,7 +1296,7 @@ export function selectToolsForMessage(userText: string, imageCount: number): Too
     want.add("update_discount");
     want.add("end_discount");
   }
-  if (/\b(menu|item|dish|stock|restock|fridge)\b/.test(msg)) {
+  if (/\b(menu|item|dish|stock|restock|fridge|add)\b/.test(msg)) {
     want.add("list_menu_items");
     want.add("create_menu_item");
     want.add("update_menu_item");
@@ -1278,6 +1319,7 @@ export function selectToolsForMessage(userText: string, imageCount: number): Too
 
   return SKIPPE_TOOLS.filter((t) => want.has(t.name));
 }
+
 
 /** Short prompt for text-only turns (big token saver). */
 export function buildSkippePromptLite(args: { staffName: string; isAdmin: boolean }) {
@@ -1540,7 +1582,7 @@ async function runOpenAiTurn(args: {
   // Vision may need list then create; text stays 1 round.
   const maxRounds = visionImages.length > 0 ? 2 : 1;
   const selected = toolsEnabled
-    ? selectToolsForMessage(args.userText, args.images.length)
+    ? selectToolsForMessage(args.userText, args.images.length, args.history)
     : [];
   const toolDefs = toolsEnabled
     ? selected.map((t) => ({
@@ -1745,7 +1787,7 @@ async function runGoogleTurn(args: {
 
   const toolsEnabled = args.toolsEnabled !== false;
   const selected = toolsEnabled
-    ? selectToolsForMessage(args.userText, visionImages.length)
+    ? selectToolsForMessage(args.userText, visionImages.length, args.history)
     : [];
   const tools = toolsEnabled
     ? selected.map((t) => ({
