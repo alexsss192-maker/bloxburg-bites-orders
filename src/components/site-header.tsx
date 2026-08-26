@@ -22,6 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import pandaMascot from "@/assets/panda-mascot.png";
 
 const NAV_LINKS = [
   { to: "/", label: "Home", exact: true, icon: Home },
@@ -75,9 +76,11 @@ export function SiteHeader() {
             </button>
 
             <Link to="/" className="flex min-w-0 items-center gap-2">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink text-lg text-cream">
-                🐼
-              </span>
+              <img
+                src={pandaMascot}
+                alt="Panda Bites"
+                className="h-9 w-9 shrink-0 rounded-full object-cover shadow-sm"
+              />
               <span className="font-display truncate text-xl tracking-tight sm:text-2xl">
                 Panda Bites
               </span>
@@ -145,9 +148,11 @@ export function SiteHeader() {
         >
           <SheetHeader className="border-b border-border px-5 py-5 text-left">
             <SheetTitle className="flex items-center gap-3 font-display text-2xl tracking-tight text-ink">
-              <span className="grid h-10 w-10 place-items-center rounded-full bg-ink text-lg text-cream">
-                🐼
-              </span>
+              <img
+                src={pandaMascot}
+                alt="Panda Bites"
+                className="h-10 w-10 rounded-full object-cover shadow-sm"
+              />
               Panda Bites
             </SheetTitle>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-ink/45">
