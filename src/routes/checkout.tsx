@@ -6,8 +6,15 @@ import { toast } from "sonner";
 import { placeOrder, previewOrder } from "@/lib/orders.functions";
 import { getPriorityLevels, getCartChefs, type PriorityLevel } from "@/lib/members.functions";
 import { useQuery } from "@tanstack/react-query";
-import { Zap } from "lucide-react";
+import { Heart, Zap } from "lucide-react";
 import { useCart } from "@/lib/cart-store";
+import {
+  activeTipOptions,
+  computeTipBs,
+  formatTipOption,
+  loadTipOptions,
+  type TipOption,
+} from "@/lib/tips";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,9 +127,12 @@ function CheckoutPage() {
   const clear = useCart((s) => s.clear);
 
   const [step, setStep] = useState<Step>("review");
+  const [stepDir, setStepDir] = useState<1 | -1>(1);
   const [discord, setDiscord] = useState("");
   const [note, setNote] = useState("");
   const [promoCode, setPromoCode] = useState("");
+  const [tipOptions, setTipOptions] = useState<TipOption[]>([]);
+  const [selectedTipId, setSelectedTipId] = useState<string | null>(null);
 
   const [pricing, setPricing] =
     useState<PricingResult | null>(null);
@@ -222,17 +232,42 @@ function CheckoutPage() {
     total,
   );
 
-  // Priority must always affect the visible total.
-  // Server preview may omit priority_bs; client selection still costs B$.
-  // If the server already baked priority into total_bs (priority_bs > 0),
-  // do not double-count.
+  const activeTips = useMemo(
+    () => activeTipOptions(tipOptions),
+    [tipOptions],
+  );
+
+  const selectedTip = useMemo(
+    () => activeTips.find((t) => t.id === selectedTipId) ?? null,
+    [activeTips, selectedTipId],
+  );
+
+  // Tip is calculated on the food subtotal (before priority) for % tips.
+  const tipBaseBs = useMemo(() => {
+    if (pricing && Number(pricing.subtotal_bs) > 0) {
+      return Math.max(
+        0,
+        Number(pricing.subtotal_bs) - Number(pricing.discount_bs ?? 0),
+      );
+    }
+    return total;
+  }, [pricing, total]);
+
+  const tipBs = useMemo(() => {
+    if (!selectedTip) return 0;
+    return computeTipBs(selectedTip.tip_type, selectedTip.tip_value, tipBaseBs);
+  }, [selectedTip, tipBaseBs]);
+
+  // Priority + tip always affect the visible total when the server omitted them.
   const finalTotal = useMemo(() => {
     const serverPriorityCost = Number(pricing?.priority_bs ?? 0);
-    if (serverPriorityCost > 0) return displayTotal;
-    return displayTotal + totalPriorityCost;
-  }, [displayTotal, pricing, totalPriorityCost]);
+    const withPriority =
+      serverPriorityCost > 0
+        ? displayTotal
+        : displayTotal + totalPriorityCost;
+    return withPriority + tipBs;
+  }, [displayTotal, pricing, totalPriorityCost, tipBs]);
 
-  /** Amount to show as the Priority line (prefer server, else client picks). */
   const displayPriorityCost =
     Number(pricing?.priority_bs ?? 0) > 0
       ? Number(pricing?.priority_bs ?? 0)
@@ -251,6 +286,7 @@ function CheckoutPage() {
     getNormalDiscounts(pricing);
 
   useEffect(() => {
+    setTipOptions(loadTipOptions());
     try {
       const saved =
         window.localStorage.getItem(
@@ -415,6 +451,11 @@ function CheckoutPage() {
 
             priority:
               prioritySelection,
+
+            tip_bs: tipBs,
+            tip_label: selectedTip
+              ? formatTipOption(selectedTip)
+              : null,
           },
         });
 
@@ -497,87 +538,99 @@ function CheckoutPage() {
             }
           />
         ) : (
-          <motion.div
-            key={step}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="grid gap-8 md:grid-cols-[1fr_380px]"
-          >
-            {step === "review" && (
-              <ReviewStep
-                promoCode={promoCode}
-                setPromoCode={
-                  setPromoCode
-                }
-                pricing={pricing}
-                pricingLoading={
-                  pricingLoading
-                }
-                priorityOptions={
-                  priorityOptions
-                }
-                priorityPicks={
-                  priorityPicks
-                }
-                setPriorityPicks={
-                  setPriorityPicks
-                }
-                displayTotal={finalTotal}
-                displayPriorityCost={
-                  displayPriorityCost
-                }
-              />
-            )}
+          <div className="grid gap-8 md:grid-cols-[1fr_380px]">
+            <div className="relative min-h-[12rem] overflow-hidden">
+              <AnimatePresence mode="wait" custom={stepDir}>
+                <motion.div
+                  key={step}
+                  custom={stepDir}
+                  initial="enter"
+                  animate="center"
+                  exit="exit"
+                  variants={{
+                    enter: (dir: 1 | -1) => ({
+                      opacity: 0,
+                      x: dir > 0 ? 28 : -28,
+                      filter: "blur(4px)",
+                    }),
+                    center: {
+                      opacity: 1,
+                      x: 0,
+                      filter: "blur(0px)",
+                      transition: {
+                        type: "spring",
+                        stiffness: 320,
+                        damping: 28,
+                      },
+                    },
+                    exit: (dir: 1 | -1) => ({
+                      opacity: 0,
+                      x: dir > 0 ? -20 : 20,
+                      filter: "blur(4px)",
+                      transition: { duration: 0.18 },
+                    }),
+                  }}
+                >
+                  {step === "review" && (
+                    <ReviewStep
+                      promoCode={promoCode}
+                      setPromoCode={setPromoCode}
+                      pricing={pricing}
+                      pricingLoading={pricingLoading}
+                      priorityOptions={priorityOptions}
+                      priorityPicks={priorityPicks}
+                      setPriorityPicks={setPriorityPicks}
+                      displayTotal={finalTotal}
+                      displayPriorityCost={displayPriorityCost}
+                      activeTips={activeTips}
+                      selectedTipId={selectedTipId}
+                      setSelectedTipId={setSelectedTipId}
+                      tipBs={tipBs}
+                      tipBaseBs={tipBaseBs}
+                    />
+                  )}
 
-            {step === "details" && (
-              <DetailsStep
-                discord={discord}
-                setDiscord={
-                  setDiscord
-                }
-                note={note}
-                setNote={setNote}
-              />
-            )}
+                  {step === "details" && (
+                    <DetailsStep
+                      discord={discord}
+                      setDiscord={setDiscord}
+                      note={note}
+                      setNote={setNote}
+                    />
+                  )}
 
-            {step === "confirm" && (
-              <ConfirmStep
-                items={items}
-                discord={discord}
-                note={note}
-                total={finalTotal}
-              />
-            )}
+                  {step === "confirm" && (
+                    <ConfirmStep
+                      items={items}
+                      discord={discord}
+                      note={note}
+                      total={finalTotal}
+                    />
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </div>
 
             <PricingSidebar
               pricing={pricing}
-              bulkServiceFee={
-                bulkServiceFee
-              }
-              displayDiscount={
-                displayDiscount
-              }
-              normalDiscounts={
-                normalDiscounts
-              }
+              bulkServiceFee={bulkServiceFee}
+              displayDiscount={displayDiscount}
+              normalDiscounts={normalDiscounts}
               displayTotal={finalTotal}
-              displayPriorityCost={
-                displayPriorityCost
-              }
-              pricingLoading={
-                pricingLoading
-              }
+              displayPriorityCost={displayPriorityCost}
+              tipBs={tipBs}
+              pricingLoading={pricingLoading}
             />
-          </motion.div>
+          </div>
         )}
 
         {!orderId && step === "confirm" && (
           <div className="mt-8 flex gap-3">
             <button
-              onClick={() =>
-                setStep("details")
-              }
+              onClick={() => {
+                setStepDir(-1);
+                setStep("details");
+              }}
               className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:bg-blossom disabled:opacity-40"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -618,6 +671,7 @@ function CheckoutPage() {
                     );
 
                   if (index > 0) {
+                    setStepDir(-1);
                     setStep(
                       STEPS[index - 1]
                         .id,
@@ -651,6 +705,7 @@ function CheckoutPage() {
                     index <
                       STEPS.length - 1
                   ) {
+                    setStepDir(1);
                     setStep(
                       STEPS[index + 1]
                         .id,
@@ -766,6 +821,7 @@ function PricingSidebar({
   normalDiscounts,
   displayTotal,
   displayPriorityCost,
+  tipBs,
   pricingLoading,
 }: {
   pricing: PricingResult | null;
@@ -777,6 +833,7 @@ function PricingSidebar({
   }>;
   displayTotal: number;
   displayPriorityCost: number;
+  tipBs: number;
   pricingLoading: boolean;
 }) {
   return (
@@ -785,62 +842,45 @@ function PricingSidebar({
         Pricing breakdown
       </div>
 
-      {pricing &&
-        pricing.total_bs > 0 && (
-          <div className="mt-4 space-y-2 text-sm">
+      <div className="mt-4 space-y-2 text-sm">
+        {pricing && pricing.total_bs > 0 ? (
+          <>
             <div className="flex justify-between">
-              <span className="text-ink/60">
-                Subtotal
-              </span>
-
-              <span>
-                B$
-                {pricing.subtotal_bs.toLocaleString()}
-              </span>
+              <span className="text-ink/60">Subtotal</span>
+              <span>B${pricing.subtotal_bs.toLocaleString()}</span>
             </div>
-
-            {pricing.discount_bs >
-              0 && (
+            {pricing.discount_bs > 0 && (
               <div className="flex justify-between text-bamboo">
-                <span>
-                  Savings
-                </span>
-
-                <span>
-                  −B$
-                  {pricing.discount_bs.toLocaleString()}
-                </span>
+                <span>Savings</span>
+                <span>−B${pricing.discount_bs.toLocaleString()}</span>
               </div>
             )}
+          </>
+        ) : null}
 
-            {displayPriorityCost > 0 && (
-              <div className="flex justify-between text-cherry">
-                <span>
-                  Priority
-                </span>
-
-                <span>
-                  +B$
-                  {displayPriorityCost.toLocaleString()}
-                </span>
-              </div>
-            )}
-
-            {bulkServiceFee >
-              0 && (
-              <div className="flex items-center justify-between rounded-xl bg-cherry/5 px-3 py-2 text-cherry">
-                <span className="font-medium">
-                  Bulk / Fast Service
-                </span>
-
-                <span className="font-semibold">
-                  +B$
-                  {bulkServiceFee.toLocaleString()}
-                </span>
-              </div>
-            )}
+        {displayPriorityCost > 0 && (
+          <div className="flex justify-between text-cherry">
+            <span>Priority</span>
+            <span>+B${displayPriorityCost.toLocaleString()}</span>
           </div>
         )}
+
+        {tipBs > 0 && (
+          <div className="flex justify-between text-cherry">
+            <span>Tip</span>
+            <span>+B${tipBs.toLocaleString()}</span>
+          </div>
+        )}
+
+        {bulkServiceFee > 0 && (
+          <div className="flex items-center justify-between rounded-xl bg-cherry/5 px-3 py-2 text-cherry">
+            <span className="font-medium">Bulk / Fast Service</span>
+            <span className="font-semibold">
+              +B${bulkServiceFee.toLocaleString()}
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="mt-4 flex items-baseline justify-between border-t border-border/60 pt-4">
         <span className="text-sm uppercase tracking-widest text-muted-foreground">
@@ -849,7 +889,7 @@ function PricingSidebar({
 
         <span className="font-display text-3xl">
           B$
-          {displayTotal.toLocaleString()}
+          {pricingLoading ? "…" : displayTotal.toLocaleString()}
         </span>
       </div>
 
@@ -882,6 +922,11 @@ function ReviewStep({
   setPriorityPicks,
   displayTotal,
   displayPriorityCost,
+  activeTips,
+  selectedTipId,
+  setSelectedTipId,
+  tipBs,
+  tipBaseBs,
 }: {
   promoCode: string;
   setPromoCode: (value: string) => void;
@@ -892,6 +937,11 @@ function ReviewStep({
   setPriorityPicks: (next: Record<string, "low" | "mid" | "high">) => void;
   displayTotal: number;
   displayPriorityCost: number;
+  activeTips: TipOption[];
+  selectedTipId: string | null;
+  setSelectedTipId: (id: string | null) => void;
+  tipBs: number;
+  tipBaseBs: number;
 }) {
   const items = useCart(
     (s) => s.items,
@@ -985,8 +1035,7 @@ function ReviewStep({
 
       {displayPriorityCost > 0 && (
         <p className="mt-3 text-sm text-cherry">
-          Priority: +B$
-          {displayPriorityCost.toLocaleString()}
+          Priority: +B${displayPriorityCost.toLocaleString()}
         </p>
       )}
 
@@ -1011,6 +1060,57 @@ function ReviewStep({
           <div className="pointer-events-none absolute left-0 right-0 top-full z-20 mt-2 hidden rounded-2xl border border-cherry/20 bg-white p-3 text-xs leading-relaxed text-ink/80 shadow-lg group-hover:block">
             {pricing?.bulk_fee_message?.trim() || DEFAULT_BULK_FEE_MESSAGE}
           </div>
+        </div>
+      )}
+
+      {/* Tip jar */}
+      {activeTips.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-border/60 bg-white p-4">
+          <div className="flex items-start gap-2">
+            <Heart className="mt-0.5 h-4 w-4 shrink-0 text-cherry" />
+            <div>
+              <p className="font-semibold text-ink">Tip jar</p>
+              <p className="mt-0.5 text-xs text-ink/55">
+                Optional — goes straight to your chef. Tap again to clear.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {activeTips.map((opt) => {
+              const amount = computeTipBs(
+                opt.tip_type,
+                opt.tip_value,
+                tipBaseBs,
+              );
+              const selected = selectedTipId === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() =>
+                    setSelectedTipId(selected ? null : opt.id)
+                  }
+                  className={`rounded-2xl border px-3 py-3 text-left transition ${
+                    selected
+                      ? "border-cherry bg-cherry/10 shadow-sm"
+                      : "border-border/60 bg-cream/40 hover:border-cherry/40 hover:bg-petal/40"
+                  }`}
+                >
+                  <p className="text-sm font-semibold text-ink">
+                    {formatTipOption(opt)}
+                  </p>
+                  <p className="mt-1 text-xs text-ink/55">
+                    +B${amount.toLocaleString()}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+          {tipBs > 0 && (
+            <p className="mt-2 text-sm text-cherry">
+              Tip: +B${tipBs.toLocaleString()}
+            </p>
+          )}
         </div>
       )}
 
