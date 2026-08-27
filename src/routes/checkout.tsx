@@ -1063,19 +1063,18 @@ function ReviewStep({
         </div>
       )}
 
-      {/* Tip jar */}
+      {/* Tip jar — roomy pills, plain copy */}
       {activeTips.length > 0 && (
-        <div className="mt-4 rounded-2xl border border-border/60 bg-white p-4">
-          <div className="flex items-start gap-2">
-            <Heart className="mt-0.5 h-4 w-4 shrink-0 text-cherry" />
-            <div>
-              <p className="font-semibold text-ink">Tip jar</p>
-              <p className="mt-0.5 text-xs text-ink/55">
-                Optional — goes straight to your chef. Tap again to clear.
-              </p>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <div className="mt-6 rounded-2xl border border-border/60 bg-petal/40 p-5">
+          <p className="flex items-center gap-1.5 font-display text-xl">
+            <Heart className="h-4 w-4 text-cherry" />
+            Leave a tip?
+          </p>
+          <p className="mt-1 text-sm text-ink/60">
+            Optional. 100% goes to your chef.
+          </p>
+
+          <div className="mt-4 flex flex-wrap gap-2.5">
             {activeTips.map((opt) => {
               const amount = computeTipBs(
                 opt.tip_type,
@@ -1083,6 +1082,10 @@ function ReviewStep({
                 tipBaseBs,
               );
               const selected = selectedTipId === opt.id;
+              const rateLabel =
+                opt.tip_type === "percentage"
+                  ? `${opt.tip_value}%`
+                  : null;
               return (
                 <button
                   key={opt.id}
@@ -1090,25 +1093,31 @@ function ReviewStep({
                   onClick={() =>
                     setSelectedTipId(selected ? null : opt.id)
                   }
-                  className={`rounded-2xl border px-3 py-3 text-left transition ${
+                  className={`min-w-[7.5rem] flex-1 rounded-full border px-4 py-2.5 text-center transition sm:flex-none ${
                     selected
-                      ? "border-cherry bg-cherry/10 shadow-sm"
-                      : "border-border/60 bg-cream/40 hover:border-cherry/40 hover:bg-petal/40"
+                      ? "border-cherry bg-white text-cherry shadow-sm ring-1 ring-cherry/30"
+                      : "border-border/70 bg-white/80 text-ink hover:border-cherry/50"
                   }`}
                 >
-                  <p className="text-sm font-semibold text-ink">
-                    {formatTipOption(opt)}
-                  </p>
-                  <p className="mt-1 text-xs text-ink/55">
-                    +B${amount.toLocaleString()}
-                  </p>
+                  <span className="block text-sm font-semibold">
+                    {opt.label.trim() || rateLabel || "Tip"}
+                  </span>
+                  <span
+                    className={`mt-0.5 block text-xs tabular-nums ${
+                      selected ? "text-cherry/80" : "text-ink/50"
+                    }`}
+                  >
+                    {rateLabel ? `${rateLabel} · ` : ""}
+                    B${amount.toLocaleString()}
+                  </span>
                 </button>
               );
             })}
           </div>
+
           {tipBs > 0 && (
-            <p className="mt-2 text-sm text-cherry">
-              Tip: +B${tipBs.toLocaleString()}
+            <p className="mt-3 text-sm font-medium text-cherry">
+              +B${tipBs.toLocaleString()} tip added
             </p>
           )}
         </div>
