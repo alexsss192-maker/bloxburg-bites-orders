@@ -922,11 +922,11 @@ export type Database = {
       place_order: {
         Args: {
           _discord_username: string
-          _items: Json
           _note: string
-          _priority?: Json
-          _promo_code?: string
+          _items: Json
           _verified_discord_id?: string
+          _promo_code?: string
+          _priority?: Json
         }
         Returns: string
       }
