@@ -943,7 +943,6 @@ export type Database = {
         }
         Returns: {
           applied_label: string
-          bulk_service_bs: number
           discount_bs: number
           discounts: Json
           priority_bs: number
