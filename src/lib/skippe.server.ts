@@ -2987,18 +2987,7 @@ async function transcribeMenuFromImages(args: {
   // Do NOT echo the chef's sentence — models copy it or invent a default menu.
   content.push({
     type: "text",
-    text: [
-      "READ the Bloxburg fridge Content panel. Extract EVERY food row:",
-      "Look for: food icon + quantity number + food name + blue Take button.",
-      "Return: {\"items\":[{\"name\":\"Pancakes\",\"stock\":12},...]}",
-      "",
-      "Rules:",
-      "• name = food name text you see (exact spelling)",
-      "• stock = quantity number on that row (use 0 if unreadable)",
-      "• If no Content rows visible → return {\"items\":[]}",
-      "• Never guess or invent. Only read visible text.",
-      "JSON only, no prose.",
-    ].join("\n"),
+    text: 'OCR only what is visible. If unsure, {"items":[]}. JSON only.',
   });
 
   const key = gatewayKey();
@@ -3231,13 +3220,20 @@ function looksLikeHallucinatedMenu(
     if (hits >= Math.min(pack.length, 5) && hits >= unique.size - 1) return true;
   }
 
-  // All stock 0 + 5+ items is a common "I guessed a menu" signature
-  // when the model never saw real qty numbers on Content rows.
+  // FIXED: All stock 0 only triggers rejection if it STRONGLY matches a hallucination pack.
+  // The old check (50% match) was too aggressive and rejected real menus with unreadable quantities.
+  // Now require either:
+  // a) Very high match ratio (85%+), or
+  // b) Matching almost the entire pack
   if (items.length >= 5 && items.every((it) => it.stock === 0)) {
-    const inAnyPack = names.filter((n) =>
-      HALLUCINATION_PACKS.some((pack) => pack.includes(n)),
-    ).length;
-    if (inAnyPack >= Math.ceil(items.length * 0.5)) return true;
+    for (const pack of HALLUCINATION_PACKS) {
+      const packSet = new Set(pack);
+      const hits = names.filter((n) => packSet.has(n)).length;
+      // Only reject if we hit 85%+ of a pack (almost the whole default)
+      // This catches "I made up a Bloxburg menu" without catching real menus
+      // that happen to have some popular items with unreadable quantities
+      if (hits >= pack.length * 0.85) return true;
+    }
   }
 
   return false;
