@@ -36,9 +36,9 @@ export type SkippeTurn = {
 };
 
 /**
- * Auto prefers Gemini 2.5 Flash Lite for almost everything.
+ * Auto prefers Gemini 2.5 Flash for almost everything.
  * Escalates to Gemini 3.1 Flash Lite only for heavy multi-image / bulk scans.
- * GPT-5 Nano remains available as a manual mode pick.
+ * GPT-5 Nano / GPT-5.6 Luna remain available as manual mode picks.
  */
 export function resolveModel(mode: SkippeMode, imageCount: number, message: string) {
   // Locked mode: never escalate — honor the chef's Cost picker exactly.
@@ -55,8 +55,8 @@ export function resolveModel(mode: SkippeMode, imageCount: number, message: stri
     return { model: MODEL_BY_MODE.lite_31, auto: true };
   }
 
-  // Default: Gemini 2.5 Flash Lite — cheap, fast, kitchen-ready.
-  return { model: MODEL_BY_MODE.lite_25, auto: true };
+  // Default: Gemini 2.5 Flash — fast, kitchen-ready.
+  return { model: MODEL_BY_MODE.flash_25, auto: true };
 }
 
 type ToolDef = {
@@ -3257,7 +3257,7 @@ async function addMenuFromPictures(args: {
     images: args.images,
     userText: args.userText,
   });
-  if (verdict !== "fridge" && args.model.includes("2.5-flash-lite")) {
+  if (verdict !== "fridge" && args.model.includes("2.5-flash")) {
     usedModel = MODEL_BY_MODE.lite_31;
     verdict = await classifyBloxburgFridge({
       model: usedModel,
@@ -3292,8 +3292,8 @@ async function addMenuFromPictures(args: {
   });
   items = filterEchoes(items);
 
-  // 2.5-lite often returns empty on game UI — one 3.1 pass, then stop.
-  if (items.length === 0 && args.model.includes("2.5-flash-lite") && usedModel === args.model) {
+  // 2.5-flash often returns empty on game UI — one 3.1 pass, then stop.
+  if (items.length === 0 && args.model.includes("2.5-flash") && usedModel === args.model) {
     usedModel = MODEL_BY_MODE.lite_31;
     const retry = await transcribeMenuFromImages({
       model: usedModel,
@@ -3414,7 +3414,7 @@ export async function runSkippeTurn(args: {
   }
 
   // ── Vision gate: skip for explicit "add from picture" (classifier wastes a round
-  // and 2.5-lite often returns UNCLEAR, blocking the actual create).
+  // and 2.5-flash often returns UNCLEAR, blocking the actual create).
   if (args.images.length > 0 && !askedToAddFromPicture(args.userText, args.images.length)) {
     const verdict = await classifyBloxburgFridge({
       model: args.model,
