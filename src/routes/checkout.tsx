@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { motion, AnimatePresence } from "framer-motion";
-import { toast } from "soner";
+import { toast } from "sonner";
 import { placeOrder, previewOrder } from "@/lib/orders.functions";
 import { getPriorityLevels, getCartChefs, type PriorityLevel } from "@/lib/members.functions";
 import { useQuery } from "@tanstack/react-query";
@@ -16,6 +16,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, ArrowRight, Check, Copy, Loader2, ShoppingBag } from "lucide-react";
 
 const BULK_PREF_KEY = "pb_preferred_bulk_chef";
+
+type CartItem = {
+  menu_item_id: string;
+  name: string;
+  price_bs: number;
+  image_url: string | null;
+  quantity: number;
+  max_stock: number;
+};
 
 export const Route = createFileRoute("/checkout")({
   head: () => ({
@@ -743,15 +752,6 @@ function ConfirmStep({
     </div>
   );
 }
-
-type CartItem = {
-  menu_item_id: string;
-  name: string;
-  price_bs: number;
-  image_url: string | null;
-  quantity: number;
-  max_stock: number;
-};
 
 function PricingSidebar({
   pricing,
