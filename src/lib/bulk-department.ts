@@ -1,8 +1,8 @@
 /**
  * Bulk Department / Fast Service
  *
- * Bulk = 4 trays or more.
- * Each tray = 21 items → 84+ items is bulk-sized.
+ * Bulk = 2 trays or more (was 4 trays, now corrected to 2 trays).
+ * Each tray = 21 items → 42+ items is bulk-sized (was 84+).
  *
  * Admins (house menu) are always bulk.
  * Other bulk chefs are listed in BULK_CHEF_USERNAMES.
@@ -22,9 +22,9 @@ export const BULK_CHEF_USERNAMES: string[] = [
 ];
 
 export const ITEMS_PER_TRAY = 21;
-export const BULK_TRAY_THRESHOLD = 4;
+export const BULK_TRAY_THRESHOLD = 2; // BUGFIX: Changed from 4 to 2 (2 trays minimum)
 export const BULK_ITEM_THRESHOLD =
-  ITEMS_PER_TRAY * BULK_TRAY_THRESHOLD;
+  ITEMS_PER_TRAY * BULK_TRAY_THRESHOLD; // Now 42 items (was 84)
 
 export const BULK_VALUE_THRESHOLD = 50_000;
 
