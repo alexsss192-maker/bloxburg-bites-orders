@@ -177,7 +177,7 @@ type Msg = {
 const GREETING: Msg = {
   role: "assistant",
   content:
-    "Hi chef — I’m Skippe. Ask me to add or edit menu items, run discounts, or move orders pending → preparing → ready → delivered. For fridge restock: hit Fridge share (Gemini 2.5 or 3.1 Flash Lite), scroll your Bloxburg fridge — I auto-capture frames (no extra clicks). I’ll list open orders, subtract reserved stock for pending/preparing/ready unless you correct me, then create items or update stock. You can also upload up to 2 short videos.",
+    "Hi chef — I’m Skippe. Ask me to add or edit menu items, run discounts, or move orders pending → preparing → ready → delivered. For fridge restock: hit Fridge share (any Gemini model), scroll your Bloxburg fridge — I auto-capture frames (no extra clicks). I’ll list open orders, subtract reserved stock for pending/preparing/ready unless you correct me, then create items or update stock. You can also upload up to 2 short videos.",
 };
 
 function ModeGlyph({ vendor }: { vendor: "openai" | "google" }) {
@@ -521,14 +521,14 @@ function PandaPage() {
     context?: Record<string, unknown>;
   } | null>(null);
   const [mode, setMode] = useState<SkippeMode>(() => {
-    if (typeof window === "undefined") return "lite_25";
+    if (typeof window === "undefined") return "flash_25";
     try {
       const stored = window.localStorage.getItem("pb_skippe_mode") as SkippeMode | null;
       if (stored && SKIPPE_MODE_OPTIONS.some((o) => o.value === stored)) return stored;
     } catch {
       /* ignore */
     }
-    return "lite_25";
+    return "flash_25";
   });
   const [splitScreen, setSplitScreen] = useState(
     () => persistentSplitOpen || isShareStreamLive(persistentShareStream),
@@ -634,13 +634,13 @@ function PandaPage() {
     } catch {
       /* storage unavailable */
     }
-    // Fridge share / screenshots work on Auto + Gemini 2.5 + Gemini 3.1.
-    // Drop live share only when switching to a mode without vision (e.g. GPT-5 Nano).
+    // Fridge share / screenshots work on Auto + all Gemini models.
+    // Drop live share only when switching to a mode without vision (e.g. GPT-5 Nano / Luna).
     if (!modeSupportsVisionCapture(next) && (sharing || splitScreen)) {
       stopShare();
       setSplitScreen(false);
       toast.message(
-        "Fridge share closed — pick Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for vision",
+        "Fridge share closed — pick Auto or a Gemini model for vision",
       );
     }
   }
@@ -1417,13 +1417,13 @@ function PandaPage() {
 
   const activeModel = mode === "auto" ? "" : MODEL_BY_MODE[mode];
   const thinkingCapable = activeModel ? modelShowsThinking(activeModel) : false;
-  // Vision capture on Auto + Gemini 2.5 + Gemini 3.1 (Google path). GPT-5 Nano is chat/tools only.
+  // Vision capture on Auto + Gemini models (Google path). GPT models are chat/tools only.
   const visionCaptureAllowed = modeSupportsVisionCapture(mode);
 
   function requireVisionCapture(): boolean {
     if (visionCaptureAllowed) return true;
     toast.message(
-      "Screenshot, fridge share & video frames need Auto, Gemini 2.5, or Gemini 3.1 Flash Lite",
+      "Screenshot, fridge share & video frames need Auto or a Gemini model",
     );
     return false;
   }
@@ -1521,7 +1521,7 @@ function PandaPage() {
               title={
                 visionCaptureAllowed
                   ? "Split screen — share your Bloxburg fridge (or any window)"
-                  : "Switch model to Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for fridge share"
+                  : "Switch model to Auto or a Gemini model for fridge share"
               }
             >
               {sharing ? (
@@ -1688,7 +1688,7 @@ function PandaPage() {
               title={
                 visionCaptureAllowed
                   ? "Upload a video — Skippe reads several frames"
-                  : "Switch to Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for video frames"
+                  : "Switch to Auto or a Gemini model for video frames"
               }
             >
               <Film className="h-4 w-4" />
@@ -1703,7 +1703,7 @@ function PandaPage() {
               title={
                 visionCaptureAllowed
                   ? "Screenshot a window/screen for Skippe"
-                  : "Switch to Auto, Gemini 2.5, or Gemini 3.1 Flash Lite for screenshots"
+                  : "Switch to Auto or a Gemini model for screenshots"
               }
             >
               {snapBusy ? (
@@ -1749,14 +1749,13 @@ function PandaPage() {
             {visionCaptureAllowed ? (
               <>
                 📷 Screenshot / 🖥️ Fridge share / 🎬 Video frames work on{" "}
-                <b>Auto</b>, <b>Gemini 2.5 Flash Lite ($)</b>, and{" "}
-                <b>Gemini 3.1 Flash Lite ($$)</b>. Pick the{" "}
+                <b>Auto</b> or any <b>Gemini</b> model. Pick the{" "}
                 <b>Roblox/game window</b> (not this tab). Max 9 frames.
               </>
             ) : (
               <>
-                Switch the model to <b>Auto</b>, <b>Gemini 2.5</b>, or{" "}
-                <b>Gemini 3.1 Flash Lite</b> to unlock screenshot, fridge share,
+                Switch the model to <b>Auto</b> or a <b>Gemini</b> model
+                to unlock screenshot, fridge share,
                 and video frames.
               </>
             )}
