@@ -2093,6 +2093,48 @@ function finalizeSkippeReply(args: {
   const cleaned = (modelReply || "").trim();
   return cleaned || synthesizeReplyFromRuns(runs);
 }
+function finalizeSkippeReply(args: {
+  userText: string;
+  imageCount: number;
+  runs: SkippeToolRun[];
+  modelReply: string;
+}): string {
+  const { userText, imageCount, runs, modelReply } = args;
+  const creates = successfulCreates(runs);
+  const askedAdd = askedToAddFromPicture(userText, imageCount);
+  const modelClaimedAdd =
+    /\b(added|created|imported|all set|i'?ve added|successfully added)\b/i.test(
+      modelReply || "",
+    );
+
+  if (creates.length > 0) {
+    return synthesizeReplyFromRuns(runs);
+  }
+
+  if (askedAdd && creates.length === 0) {
+    return imageCount > 0
+      ? "I did **not** add menu items this turn (no successful create tool ran). I got your picture(s) but could not map food names into create_menu_items_batch. Send a sharper Content close-up, or type: `add Pancakes stock 12, Taco stock 5`."
+      : "I did **not** add menu items this turn (no successful create tool ran). Re-attach the picture or type the food names.";
+  }
+
+  if (modelClaimedAdd) {
+    // CRITICAL FIX: The model claimed success but creates.length === 0.
+    // This means we already checked and found NO successful create runs.
+    // The model was hallucinating. Do NOT display the failed run summaries.
+    if (creates.length === 0) {
+      return "The model claimed success, but no items were actually added. No create tool succeeded. " +
+             (imageCount > 0 
+               ? "Try sending a clearer Content picture or type: `add Pancakes stock 12, Taco stock 5`."
+               : "Re-attach the picture or type the food names.");
+    }
+    return runs.length > 0
+      ? synthesizeReplyFromRuns(runs)
+      : "Nothing was added — no create tool succeeded.";
+  }
+
+  const cleaned = (modelReply || "").trim();
+  return cleaned || synthesizeReplyFromRuns(runs);
+}
 
 /**
  * Google / non-OpenAI path via OpenAI-compatible /v1/chat/completions.
