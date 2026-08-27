@@ -470,11 +470,15 @@ export const listOrders = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await assertStaff(context);
 
-    // After staff check, use service-role client so RLS "assigned chef only"
-    // does not hide orders when menu_items.owner_id / fulfillment.chef_id
-    // do not match the logged-in user (common after partial migrations).
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const db = supabaseAdmin;
+    // Prefer service-role (bypasses RLS). Fall back to the signed-in client
+    // if the service key is missing — SQL policies must allow staff SELECT.
+    let db: typeof context.supabase = context.supabase;
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      db = supabaseAdmin as typeof context.supabase;
+    } catch {
+      /* keep authenticated client */
+    }
 
     // Cap for chef UI: at most 40 recent orders. Delivered/cancelled older
     // than 7 days are dropped from the chef queue (customers still see them
@@ -610,8 +614,14 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     await assertStaff(context);
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
+    let db: typeof context.supabase = context.supabase;
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      db = supabaseAdmin as typeof context.supabase;
+    } catch {
+      /* keep authenticated client */
+    }
+    const { error } = await db
       .from("order_fulfillments" as any)
       .update({ status: data.status })
       .eq("id", data.id);
