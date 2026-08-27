@@ -41,15 +41,16 @@ const pandaInput = z.object({
   images: z
     .array(
       z.object({
+        // image/jpeg stills OR data:video/webm fridge-scroll clip
         data_url: z.string().max(6_500_000),
       }),
     )
-    .max(9)
+    .max(18)
     .default([]),
 
   mode: z
     .enum(SKIPPE_MODES)
-    .default("lite_25"),
+    .default("flash_25"),
 
   /** Client-side chat history (localStorage). No DB read. */
   history: z
