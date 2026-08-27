@@ -82,10 +82,14 @@ export const placeOrder = createServerFn({ method: "POST" })
       if (note.length > 500) note = note.slice(0, 500);
     }
 
+    // Pass every parameter (including defaults) so PostgREST can match the
+    // exact function signature in the schema cache:
+    // place_order(text, text, jsonb, text, text, jsonb)
     const { data: orderId, error } = await supabase.rpc("place_order" as never, {
       _discord_username: data.discord_username,
       _note: note,
       _items: rpcItems,
+      _verified_discord_id: null,
       _promo_code: data.promo_code ?? null,
       _priority: data.priority ?? [],
     } as never);
