@@ -45,9 +45,17 @@ export function SiteHeader() {
   const count = useCart((s) => s.count());
   const [cartOpen, setCartOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Avoid hydration mismatch: cart (localStorage) differs from SSR.
+  // First paint must match server HTML; reveal count after mount.
+  const [mounted, setMounted] = useState(false);
   const { resolvedTheme, toggleTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const displayCount = mounted ? count : 0;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.add("has-mobile-tabbar");
@@ -106,11 +114,15 @@ export function SiteHeader() {
               onClick={toggleTheme}
               className="grid h-11 w-11 place-items-center rounded-full border border-border bg-card text-ink transition hover:bg-petal hover:text-cherry"
               aria-label={
-                isDark ? "Switch to light mode" : "Switch to dark mode"
+                mounted && isDark
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
               }
-              title={isDark ? "Light mode" : "Dark mode"}
+              title={
+                mounted && isDark ? "Light mode" : "Dark mode"
+              }
             >
-              {isDark ? (
+              {mounted && isDark ? (
                 <Sun className="h-4 w-4" />
               ) : (
                 <Moon className="h-4 w-4" />
@@ -121,19 +133,19 @@ export function SiteHeader() {
               type="button"
               onClick={() => setCartOpen(true)}
               className="pb-press relative flex h-11 items-center gap-2 rounded-full bg-ink px-3.5 text-sm font-semibold text-cream transition hover:bg-cherry sm:px-4"
-              aria-label={`Basket${count > 0 ? `, ${count} items` : ""}`}
+              aria-label={`Basket${displayCount > 0 ? `, ${displayCount} items` : ""}`}
             >
               <ShoppingBag className="h-4 w-4" />
               <span className="hidden sm:inline">Basket</span>
-              {count > 0 && (
+              {displayCount > 0 && (
                 <motion.span
-                  key={count}
+                  key={displayCount}
                   initial={{ scale: 0.4 }}
                   animate={{ scale: 1 }}
                   transition={{ type: "spring", stiffness: 500, damping: 18 }}
                   className="grid h-5 min-w-5 place-items-center rounded-full bg-cherry px-1.5 text-xs font-semibold text-cream"
                 >
-                  {count}
+                  {displayCount}
                 </motion.span>
               )}
             </button>
