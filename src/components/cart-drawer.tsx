@@ -216,7 +216,49 @@ export function CartDrawer({
               {copy.body}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+
+          <div className="mt-4 space-y-3">
+            <p className="text-xs uppercase tracking-widest text-ink/50">
+              Choose delivery speed:
+            </p>
+
+            <button
+              onClick={() => {
+                sessionStorage.removeItem(
+                  "pb_bulk_fast_service",
+                );
+                goCheckout();
+              }}
+              className="w-full rounded-2xl border border-border bg-white p-4 text-left transition hover:bg-blossom"
+            >
+              <p className="font-semibold">
+                Normal delivery
+              </p>
+              <p className="mt-1 text-xs text-ink/60">
+                Standard processing
+              </p>
+            </button>
+
+            <button
+              onClick={() => {
+                sessionStorage.setItem(
+                  "pb_bulk_fast_service",
+                  "true",
+                );
+                goCheckout();
+              }}
+              className="w-full rounded-2xl border-2 border-cherry bg-cherry/5 p-4 text-left transition hover:bg-cherry/10"
+            >
+              <p className="font-semibold text-cherry">
+                ⚡ Fast service
+              </p>
+              <p className="mt-1 text-xs text-ink/60">
+                Priority processing (additional fee applies)
+              </p>
+            </button>
+          </div>
+
+          <DialogFooter className="flex gap-2">
             <Button
               type="button"
               variant="outline"
@@ -224,13 +266,6 @@ export function CartDrawer({
               onClick={() => setBulkWarnOpen(false)}
             >
               Adjust cart
-            </Button>
-            <Button
-              type="button"
-              className="rounded-full bg-ink text-cream hover:bg-cherry"
-              onClick={goCheckout}
-            >
-              Continue
             </Button>
           </DialogFooter>
         </DialogContent>
