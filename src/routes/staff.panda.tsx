@@ -164,6 +164,8 @@ type Msg = {
   role: "user" | "assistant";
   content: string;
   images?: string[];
+  /** Fridge-share scroll recording (data:video/webm;base64,...). Shown as video, not stills. */
+  videos?: string[];
   thinking?: string;
   runs?: ToolRun[];
 };
@@ -171,7 +173,7 @@ type Msg = {
 const GREETING: Msg = {
   role: "assistant",
   content:
-    "Hi chef — I’m Skippe. Ask me to add or edit menu items, run discounts, or move orders pending → preparing → ready → delivered. For fridge restock: hit Fridge share (any Gemini model), scroll your Bloxburg fridge — I auto-capture frames (no extra clicks). I’ll list open orders, subtract reserved stock for pending/preparing/ready unless you correct me, then create items or update stock. You can also upload up to 2 short videos.",
+    "Hi chef — I’m Skippe. Ask me to add or edit menu items, run discounts, or move orders pending → preparing → ready → delivered. For fridge restock: hit Fridge share (any Gemini model), scroll your Bloxburg fridge — I record the full scroll as video (not still snaps). I’ll list open orders, subtract reserved stock for pending/preparing/ready unless you correct me, then create items or update stock. You can also upload up to 2 short videos.",
 };
 
 function ModeGlyph({ vendor }: { vendor: "openai" | "google" }) {
@@ -1039,15 +1041,15 @@ function PandaPage() {
     try {
       const rec = new MediaRecorder(stream, {
         mimeType: mime,
-        // Higher bitrate = sharper Content text for OCR (1.2M was soft)
-        videoBitsPerSecond: 2_500_000,
+        // Higher bitrate = sharper Content text across a continuous scroll
+        videoBitsPerSecond: 3_500_000,
       });
       persistentRecorder = rec;
       rec.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) persistentRecordChunks.push(e.data);
       };
-      rec.start(250); // shorter timeslice — less lost data at the end of a scroll
-      toast.message("Recording fridge scroll — scroll Content, then Send");
+      rec.start(200);
+      toast.message("Recording fridge scroll video — scroll Content, then Send");
     } catch (err) {
       console.error(err);
       persistentRecorder = null;
@@ -1266,10 +1268,23 @@ function PandaPage() {
   }
 
 
-  /** Dense stills from a fridge-scroll recording. Biased to the end (latest scroll). */
+  async function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Couldn’t encode fridge video"));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Sample stills from a fridge-scroll recording for the model (OCR).
+   * Biased to the end so the latest scroll position is never dropped.
+   * UI shows the real video — these stills are API-only.
+   */
   async function framesFromBlob(
     blob: Blob,
-    maxFrames = 12,
+    maxFrames = 18,
   ): Promise<string[]> {
     const url = URL.createObjectURL(blob);
     const video = document.createElement("video");
@@ -1282,7 +1297,6 @@ function PandaPage() {
         video.onloadedmetadata = () => resolve();
         video.onerror = () => reject(new Error("Couldn’t read fridge video"));
       });
-      // Wait for real duration (some browsers report Infinity until data loads)
       if (!Number.isFinite(video.duration) || video.duration === Infinity) {
         await new Promise<void>((resolve) => {
           const onDur = () => {
@@ -1290,40 +1304,42 @@ function PandaPage() {
             resolve();
           };
           video.addEventListener("durationchange", onDur);
-          window.setTimeout(() => resolve(), 800);
+          window.setTimeout(() => resolve(), 1000);
         });
       }
       const duration =
-        Number.isFinite(video.duration) && video.duration > 0 && video.duration !== Infinity
-          ? Math.min(video.duration, 60)
+        Number.isFinite(video.duration) &&
+        video.duration > 0 &&
+        video.duration !== Infinity
+          ? Math.min(video.duration, 90)
           : 1;
-      // ~1 frame / 0.35s, cap 12 — more coverage of a full Content scroll
-      const byTime = Math.max(1, Math.ceil(duration / 0.35));
-      const count = Math.max(1, Math.min(maxFrames, byTime, 12));
+      // ~1 frame / 0.2s for a continuous scroll — up to maxFrames
+      const byTime = Math.max(3, Math.ceil(duration / 0.2));
+      const count = Math.max(3, Math.min(maxFrames, byTime));
 
-      // 35% of samples in the first half, 65% in the second half + always the last frame
-      // so the latest scroll position is never dropped.
       const times: number[] = [];
-      const earlyN = Math.max(1, Math.floor(count * 0.35));
+      const earlyN = Math.max(1, Math.floor(count * 0.3));
       const lateN = Math.max(1, count - earlyN);
       for (let i = 0; i < earlyN; i++) {
-        times.push(duration * 0.5 * ((i + 0.5) / earlyN));
+        times.push(duration * 0.45 * ((i + 0.5) / earlyN));
       }
       for (let i = 0; i < lateN; i++) {
-        times.push(duration * (0.5 + 0.5 * ((i + 0.5) / lateN)));
+        times.push(duration * (0.45 + 0.55 * ((i + 0.5) / lateN)));
       }
-      times[times.length - 1] = Math.max(0, duration - 0.04);
+      times[times.length - 1] = Math.max(0, duration - 0.05);
 
       const out: string[] = [];
       for (const t of times) {
-        video.currentTime = Math.min(Math.max(0, t), Math.max(0, duration - 0.02));
+        video.currentTime = Math.min(
+          Math.max(0, t),
+          Math.max(0, duration - 0.02),
+        );
         await new Promise<void>((resolve) => {
           const onSeeked = () => {
             video.removeEventListener("seeked", onSeeked);
             resolve();
           };
           video.addEventListener("seeked", onSeeked);
-          // Fallback if seeked never fires
           window.setTimeout(() => resolve(), 400);
         });
         const frame = frameFromVideo(video);
@@ -1331,16 +1347,18 @@ function PandaPage() {
       }
       return out;
     } finally {
-      URL.revokeObjectURL(url);
       video.src = "";
+      URL.revokeObjectURL(url);
     }
   }
 
-  /** Stop the current scroll recording, pull stills, optionally restart if still sharing. */
-  async function finalizeFridgeRecording(restartIfSharing = true): Promise<string[]> {
+  /** Stop scroll recording → keep the VIDEO for UI + dense stills for the model. */
+  async function finalizeFridgeRecording(
+    restartIfSharing = true,
+  ): Promise<{ frames: string[]; videoDataUrl: string | null }> {
     const rec = persistentRecorder;
     if (!rec || rec.state === "inactive") {
-      return [];
+      return { frames: [], videoDataUrl: null };
     }
     const blob: Blob = await new Promise((resolve) => {
       rec.onstop = () => {
@@ -1364,7 +1382,7 @@ function PandaPage() {
     persistentRecorder = null;
     persistentRecordChunks = [];
 
-    // Kick off a fresh recording so the next Send gets up-to-date scroll, not stale tape
+    // Kick off a fresh recording so the next Send gets up-to-date scroll
     if (restartIfSharing && sharing) {
       const stream = shareStreamRef.current || persistentShareStream;
       if (stream && typeof MediaRecorder !== "undefined") {
@@ -1381,13 +1399,13 @@ function PandaPage() {
             persistentRecordMime = mime;
             const next = new MediaRecorder(stream, {
               mimeType: mime,
-              videoBitsPerSecond: 2_500_000,
+              videoBitsPerSecond: 3_500_000,
             });
             persistentRecorder = next;
             next.ondataavailable = (e) => {
               if (e.data && e.data.size > 0) persistentRecordChunks.push(e.data);
             };
-            next.start(250);
+            next.start(200);
           } catch {
             persistentRecorder = null;
           }
@@ -1395,70 +1413,115 @@ function PandaPage() {
       }
     }
 
-    if (!blob || blob.size < 1000) return [];
-    toast.message("Reading your latest fridge scroll…");
-    return framesFromBlob(blob, 12);
+    if (!blob || blob.size < 800) {
+      return { frames: [], videoDataUrl: null };
+    }
+
+    toast.message("Packing your fridge scroll video…");
+    let videoDataUrl: string | null = null;
+    try {
+      const dataUrl = await blobToDataUrl(blob);
+      // Keep under payload limits (~6MB string). Prefer video for the UI always
+      // when it fits; otherwise UI still gets a blob URL below via object URL path.
+      if (dataUrl.length > 0 && dataUrl.length <= 6_000_000) {
+        videoDataUrl = dataUrl;
+      } else if (dataUrl.length > 6_000_000) {
+        // Too big for one data URL — still try a shorter sample window via frames
+        videoDataUrl = null;
+        console.warn(
+          "Fridge video too large for data URL (",
+          dataUrl.length,
+          "chars) — sending dense frames only",
+        );
+      }
+    } catch (err) {
+      console.error(err);
+    }
+
+    const frames = await framesFromBlob(blob, 18);
+    // If base64 was too big, create a temporary object URL for UI-only display
+    if (!videoDataUrl && blob.size > 800) {
+      try {
+        videoDataUrl = URL.createObjectURL(blob);
+      } catch {
+        /* ignore */
+      }
+    }
+    return { frames, videoDataUrl };
   }
 
   async function send() {
-    // Prefer fridge-scroll VIDEO → dense frames (captures fast scrolling)
+    // Fridge share records continuous VIDEO while you scroll Content.
+    // We show that video in the chat. The model also gets dense stills sampled
+    // from the full clip so fast scrolling is not missed.
     let tray = images.filter(
       (d) => typeof d === "string" && d.startsWith("data:image/"),
     );
+    let scrollVideo: string | null = null;
     if (sharing || (persistentRecorder && persistentRecorder.state !== "inactive")) {
       try {
         const fromVideo = await finalizeFridgeRecording();
-        if (fromVideo.length > 0) {
-          tray = fromVideo;
-          setImages(fromVideo);
+        if (fromVideo.videoDataUrl) {
+          scrollVideo = fromVideo.videoDataUrl;
+        }
+        if (fromVideo.frames.length > 0) {
+          // API stills only — do NOT dump them into the visible tray as "3 pictures"
+          tray = fromVideo.frames;
         }
       } catch (err) {
         console.error(err);
       }
     }
 
-    if (!input.trim() && tray.length === 0) return;
+    if (!input.trim() && tray.length === 0 && !scrollVideo) return;
 
-    // If the chef refers to prior pictures ("add these", "in the picture") but
-    // the tray is empty, re-attach the most recent user images from chat so
-    // Skippe can still see them (models only receive images on the current turn).
     const text = input.trim();
     const refersToPriorImages =
-      /\b(these|those|the picture|the photo|the image|same picture|from (the )?picture|in (the )?picture|menu items in the picture)\b/i.test(
+      /\b(these|those|the picture|the photo|the image|same picture|from (the )?picture|in (the )?picture|menu items in the picture|the video|that scroll)\b/i.test(
         text,
       ) ||
       (/\b(add|create|import|use)\b/i.test(text) &&
-        /\b(picture|photo|image|screenshot|above)\b/i.test(text));
+        /\b(picture|photo|image|screenshot|above|video|scroll)\b/i.test(text));
 
-    let sendImages = tray.slice(0, 9);
+    let sendImages = tray.slice(0, 18);
     if (sendImages.length === 0 && refersToPriorImages) {
       for (let i = messages.length - 1; i >= 0; i -= 1) {
         const m = messages[i];
         if (m.role === "user" && m.images && m.images.length > 0) {
           sendImages = m.images
             .filter((d) => typeof d === "string" && d.startsWith("data:image/"))
-            .slice(0, 9);
+            .slice(0, 18);
           break;
         }
       }
     }
 
-    if (sendImages.length === 0 && !text) {
-      toast.error("No fridge video/frames — Fridge share the Roblox window, scroll Content, then Send");
+    if (sendImages.length === 0 && !scrollVideo && !text) {
+      toast.error(
+        "No fridge video — Fridge share the Roblox window, scroll Content, then Send",
+      );
       return;
     }
+
+    const hasScroll = !!scrollVideo || sendImages.length > 0;
     const userMsg: Msg = {
       role: "user",
       content:
         text ||
-        (sendImages.length
-          ? "Scan this Bloxburg fridge Content scroll (video frames). Add/update menu stock from every row you can read."
+        (hasScroll
+          ? "Scan this Bloxburg fridge Content scroll video. Add/update menu stock from every row you can read while I scroll."
           : ""),
-      images: [...sendImages],
+      // Chat shows the real video — not a strip of stills
+      videos: scrollVideo ? [scrollVideo] : undefined,
+      // Stills go to the model only (also kept on the message for re-attach)
+      images: sendImages.length > 0 ? [...sendImages] : undefined,
     };
     setMessages((m) => [...m, userMsg]);
     setLiveActivities(
-      activitiesFromMessage(userMsg.content, sendImages.length),
+      activitiesFromMessage(
+        userMsg.content,
+        sendImages.length || (scrollVideo ? 1 : 0),
+      ),
     );
     setActivityIndex(0);
     setLoading(true);
@@ -1483,7 +1546,12 @@ function PandaPage() {
         (tray.length === 0 && sendImages.length > 0
           ? "\n\n(Re-attached the previous picture(s) from this chat so you can still see them.)"
           : ""),
-      images: sendImages.map((d) => ({ data_url: d })),
+      images: [
+        ...(scrollVideo && scrollVideo.startsWith("data:video/")
+          ? [{ data_url: scrollVideo }]
+          : []),
+        ...sendImages.slice(0, 16).map((d) => ({ data_url: d })),
+      ].slice(0, 18),
       mode,
       history,
     };
@@ -1707,13 +1775,38 @@ function PandaPage() {
                     m.role === "user" ? "bg-ink text-cream" : "bg-blossom text-ink"
                   }`}
                 >
-                  {m.images && m.images.length > 0 && (
-                    <div className="mb-2 grid grid-cols-3 gap-1">
-                      {m.images.map((img, idx) => (
-                        <img key={idx} src={img} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                  {m.videos && m.videos.length > 0 ? (
+                    <div className="mb-2 space-y-1.5">
+                      {m.videos.map((vid, idx) => (
+                        <div
+                          key={idx}
+                          className="overflow-hidden rounded-2xl ring-1 ring-white/15"
+                        >
+                          <video
+                            src={vid}
+                            controls
+                            playsInline
+                            muted
+                            className="max-h-52 w-full bg-black object-contain"
+                          />
+                          <p className="bg-black/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white/70">
+                            Fridge scroll video
+                          </p>
+                        </div>
                       ))}
                     </div>
-                  )}
+                  ) : m.images && m.images.length > 0 ? (
+                    <div className="mb-2 grid grid-cols-3 gap-1">
+                      {m.images.map((img, idx) => (
+                        <img
+                          key={idx}
+                          src={img}
+                          alt=""
+                          className="h-16 w-16 rounded-lg object-cover"
+                        />
+                      ))}
+                    </div>
+                  ) : null}
                   {m.thinking && <ThinkingBlock text={m.thinking} />}
                   {(() => {
                     const body = contentWithoutRunLines(m.content, m.runs);
@@ -1761,7 +1854,16 @@ function PandaPage() {
         </div>
 
         <div className="border-t border-border/60 bg-cream/50 p-4">
-          {images.length > 0 && (
+          {sharing && (
+            <div className="mb-3 flex items-center gap-2 rounded-2xl border border-cherry/25 bg-cherry/5 px-3 py-2 text-xs font-semibold text-cherry">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cherry opacity-60" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-cherry" />
+              </span>
+              Recording fridge scroll video — scroll Content, then Send
+            </div>
+          )}
+          {!sharing && images.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
               <AnimatePresence>
                 {images.map((img, i) => (
