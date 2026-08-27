@@ -2987,7 +2987,18 @@ async function transcribeMenuFromImages(args: {
   // Do NOT echo the chef's sentence — models copy it or invent a default menu.
   content.push({
     type: "text",
-    text: 'OCR only what is visible. If unsure, {"items":[]}. JSON only.',
+    text: [
+      "READ the Bloxburg fridge Content panel. Extract EVERY food row:",
+      "Look for: food icon + quantity number + food name + blue Take button.",
+      "Return: {\"items\":[{\"name\":\"Pancakes\",\"stock\":12},...]}",
+      "",
+      "Rules:",
+      "• name = food name text you see (exact spelling)",
+      "• stock = quantity number on that row (use 0 if unreadable)",
+      "• If no Content rows visible → return {\"items\":[]}",
+      "• Never guess or invent. Only read visible text.",
+      "JSON only, no prose.",
+    ].join("\n"),
   });
 
   const key = gatewayKey();
@@ -3272,47 +3283,37 @@ async function addMenuFromPictures(args: {
 
   // ── Gate: must look like a real Bloxburg Content panel before we write anything.
   // This is what stops "default menu" hallucinations on blank / wrong-window shares.
-  // HOWEVER: if the user explicitly asked to add from pictures, trust their intent
-  // and skip the classification gate — let the transcriber be the filter instead.
-  const skipClassification = 
-    /\b(add|create|import|scan|restock|rebuild|replace)\b/i.test(args.userText) &&
-    !/\b(show|display|help|explain|what|how)\b/i.test(args.userText);
-
-  let verdict: "fridge" | "not_fridge" | "unclear" = "fridge";
-  
-  if (!skipClassification) {
+  let verdict = await classifyBloxburgFridge({
+    model: args.model,
+    images: args.images,
+    userText: args.userText,
+  });
+  if (verdict !== "fridge" && args.model.includes("2.5-flash")) {
+    usedModel = MODEL_BY_MODE.lite_31;
     verdict = await classifyBloxburgFridge({
-      model: args.model,
+      model: usedModel,
       images: args.images,
       userText: args.userText,
     });
-    if (verdict !== "fridge" && args.model.includes("2.5-flash")) {
-      usedModel = MODEL_BY_MODE.lite_31;
-      verdict = await classifyBloxburgFridge({
-        model: usedModel,
-        images: args.images,
-        userText: args.userText,
-      });
-    }
+  }
 
-    if (verdict === "not_fridge") {
-      return {
-        reply:
-          "I don't see a Bloxburg **Content** panel in those frames (need the white list with qty numbers and blue **Take** buttons). Share the **Roblox** window → open fridge → View Content, then Send. I will **not** invent menu items.",
-        thinking: "",
-        runs: [],
-        model: usedModel,
-      };
-    }
-    if (verdict === "unclear") {
-      return {
-        reply:
-          "Those frames are too unclear to trust (dark, wrong window, or share paused). Resume share on Roblox, open **View Content**, capture clear rows, then Send. I will **not** guess foods that aren't on screen.",
-        thinking: "",
-        runs: [],
-        model: usedModel,
-      };
-    }
+  if (verdict === "not_fridge") {
+    return {
+      reply:
+        "I don't see a Bloxburg **Content** panel in those frames (need the white list with qty numbers and blue **Take** buttons). Share the **Roblox** window → open fridge → View Content, then Send. I will **not** invent menu items.",
+      thinking: "",
+      runs: [],
+      model: usedModel,
+    };
+  }
+  if (verdict === "unclear") {
+    return {
+      reply:
+        "Those frames are too unclear to trust (dark, wrong window, or share paused). Resume share on Roblox, open **View Content**, capture clear rows, then Send. I will **not** guess foods that aren't on screen.",
+      thinking: "",
+      runs: [],
+      model: usedModel,
+    };
   }
 
   let { items } = await transcribeMenuFromImages({
