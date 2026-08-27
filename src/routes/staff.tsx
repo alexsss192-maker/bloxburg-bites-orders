@@ -68,7 +68,8 @@ type NavItem = {
     | "/staff/tips"
     | "/staff/panda"
     | "/staff/audit"
-    | "/staff/users";
+    | "/staff/users"
+    | "/staff/bulk-pricing";
 
   label: string;
   icon: typeof ShoppingBag;
@@ -110,6 +111,12 @@ const NAV_ITEMS: NavItem[] = [
     to: "/staff/users",
     label: "Users",
     icon: Users,
+    adminOnly: true,
+  },
+  {
+    to: "/staff/bulk-pricing",
+    label: "Bulk Pricing",
+    icon: BadgePercent,
     adminOnly: true,
   },
 ];
