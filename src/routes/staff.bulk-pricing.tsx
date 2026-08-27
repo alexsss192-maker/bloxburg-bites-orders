@@ -116,18 +116,26 @@ function StaffBulkPricingPage() {
 
     setSubmitting(true);
     try {
-      const { error } = await supabase
-        .from("bulk_service_fees")
-        .insert({
-          fee_value: feeValue,
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+
+      // fee_value is integer in DB; chef_id required by schema + RLS
+      const { error } = await supabase.from("bulk_service_fees").upsert(
+        {
+          chef_id: user.id,
+          fee_value: Math.round(feeValue),
           fee_type: formData.fee_type,
-          fee_message: formData.fee_message || null,
+          fee_message: formData.fee_message.trim() || null,
           is_active: formData.is_active,
-        });
+        },
+        { onConflict: "chef_id" },
+      );
 
       if (error) throw error;
 
-      toast.success("Bulk service fee added");
+      toast.success("Bulk service fee saved");
       setFormData({
         fee_value: "",
         fee_type: "fixed",
@@ -136,11 +144,13 @@ function StaffBulkPricingPage() {
       });
       await loadFees();
     } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Failed to add fee",
-      );
+      const msg =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: string }).message)
+          : err instanceof Error
+            ? err.message
+            : "Failed to add fee";
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -166,7 +176,11 @@ function StaffBulkPricingPage() {
       toast.success("Fee deleted");
       await loadFees();
     } catch (err) {
-      toast.error("Failed to delete fee");
+      const msg =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: string }).message)
+          : "Failed to delete fee";
+      toast.error(msg);
     }
   }
 
@@ -189,7 +203,11 @@ function StaffBulkPricingPage() {
       );
       await loadFees();
     } catch (err) {
-      toast.error("Failed to update fee");
+      const msg =
+        err && typeof err === "object" && "message" in err
+          ? String((err as { message: string }).message)
+          : "Failed to update fee";
+      toast.error(msg);
     }
   }
 
