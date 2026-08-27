@@ -1820,6 +1820,7 @@ async function runOpenAiTurn(args: {
     const u = (img?.data_url || "").trim();
     return (
       u.startsWith("data:image/") ||
+      u.startsWith("data:video/") ||
       u.startsWith("https://") ||
       u.startsWith("http://")
     );
@@ -2135,6 +2136,7 @@ async function runGoogleTurn(args: {
     const u = (img?.data_url || "").trim();
     return (
       u.startsWith("data:image/") ||
+      u.startsWith("data:video/") ||
       u.startsWith("https://") ||
       u.startsWith("http://")
     );
@@ -2152,10 +2154,19 @@ async function runGoogleTurn(args: {
 
   // Images first — models attend better; include detail:high when the gateway honors it
   for (const image of visionImages) {
-    userContent.push({
-      type: "image_url",
-      image_url: { url: image.data_url, detail: "high" },
-    });
+    const url = (image.data_url || "").trim();
+    if (url.startsWith("data:video/")) {
+      // Fridge scroll video — Gemini/OpenRouter video_url when supported
+      userContent.push({
+        type: "video_url",
+        video_url: { url },
+      } as { type: string; video_url: { url: string } });
+    } else {
+      userContent.push({
+        type: "image_url",
+        image_url: { url, detail: "high" },
+      });
+    }
   }
 
   const visionTask =
@@ -2866,6 +2877,7 @@ async function classifyBloxburgFridge(args: {
     const u = (img?.data_url || "").trim();
     return (
       u.startsWith("data:image/") ||
+      u.startsWith("data:video/") ||
       u.startsWith("https://") ||
       u.startsWith("http://")
     );
@@ -2885,9 +2897,11 @@ async function classifyBloxburgFridge(args: {
 
   const content: Array<Record<string, unknown>> = [];
   for (const image of visionImages.slice(0, 3)) {
+    const url = (image.data_url || "").trim();
+    if (url.startsWith("data:video/")) continue;
     content.push({
       type: "image_url",
-      image_url: { url: image.data_url },
+      image_url: { url },
     });
   }
   content.push({
@@ -2940,6 +2954,7 @@ async function transcribeMenuFromImages(args: {
     const u = (img?.data_url || "").trim();
     return (
       u.startsWith("data:image/") ||
+      u.startsWith("data:video/") ||
       u.startsWith("https://") ||
       u.startsWith("http://")
     );
@@ -2962,9 +2977,11 @@ async function transcribeMenuFromImages(args: {
 
   const content: Array<Record<string, unknown>> = [];
   for (const image of visionImages.slice(0, 9)) {
+    const url = (image.data_url || "").trim();
+    if (url.startsWith("data:video/")) continue;
     content.push({
       type: "image_url",
-      image_url: { url: image.data_url, detail: "high" },
+      image_url: { url, detail: "high" },
     });
   }
   // Do NOT echo the chef's sentence — models copy it or invent a default menu.
@@ -3069,6 +3086,7 @@ async function verifyItemsVisible(args: {
     const u = (img?.data_url || "").trim();
     return (
       u.startsWith("data:image/") ||
+      u.startsWith("data:video/") ||
       u.startsWith("https://") ||
       u.startsWith("http://")
     );
@@ -3090,9 +3108,11 @@ async function verifyItemsVisible(args: {
 
   const content: Array<Record<string, unknown>> = [];
   for (const image of visionImages.slice(0, 6)) {
+    const url = (image.data_url || "").trim();
+    if (url.startsWith("data:video/")) continue;
     content.push({
       type: "image_url",
-      image_url: { url: image.data_url, detail: "high" },
+      image_url: { url, detail: "high" },
     });
   }
   content.push({
