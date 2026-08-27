@@ -215,6 +215,53 @@ function SkippeModePicker({
     };
   }, [open]);
 
+  const autoOpt = SKIPPE_MODE_OPTIONS.find((o) => o.value === "auto")!;
+  const geminiOpts = SKIPPE_MODE_OPTIONS.filter(
+    (o) => o.vendor === "google" && o.value !== "auto",
+  );
+  const openaiOpts = SKIPPE_MODE_OPTIONS.filter((o) => o.vendor === "openai");
+
+  function Row({
+    o,
+    active,
+  }: {
+    o: (typeof SKIPPE_MODE_OPTIONS)[number];
+    active: boolean;
+  }) {
+    return (
+      <motion.button
+        type="button"
+        role="option"
+        aria-selected={active}
+        onClick={() => {
+          onChange(o.value);
+          setOpen(false);
+        }}
+        whileHover={{ backgroundColor: "rgba(255,255,255,0.06)" }}
+        whileTap={{ scale: 0.985 }}
+        className={[
+          "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors",
+          active ? "bg-white/[0.08]" : "bg-transparent",
+        ].join(" ")}
+      >
+        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center">
+          <ModeGlyph vendor={o.vendor} />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-white/95">
+          {o.label}
+        </span>
+        <span className="shrink-0 text-[12px] font-medium tabular-nums text-white/45">
+          {o.cost}
+        </span>
+        <span className="grid h-4 w-4 shrink-0 place-items-center">
+          {active ? (
+            <Check className="h-3.5 w-3.5 text-emerald-400" strokeWidth={2.75} />
+          ) : null}
+        </span>
+      </motion.button>
+    );
+  }
+
   return (
     <div ref={rootRef} className="relative shrink-0">
       <motion.button
@@ -222,145 +269,63 @@ function SkippeModePicker({
         onClick={() => setOpen((v) => !v)}
         whileTap={{ scale: 0.98 }}
         className={[
-          "group relative flex h-11 w-[18rem] items-center gap-2.5 overflow-hidden rounded-2xl border px-3 text-left text-sm font-semibold transition",
+          "flex h-10 items-center gap-2 rounded-full border px-3 text-left text-[13px] font-medium transition",
           open
-            ? "border-cherry/40 bg-white shadow-[0_0_0_3px_rgba(196,30,90,0.12)]"
-            : "border-ink/10 bg-white hover:border-cherry/25 hover:shadow-md",
+            ? "border-white/15 bg-[#1a1a1f] text-white shadow-[0_0_0_2px_rgba(255,255,255,0.06)]"
+            : "border-ink/10 bg-white text-ink hover:border-ink/20",
         ].join(" ")}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
+        <ModeGlyph vendor={selected.vendor} />
+        <span className="max-w-[9.5rem] truncate">{selected.label}</span>
         <span
-          className="pointer-events-none absolute inset-0 opacity-80"
-          style={{
-            background:
-              "linear-gradient(120deg, rgba(255,214,230,0.55), transparent 40%, rgba(255,232,240,0.4))",
-          }}
-          aria-hidden
-        />
-        <span className="relative z-[1] grid h-7 w-7 place-items-center rounded-xl bg-ink/[0.04] ring-1 ring-ink/5">
-          <ModeGlyph vendor={selected.vendor} />
-        </span>
-        <span className="relative z-[1] min-w-0 flex-1 truncate">{selected.label}</span>
-        <span className="relative z-[1] shrink-0 rounded-full bg-ink/[0.06] px-2 py-0.5 text-[10px] font-bold tracking-wide text-ink/55">
+          className={[
+            "tabular-nums",
+            open ? "text-white/50" : "text-ink/45",
+          ].join(" ")}
+        >
           {selected.cost}
         </span>
         <motion.span
           animate={{ rotate: open ? 180 : 0 }}
-          transition={{ type: "spring", stiffness: 400, damping: 22 }}
-          className="relative z-[1] text-ink/45"
+          transition={{ type: "spring", stiffness: 420, damping: 24 }}
+          className={open ? "text-white/50" : "text-ink/40"}
         >
-          <ChevronDown className="h-4 w-4" />
+          <ChevronDown className="h-3.5 w-3.5" />
         </motion.span>
       </motion.button>
 
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 8, scale: 0.96, filter: "blur(4px)" }}
-            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: 6, scale: 0.97, filter: "blur(3px)" }}
-            transition={{ type: "spring", stiffness: 420, damping: 28, mass: 0.7 }}
-            className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[22rem] overflow-hidden rounded-3xl border border-ink/10 bg-white/95 p-2 shadow-[0_24px_60px_-12px_rgba(28,12,24,0.28)] backdrop-blur-xl"
+            initial={{ opacity: 0, y: 6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            transition={{ type: "spring", stiffness: 480, damping: 32, mass: 0.65 }}
+            className="absolute right-0 top-[calc(100%+0.4rem)] z-50 w-[17.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#121214] p-1.5 shadow-[0_20px_50px_-10px_rgba(0,0,0,0.65)]"
             role="listbox"
             aria-label="Skippe model"
           >
-            <div
-              className="pointer-events-none absolute inset-0 opacity-90"
-              style={{
-                background:
-                  "radial-gradient(ellipse 80% 60% at 10% 0%, rgba(255,182,210,0.35), transparent 55%), radial-gradient(ellipse 70% 50% at 100% 100%, rgba(196,30,90,0.08), transparent 50%)",
-              }}
-              aria-hidden
-            />
-            <p className="relative z-[1] px-3 pb-1.5 pt-2 text-[10px] font-black uppercase tracking-[0.22em] text-cherry/80">
-              Model · cost
+            <Row o={autoOpt} active={value === "auto"} />
+
+            <p className="px-2.5 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-500/80">
+              Gemini models
             </p>
-            <ul className="relative z-[1] space-y-1">
-              {SKIPPE_MODE_OPTIONS.map((o, i) => {
-                const active = o.value === value;
-                return (
-                  <motion.li
-                    key={o.value}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{
-                      delay: 0.03 * i,
-                      type: "spring",
-                      stiffness: 500,
-                      damping: 30,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={active}
-                      onClick={() => {
-                        onChange(o.value);
-                        setOpen(false);
-                      }}
-                      className={[
-                        "group flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left transition",
-                        active
-                          ? "bg-cherry/10 ring-1 ring-cherry/20"
-                          : "hover:bg-ink/[0.04]",
-                      ].join(" ")}
-                    >
-                      <span
-                        className={[
-                          "mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl transition",
-                          active
-                            ? "bg-white shadow-sm ring-1 ring-cherry/15"
-                            : "bg-ink/[0.04] group-hover:bg-white group-hover:shadow-sm",
-                        ].join(" ")}
-                      >
-                        <ModeGlyph vendor={o.vendor} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          <span className="truncate text-sm font-semibold text-ink">
-                            {o.label}
-                          </span>
-                          {o.recommended && (
-                            <span className="inline-flex items-center gap-0.5 rounded-full bg-cherry/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-cherry">
-                              <Sparkles className="h-2.5 w-2.5" />
-                              Rec
-                            </span>
-                          )}
-                        </span>
-                        <span className="mt-0.5 block text-[11px] leading-snug text-ink/50">
-                          {o.note}
-                        </span>
-                      </span>
-                      <span className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
-                        <span
-                          className={[
-                            "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide",
-                            active
-                              ? "bg-cherry text-cream"
-                              : "bg-ink/[0.06] text-ink/55",
-                          ].join(" ")}
-                        >
-                          {o.cost}
-                        </span>
-                        <AnimatePresence>
-                          {active && (
-                            <motion.span
-                              initial={{ scale: 0.5, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              exit={{ scale: 0.5, opacity: 0 }}
-                              className="text-cherry"
-                            >
-                              <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
-                            </motion.span>
-                          )}
-                        </AnimatePresence>
-                      </span>
-                    </button>
-                  </motion.li>
-                );
-              })}
-            </ul>
+            <div className="space-y-0.5">
+              {geminiOpts.map((o) => (
+                <Row key={o.value} o={o} active={value === o.value} />
+              ))}
+            </div>
+
+            <p className="px-2.5 pb-1 pt-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-500/80">
+              ChatGPT models
+            </p>
+            <div className="space-y-0.5">
+              {openaiOpts.map((o) => (
+                <Row key={o.value} o={o} active={value === o.value} />
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
