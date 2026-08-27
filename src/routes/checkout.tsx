@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { motion, AnimatePresence } from "framer-motion";
-import { toast } from "sonner";
+import { toast } from "soner";
 import { placeOrder, previewOrder } from "@/lib/orders.functions";
 import { getPriorityLevels, getCartChefs, type PriorityLevel } from "@/lib/members.functions";
 import { useQuery } from "@tanstack/react-query";
@@ -197,10 +197,37 @@ function CheckoutPage() {
     [priorityPicks],
   );
 
+  // Calculate total priority cost from selected levels
+  const totalPriorityCost = useMemo(() => {
+    let sum = 0;
+    for (const level of priorityOptions) {
+      if (priorityPicks[level.owner_id] === level.tier) {
+        sum += level.price_bs;
+      }
+    }
+    return sum;
+  }, [priorityOptions, priorityPicks]);
+
   const displayTotal = pickTotal(
     pricing,
     total,
   );
+
+  // BUGFIX: Add priority cost to total if it's not already included
+  // in the server response (check if priority_bs matches our calculation)
+  const finalTotal = useMemo(() => {
+    if (!pricing) return displayTotal;
+    
+    // If the server already calculated priority, use it as-is
+    const serverPriorityCost = pricing.priority_bs ?? 0;
+    
+    // If server priority cost is 0 but we have selections, add them
+    if (serverPriorityCost === 0 && totalPriorityCost > 0) {
+      return displayTotal + totalPriorityCost;
+    }
+    
+    return displayTotal;
+  }, [displayTotal, pricing, totalPriorityCost]);
 
   const displayDiscount =
     pricing &&
@@ -349,7 +376,7 @@ function CheckoutPage() {
       const snapshot = {
         discord: discord.trim(),
         note: note.trim(),
-        total_bs: displayTotal,
+        total_bs: finalTotal,
         lines: items.map((i) => ({
           name: i.name,
           quantity: i.quantity,
@@ -399,380 +426,445 @@ function CheckoutPage() {
       }
 
       clear();
-
-      toast.success(
-        "Order placed — message your chef on Discord for payment and delivery.",
-      );
-    } catch (err) {
+      setStep("confirm");
+    } catch (e) {
       toast.error(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong",
+        e instanceof Error
+          ? e.message
+          : "Failed to place order",
       );
-    } finally {
       setSubmitting(false);
     }
-  }
-
-  if (orderId) {
-    return (
-      <SuccessPanel
-        orderId={orderId}
-        receipt={receipt}
-        onView={() =>
-          navigate({
-            to: "/order/$id",
-            params: {
-              id: orderId,
-            },
-          })
-        }
-      />
-    );
   }
 
   return (
     <div className="min-h-screen bg-cream">
       <SiteHeader />
 
-      <main className="mx-auto max-w-5xl px-6 py-10">
-        <p className="text-xs uppercase tracking-[0.3em] text-cherry">
-          Checkout
-        </p>
+      <main className="mx-auto max-w-4xl px-6 py-10">
+        <div className="mb-10 flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-cherry">
+              {stepIndex + 1} of {STEPS.length}
+            </p>
 
-        <h1 className="mt-2 font-display text-5xl">
-          Almost hungry.
-        </h1>
+            <h1 className="mt-1 font-display text-3xl md:text-4xl">
+              {STEPS.find(
+                (s) => s.id === step,
+              )?.label}
+            </h1>
+          </div>
 
-        {items.length === 0 &&
-        !orderId ? (
-          <EmptyBasket />
-        ) : (
-          <>
-            <Progress
-              stepIndex={stepIndex}
-            />
-
-            <div className="mt-8 grid gap-8 md:grid-cols-[1.1fr_1fr]">
-              <div className="relative min-h-[360px] overflow-hidden rounded-3xl border border-border/60 bg-card p-6 shadow-sm">
-                <AnimatePresence mode="wait">
-                  {step ===
-                    "review" && (
-                    <StepPanel key="review">
-                      <ReviewStep
-                        promoCode={promoCode}
-                        setPromoCode={setPromoCode}
-                        pricing={pricing}
-                        pricingLoading={pricingLoading}
-                        priorityOptions={priorityOptions}
-                        priorityPicks={priorityPicks}
-                        setPriorityPicks={setPriorityPicks}
-                        displayTotal={displayTotal}
-                      />
-
-                      <StepFooter
-                        primaryLabel="Continue"
-                        onPrimary={() =>
-                          setStep(
-                            "details",
-                          )
-                        }
-                        primaryDisabled={
-                          !canProceedReview
-                        }
-                        showBack={
-                          false
-                        }
-                      />
-                    </StepPanel>
-                  )}
-
-                  {step ===
-                    "details" && (
-                    <StepPanel key="details">
-                      <DetailsStep
-                        discord={
-                          discord
-                        }
-                        setDiscord={
-                          setDiscord
-                        }
-                        note={note}
-                        setNote={
-                          setNote
-                        }
-                      />
-
-                      <StepFooter
-                        primaryLabel="Review order"
-                        onPrimary={() =>
-                          setStep(
-                            "confirm",
-                          )
-                        }
-                        primaryDisabled={
-                          !canProceedDetails
-                        }
-                        onBack={() =>
-                          setStep(
-                            "review",
-                          )
-                        }
-                      />
-                    </StepPanel>
-                  )}
-
-                  {step ===
-                    "confirm" && (
-                    <StepPanel key="confirm">
-                      <ConfirmStep
-                        discord={
-                          discord
-                        }
-                        note={note}
-                        total={
-                          displayTotal
-                        }
-                        discount={
-                          displayDiscount
-                        }
-                        bulkServiceFee={
-                          bulkServiceFee
-                        }
-                      />
-
-                      <StepFooter
-                        primaryLabel={
-                          submitting
-                            ? "Placing order…"
-                            : `Place order · B$${displayTotal.toLocaleString()}`
-                        }
-                        onPrimary={
-                          submit
-                        }
-                        primaryDisabled={
-                          submitting
-                        }
-                        loading={
-                          submitting
-                        }
-                        onBack={() =>
-                          setStep(
-                            "details",
-                          )
-                        }
-                      />
-                    </StepPanel>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              <BasketSummary
-                pricing={pricing}
-                displayTotal={
-                  displayTotal
+          <div className="flex gap-2">
+            {STEPS.map((s, i) => (
+              <button
+                key={s.id}
+                onClick={() => setStep(s.id)}
+                disabled={
+                  (s.id === "details" &&
+                    !canProceedReview) ||
+                  (s.id === "confirm" &&
+                    !canProceedDetails)
                 }
-                bulkServiceFee={
-                  bulkServiceFee
-                }
+                className={`h-2 w-8 rounded-full transition ${
+                  i <= stepIndex
+                    ? "bg-cherry"
+                    : "bg-ink/20"
+                } disabled:cursor-not-allowed disabled:opacity-40`}
+                aria-label={`Step ${i + 1}: ${s.label}`}
               />
-            </div>
-          </>
+            ))}
+          </div>
+        </div>
+
+        {orderId && receipt ? (
+          <SuccessPanel
+            orderId={orderId}
+            receipt={receipt}
+            onView={() =>
+              navigate({
+                to: `/order/${orderId}`,
+              })
+            }
+          />
+        ) : (
+          <motion.div
+            key={step}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="grid gap-8 md:grid-cols-[1fr_380px]"
+          >
+            {step === "review" && (
+              <ReviewStep
+                promoCode={promoCode}
+                setPromoCode={
+                  setPromoCode
+                }
+                pricing={pricing}
+                pricingLoading={
+                  pricingLoading
+                }
+                priorityOptions={
+                  priorityOptions
+                }
+                priorityPicks={
+                  priorityPicks
+                }
+                setPriorityPicks={
+                  setPriorityPicks
+                }
+                displayTotal={finalTotal}
+              />
+            )}
+
+            {step === "details" && (
+              <DetailsStep
+                discord={discord}
+                setDiscord={
+                  setDiscord
+                }
+                note={note}
+                setNote={setNote}
+              />
+            )}
+
+            {step === "confirm" && (
+              <ConfirmStep
+                items={items}
+                discord={discord}
+                note={note}
+                total={finalTotal}
+              />
+            )}
+
+            <PricingSidebar
+              pricing={pricing}
+              bulkServiceFee={
+                bulkServiceFee
+              }
+              displayDiscount={
+                displayDiscount
+              }
+              normalDiscounts={
+                normalDiscounts
+              }
+              displayTotal={finalTotal}
+              pricingLoading={
+                pricingLoading
+              }
+            />
+          </motion.div>
+        )}
+
+        {!orderId && step === "confirm" && (
+          <div className="mt-8 flex gap-3">
+            <button
+              onClick={() =>
+                setStep("details")
+              }
+              className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:bg-blossom disabled:opacity-40"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+
+            <button
+              onClick={submit}
+              disabled={
+                submitting ||
+                items.length === 0
+              }
+              className="ml-auto inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Placing order…
+                </>
+              ) : (
+                <>
+                  Place order
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
+        {!orderId && (
+          <div className="mt-8 flex gap-3">
+            {step !== "review" && (
+              <button
+                onClick={() => {
+                  const index =
+                    STEPS.findIndex(
+                      (s) => s.id === step,
+                    );
+
+                  if (index > 0) {
+                    setStep(
+                      STEPS[index - 1]
+                        .id,
+                    );
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-full border border-ink/10 bg-white px-6 py-3 text-sm font-semibold text-ink transition hover:bg-blossom"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </button>
+            )}
+
+            {step !== "confirm" && (
+              <button
+                onClick={() => {
+                  const index =
+                    STEPS.findIndex(
+                      (s) => s.id === step,
+                    );
+
+                  const canProceed =
+                    (step === "review" &&
+                      canProceedReview) ||
+                    (step ===
+                      "details" &&
+                      canProceedDetails);
+
+                  if (
+                    canProceed &&
+                    index <
+                      STEPS.length - 1
+                  ) {
+                    setStep(
+                      STEPS[index + 1]
+                        .id,
+                    );
+                  }
+                }}
+                disabled={
+                  (step === "review" &&
+                    !canProceedReview) ||
+                  (step === "details" &&
+                    !canProceedDetails)
+                }
+                className="ml-auto inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream transition hover:bg-cherry disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         )}
       </main>
     </div>
   );
 }
 
-function EmptyBasket() {
+function ConfirmStep({
+  items,
+  discord,
+  note,
+  total,
+}: {
+  items: CartItem[];
+  discord: string;
+  note: string;
+  total: number;
+}) {
   return (
-    <motion.div
-      initial={{
-        opacity: 0,
-        y: 10,
-      }}
-      animate={{
-        opacity: 1,
-        y: 0,
-      }}
-      className="mt-10 rounded-3xl border border-dashed border-ink/20 bg-white p-16 text-center"
-    >
-      <div className="text-6xl">
-        🥟
+    <div className="flex-1">
+      <p className="text-xs uppercase tracking-[0.3em] text-cherry">
+        Step 3
+      </p>
+
+      <h2 className="mt-1 font-display text-3xl">
+        Order details
+      </h2>
+
+      <p className="mt-1 text-sm text-ink/60">
+        Review everything one last time.
+      </p>
+
+      <div className="mt-6 space-y-4 rounded-2xl border border-border/60 bg-white p-4">
+        <div>
+          <p className="text-xs uppercase tracking-widest text-ink/50">
+            Discord
+          </p>
+
+          <p className="mt-1 font-semibold">
+            {discord}
+          </p>
+        </div>
+
+        {note && (
+          <div>
+            <p className="text-xs uppercase tracking-widest text-ink/50">
+              Note
+            </p>
+
+            <p className="mt-1 whitespace-pre-wrap text-sm">
+              {note}
+            </p>
+          </div>
+        )}
+
+        <div>
+          <p className="text-xs uppercase tracking-widest text-ink/50">
+            Items
+          </p>
+
+          <ul className="mt-2 space-y-1 text-sm">
+            {items.map((i) => (
+              <li
+                key={
+                  i.menu_item_id
+                }
+              >
+                {i.name} × {i.quantity}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
-      <p className="mt-4 font-display text-3xl">
-        Your basket is empty.
-      </p>
+      <div className="mt-6 rounded-2xl bg-blossom/60 px-4 py-3">
+        <div className="flex items-baseline justify-between">
+          <span className="text-xs uppercase tracking-widest text-ink/60">
+            Total
+          </span>
 
-      <p className="mt-2 text-muted-foreground">
-        Pick something delicious from the menu.
-      </p>
-
-      <Link
-        to="/menu"
-        className="mt-6 inline-flex items-center gap-2 rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream hover:bg-cherry"
-      >
-        <ShoppingBag className="h-4 w-4" />
-        Go to the menu
-      </Link>
-    </motion.div>
+          <span className="font-display text-2xl">
+            B$
+            {total.toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function Progress({
-  stepIndex,
+type CartItem = {
+  menu_item_id: string;
+  name: string;
+  price_bs: number;
+  image_url: string | null;
+  quantity: number;
+  max_stock: number;
+};
+
+function PricingSidebar({
+  pricing,
+  bulkServiceFee,
+  displayDiscount,
+  normalDiscounts,
+  displayTotal,
+  pricingLoading,
 }: {
-  stepIndex: number;
+  pricing: PricingResult | null;
+  bulkServiceFee: number;
+  displayDiscount: number;
+  normalDiscounts: Array<{
+    name: string;
+    savings_bs: number;
+  }>;
+  displayTotal: number;
+  pricingLoading: boolean;
 }) {
   return (
-    <div className="mt-8 flex items-center gap-2">
-      {STEPS.map((s, i) => {
-        const active =
-          i === stepIndex;
+    <aside className="rounded-2xl border border-border/60 bg-white p-6">
+      <div className="text-xs uppercase tracking-widest text-ink/50">
+        Pricing breakdown
+      </div>
 
-        const done =
-          i < stepIndex;
-
-        return (
-          <div
-            key={s.id}
-            className="flex flex-1 items-center gap-2"
-          >
-            <motion.div
-              layout
-              className={`grid h-8 w-8 flex-shrink-0 place-items-center rounded-full text-xs font-bold transition ${
-                done
-                  ? "bg-bamboo text-cream"
-                  : active
-                    ? "bg-cherry text-cream ring-4 ring-cherry/20"
-                    : "bg-ink/10 text-ink/50"
-              }`}
-            >
-              {done ? (
-                <Check className="h-4 w-4" />
-              ) : (
-                i + 1
-              )}
-            </motion.div>
-
-            <div className="flex flex-1 items-center gap-2">
-              <span
-                className={`text-xs uppercase tracking-widest ${
-                  active
-                    ? "text-cherry"
-                    : done
-                      ? "text-bamboo"
-                      : "text-ink/40"
-                }`}
-              >
-                {s.label}
+      {pricing &&
+        pricing.total_bs > 0 && (
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-ink/60">
+                Subtotal
               </span>
 
-              {i <
-                STEPS.length -
-                  1 && (
-                <div className="h-px flex-1 bg-ink/10">
-                  <motion.div
-                    className="h-px bg-cherry"
-                    initial={false}
-                    animate={{
-                      scaleX: done
-                        ? 1
-                        : 0,
-                    }}
-                    style={{
-                      transformOrigin:
-                        "left",
-                    }}
-                    transition={{
-                      duration: 0.3,
-                    }}
-                  />
-                </div>
-              )}
+              <span>
+                B$
+                {pricing.subtotal_bs.toLocaleString()}
+              </span>
             </div>
+
+            {pricing.discount_bs >
+              0 && (
+              <div className="flex justify-between text-bamboo">
+                <span>
+                  Savings
+                </span>
+
+                <span>
+                  −B$
+                  {pricing.discount_bs.toLocaleString()}
+                </span>
+              </div>
+            )}
+
+            {(pricing.priority_bs ??
+              0) > 0 && (
+              <div className="flex justify-between text-cherry">
+                <span>
+                  Priority
+                </span>
+
+                <span>
+                  +B$
+                  {(
+                    pricing.priority_bs ??
+                    0
+                  ).toLocaleString()}
+                </span>
+              </div>
+            )}
+
+            {bulkServiceFee >
+              0 && (
+              <div className="flex items-center justify-between rounded-xl bg-cherry/5 px-3 py-2 text-cherry">
+                <span className="font-medium">
+                  Bulk / Fast Service
+                </span>
+
+                <span className="font-semibold">
+                  +B$
+                  {bulkServiceFee.toLocaleString()}
+                </span>
+              </div>
+            )}
           </div>
-        );
-      })}
-    </div>
-  );
-}
+        )}
 
-function StepPanel({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      initial={{
-        opacity: 0,
-        x: 20,
-      }}
-      animate={{
-        opacity: 1,
-        x: 0,
-      }}
-      exit={{
-        opacity: 0,
-        x: -20,
-      }}
-      transition={{
-        duration: 0.25,
-      }}
-      className="flex h-full flex-col"
-    >
-      {children}
-    </motion.div>
-  );
-}
+      <div className="mt-4 flex items-baseline justify-between border-t border-border/60 pt-4">
+        <span className="text-sm uppercase tracking-widest text-muted-foreground">
+          Total
+        </span>
 
-function StepFooter({
-  primaryLabel,
-  onPrimary,
-  primaryDisabled,
-  onBack,
-  showBack = true,
-  loading = false,
-}: {
-  primaryLabel: string;
-  onPrimary: () => void;
-  primaryDisabled?: boolean;
-  onBack?: () => void;
-  showBack?: boolean;
-  loading?: boolean;
-}) {
-  return (
-    <div className="mt-6 flex items-center justify-between gap-3">
-      {showBack ? (
-        <button
-          onClick={onBack}
-          className="inline-flex items-center gap-1.5 text-sm text-ink/60 hover:text-ink"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
-      ) : (
-        <span />
+        <span className="font-display text-3xl">
+          B$
+          {displayTotal.toLocaleString()}
+        </span>
+      </div>
+
+      {bulkServiceFee > 0 && (
+        <p className="mt-2 text-right text-xs text-cherry">
+          Includes Bulk / Fast Service
+        </p>
       )}
 
-      <Button
-        onClick={onPrimary}
-        disabled={primaryDisabled}
-        className="group inline-flex items-center gap-2 rounded-full bg-ink px-6 py-6 text-base text-cream hover:bg-cherry disabled:opacity-50"
-      >
-        {loading && (
-          <Loader2 className="h-4 w-4 animate-spin" />
+      {(pricing?.discount_bs ??
+        0) > 0 &&
+        pricing &&
+        pricing.total_bs > 0 && (
+          <p className="mt-2 text-right text-sm text-bamboo">
+            You save B$
+            {pricing.discount_bs.toLocaleString()}
+          </p>
         )}
-
-        {primaryLabel}
-
-        {!loading && (
-          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-        )}
-      </Button>
-    </div>
+    </aside>
   );
 }
 
@@ -1101,274 +1193,15 @@ function DetailsStep({
             id="note"
             value={note}
             onChange={(e) =>
-              setNote(
-                e.target.value,
-              )
+              setNote(e.target.value)
             }
-            maxLength={500}
-            placeholder="Timezone, preferred pickup window, …"
+            placeholder="e.g. Please deliver to Meadowbrook Park main gate"
             className="mt-2"
+            rows={4}
           />
-
-          {note.includes(
-            "Preferred bulk chef",
-          ) ||
-          note.includes(
-            "normal chef for bulk",
-          ) ? (
-            <p className="mt-1.5 text-xs text-cherry">
-              Bulk preference from your cart choice is included above.
-            </p>
-          ) : null}
         </div>
       </div>
     </div>
-  );
-}
-
-function ConfirmStep({
-  discord,
-  note,
-  total,
-  discount,
-  bulkServiceFee,
-}: {
-  discord: string;
-  note: string;
-  total: number;
-  discount: number;
-  bulkServiceFee: number;
-}) {
-  const items = useCart(
-    (s) => s.items,
-  );
-
-  return (
-    <div className="flex-1 space-y-4">
-      <p className="text-xs uppercase tracking-[0.3em] text-cherry">
-        Step 3
-      </p>
-
-      <h2 className="mt-1 font-display text-3xl">
-        Ready to send it?
-      </h2>
-
-      <div className="rounded-2xl border border-border/60 bg-white p-4 text-sm">
-        <div className="flex justify-between">
-          <span className="text-ink/60">
-            Discord
-          </span>
-
-          <span className="font-medium">
-            @{discord}
-          </span>
-        </div>
-
-        <div className="mt-2 flex justify-between">
-          <span className="text-ink/60">
-            Items
-          </span>
-
-          <span>
-            {items.length}
-          </span>
-        </div>
-
-        {discount > 0 && (
-          <div className="mt-2 flex justify-between text-bamboo">
-            <span>Savings</span>
-
-            <span>
-              −B$
-              {discount.toLocaleString()}
-            </span>
-          </div>
-        )}
-
-        {bulkServiceFee > 0 && (
-          <div className="mt-2 flex justify-between text-cherry">
-            <span>
-              Bulk / Fast Service
-            </span>
-
-            <span>
-              +B$
-              {bulkServiceFee.toLocaleString()}
-            </span>
-          </div>
-        )}
-
-        <div className="mt-3 flex justify-between border-t border-ink/10 pt-3">
-          <span className="text-ink/60">
-            Total
-          </span>
-
-          <span className="font-display text-lg">
-            B$
-            {total.toLocaleString()}
-          </span>
-        </div>
-
-        {note && (
-          <div className="mt-3 border-t border-ink/10 pt-3">
-            <span className="text-xs uppercase tracking-widest text-ink/40">
-              Note
-            </span>
-
-            <p className="mt-1 whitespace-pre-wrap text-sm">
-              {note}
-            </p>
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-2xl bg-cherry/10 p-4 text-sm text-ink/80">
-        Payment:{" "}
-        <span className="font-semibold">
-          Bloxburg Cash (B$)
-        </span>{" "}
-        — a chef will DM you shortly.
-      </div>
-    </div>
-  );
-}
-
-function BasketSummary({
-  pricing,
-  displayTotal,
-  bulkServiceFee,
-}: {
-  pricing: PricingResult | null;
-  displayTotal: number;
-  bulkServiceFee: number;
-}) {
-  const items = useCart(
-    (s) => s.items,
-  );
-
-  return (
-    <aside className="h-fit rounded-3xl border border-border/60 bg-white p-6 shadow-sm">
-      <p className="font-display text-2xl">
-        Your basket
-      </p>
-
-      <ul className="mt-4 space-y-3">
-        {items.map((i) => (
-          <li
-            key={i.menu_item_id}
-            className="flex items-center justify-between gap-3 text-sm"
-          >
-            <span className="flex-1">
-              <span className="font-medium">
-                {i.name}
-              </span>
-
-              <span className="text-muted-foreground">
-                {" "}
-                × {i.quantity}
-              </span>
-            </span>
-
-            <span className="tabular-nums">
-              B$
-              {(
-                i.price_bs *
-                i.quantity
-              ).toLocaleString()}
-            </span>
-          </li>
-        ))}
-      </ul>
-
-      {pricing &&
-        pricing.subtotal_bs >
-          0 && (
-          <div className="mt-6 space-y-2 border-t border-border/60 pt-4 text-sm">
-            <div className="flex justify-between">
-              <span className="text-ink/60">
-                Subtotal
-              </span>
-
-              <span>
-                B$
-                {pricing.subtotal_bs.toLocaleString()}
-              </span>
-            </div>
-
-            {pricing.discount_bs >
-              0 && (
-              <div className="flex justify-between text-bamboo">
-                <span>
-                  Savings
-                </span>
-
-                <span>
-                  −B$
-                  {pricing.discount_bs.toLocaleString()}
-                </span>
-              </div>
-            )}
-
-            {(pricing.priority_bs ??
-              0) > 0 && (
-              <div className="flex justify-between text-cherry">
-                <span>
-                  Priority
-                </span>
-
-                <span>
-                  +B$
-                  {(
-                    pricing.priority_bs ??
-                    0
-                  ).toLocaleString()}
-                </span>
-              </div>
-            )}
-
-            {bulkServiceFee >
-              0 && (
-              <div className="flex items-center justify-between rounded-xl bg-cherry/5 px-3 py-2 text-cherry">
-                <span className="font-medium">
-                  Bulk / Fast Service
-                </span>
-
-                <span className="font-semibold">
-                  +B$
-                  {bulkServiceFee.toLocaleString()}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-      <div className="mt-4 flex items-baseline justify-between border-t border-border/60 pt-4">
-        <span className="text-sm uppercase tracking-widest text-muted-foreground">
-          Total
-        </span>
-
-        <span className="font-display text-3xl">
-          B$
-          {displayTotal.toLocaleString()}
-        </span>
-      </div>
-
-      {bulkServiceFee > 0 && (
-        <p className="mt-2 text-right text-xs text-cherry">
-          Includes Bulk / Fast Service
-        </p>
-      )}
-
-      {(pricing?.discount_bs ??
-        0) > 0 &&
-        pricing &&
-        pricing.total_bs > 0 && (
-          <p className="mt-2 text-right text-sm text-bamboo">
-            You save B$
-            {pricing.discount_bs.toLocaleString()}
-          </p>
-        )}
-    </aside>
   );
 }
 
