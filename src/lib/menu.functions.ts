@@ -470,6 +470,12 @@ export const listOrders = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await assertStaff(context);
 
+    // After staff check, use service-role client so RLS "assigned chef only"
+    // does not hide orders when menu_items.owner_id / fulfillment.chef_id
+    // do not match the logged-in user (common after partial migrations).
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = supabaseAdmin;
+
     // Cap for chef UI: at most 40 recent orders. Delivered/cancelled older
     // than 7 days are dropped from the chef queue (customers still see them
     // in their own order history via get_orders_for_username).
@@ -484,13 +490,13 @@ export const listOrders = createServerFn({ method: "GET" })
 
     let rawOrders: unknown[] | null = null;
     {
-      const first = await context.supabase
+      const first = await db
         .from("orders" as any)
         .select(orderColsFull)
         .order("created_at", { ascending: false })
         .limit(80);
       if (first.error) {
-        const second = await context.supabase
+        const second = await db
           .from("orders" as any)
           .select(orderColsSafe)
           .order("created_at", { ascending: false })
@@ -529,7 +535,7 @@ export const listOrders = createServerFn({ method: "GET" })
     const ids = orders.map((o) => o.id);
 
     const { data: items } = ids.length
-      ? await context.supabase
+      ? await db
           .from("order_items" as any)
           .select(
             "id,order_id,menu_item_id,item_name,quantity,unit_price_bs,subtotal_bs,discount_bs,discount_name,owner_id",
@@ -542,12 +548,12 @@ export const listOrders = createServerFn({ method: "GET" })
         "id,order_id,chef_id,status,subtotal_bs,discount_bs,total_bs,priority_tier,priority_label,priority_color,priority_price_bs,cancel_reason,created_at,updated_at";
       const fulColsSafe =
         "id,order_id,chef_id,status,subtotal_bs,discount_bs,total_bs,created_at,updated_at";
-      const ful1 = await context.supabase
+      const ful1 = await db
         .from("order_fulfillments" as any)
         .select(fulColsFull)
         .in("order_id", ids);
       if (ful1.error) {
-        const ful2 = await context.supabase
+        const ful2 = await db
           .from("order_fulfillments" as any)
           .select(fulColsSafe)
           .in("order_id", ids);
@@ -604,7 +610,8 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     await assertStaff(context);
-    const { error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
       .from("order_fulfillments" as any)
       .update({ status: data.status })
       .eq("id", data.id);
