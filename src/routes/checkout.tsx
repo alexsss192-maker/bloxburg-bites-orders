@@ -222,21 +222,21 @@ function CheckoutPage() {
     total,
   );
 
-  // BUGFIX: Add priority cost to total if it's not already included
-  // in the server response (check if priority_bs matches our calculation)
+  // Priority must always affect the visible total.
+  // Server preview may omit priority_bs; client selection still costs B$.
+  // If the server already baked priority into total_bs (priority_bs > 0),
+  // do not double-count.
   const finalTotal = useMemo(() => {
-    if (!pricing) return displayTotal;
-    
-    // If the server already calculated priority, use it as-is
-    const serverPriorityCost = pricing.priority_bs ?? 0;
-    
-    // If server priority cost is 0 but we have selections, add them
-    if (serverPriorityCost === 0 && totalPriorityCost > 0) {
-      return displayTotal + totalPriorityCost;
-    }
-    
-    return displayTotal;
+    const serverPriorityCost = Number(pricing?.priority_bs ?? 0);
+    if (serverPriorityCost > 0) return displayTotal;
+    return displayTotal + totalPriorityCost;
   }, [displayTotal, pricing, totalPriorityCost]);
+
+  /** Amount to show as the Priority line (prefer server, else client picks). */
+  const displayPriorityCost =
+    Number(pricing?.priority_bs ?? 0) > 0
+      ? Number(pricing?.priority_bs ?? 0)
+      : totalPriorityCost;
 
   const displayDiscount =
     pricing &&
@@ -524,6 +524,9 @@ function CheckoutPage() {
                   setPriorityPicks
                 }
                 displayTotal={finalTotal}
+                displayPriorityCost={
+                  displayPriorityCost
+                }
               />
             )}
 
@@ -559,6 +562,9 @@ function CheckoutPage() {
                 normalDiscounts
               }
               displayTotal={finalTotal}
+              displayPriorityCost={
+                displayPriorityCost
+              }
               pricingLoading={
                 pricingLoading
               }
@@ -759,6 +765,7 @@ function PricingSidebar({
   displayDiscount,
   normalDiscounts,
   displayTotal,
+  displayPriorityCost,
   pricingLoading,
 }: {
   pricing: PricingResult | null;
@@ -769,6 +776,7 @@ function PricingSidebar({
     savings_bs: number;
   }>;
   displayTotal: number;
+  displayPriorityCost: number;
   pricingLoading: boolean;
 }) {
   return (
@@ -805,8 +813,7 @@ function PricingSidebar({
               </div>
             )}
 
-            {(pricing.priority_bs ??
-              0) > 0 && (
+            {displayPriorityCost > 0 && (
               <div className="flex justify-between text-cherry">
                 <span>
                   Priority
@@ -814,10 +821,7 @@ function PricingSidebar({
 
                 <span>
                   +B$
-                  {(
-                    pricing.priority_bs ??
-                    0
-                  ).toLocaleString()}
+                  {displayPriorityCost.toLocaleString()}
                 </span>
               </div>
             )}
@@ -877,6 +881,7 @@ function ReviewStep({
   priorityPicks,
   setPriorityPicks,
   displayTotal,
+  displayPriorityCost,
 }: {
   promoCode: string;
   setPromoCode: (value: string) => void;
@@ -886,6 +891,7 @@ function ReviewStep({
   priorityPicks: Record<string, "low" | "mid" | "high">;
   setPriorityPicks: (next: Record<string, "low" | "mid" | "high">) => void;
   displayTotal: number;
+  displayPriorityCost: number;
 }) {
   const items = useCart(
     (s) => s.items,
@@ -977,14 +983,10 @@ function ReviewStep({
         }
       />
 
-      {(pricing?.priority_bs ??
-        0) > 0 && (
+      {displayPriorityCost > 0 && (
         <p className="mt-3 text-sm text-cherry">
           Priority: +B$
-          {(
-            pricing?.priority_bs ??
-            0
-          ).toLocaleString()}
+          {displayPriorityCost.toLocaleString()}
         </p>
       )}
 
