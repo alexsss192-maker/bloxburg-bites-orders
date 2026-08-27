@@ -475,14 +475,32 @@ export const listOrders = createServerFn({ method: "GET" })
     // in their own order history via get_orders_for_username).
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: rawOrders, error } = await context.supabase
-      .from("orders" as any)
-      .select(
-        "id,discord_username,note,subtotal_bs,discount_bs,total_bs,status,created_at,discount_label,priority_tier,priority_label,priority_color,priority_price_bs,cancel_reason",
-      )
-      .order("created_at", { ascending: false })
-      .limit(80);
-    if (error) throw new Error(error.message);
+    // Prefer full column list; if a column is missing on a partial migration,
+    // fall back so the chef queue never goes blank.
+    const orderColsFull =
+      "id,discord_username,note,subtotal_bs,discount_bs,total_bs,status,created_at,discount_label,priority_tier,priority_label,priority_color,priority_price_bs,cancel_reason";
+    const orderColsSafe =
+      "id,discord_username,note,subtotal_bs,discount_bs,total_bs,status,created_at";
+
+    let rawOrders: unknown[] | null = null;
+    {
+      const first = await context.supabase
+        .from("orders" as any)
+        .select(orderColsFull)
+        .order("created_at", { ascending: false })
+        .limit(80);
+      if (first.error) {
+        const second = await context.supabase
+          .from("orders" as any)
+          .select(orderColsSafe)
+          .order("created_at", { ascending: false })
+          .limit(80);
+        if (second.error) throw new Error(second.error.message);
+        rawOrders = second.data as unknown[] | null;
+      } else {
+        rawOrders = first.data as unknown[] | null;
+      }
+    }
 
     const all = (rawOrders ?? []) as unknown as Array<{
       id: string;
@@ -518,14 +536,27 @@ export const listOrders = createServerFn({ method: "GET" })
           )
           .in("order_id", ids)
       : { data: [] as unknown as Array<Record<string, unknown>> };
-    const { data: fulfillments } = ids.length
-      ? await context.supabase
+    let fulfillments: unknown[] | null = [];
+    if (ids.length) {
+      const fulColsFull =
+        "id,order_id,chef_id,status,subtotal_bs,discount_bs,total_bs,priority_tier,priority_label,priority_color,priority_price_bs,cancel_reason,created_at,updated_at";
+      const fulColsSafe =
+        "id,order_id,chef_id,status,subtotal_bs,discount_bs,total_bs,created_at,updated_at";
+      const ful1 = await context.supabase
+        .from("order_fulfillments" as any)
+        .select(fulColsFull)
+        .in("order_id", ids);
+      if (ful1.error) {
+        const ful2 = await context.supabase
           .from("order_fulfillments" as any)
-          .select(
-            "id,order_id,chef_id,status,subtotal_bs,discount_bs,total_bs,priority_tier,priority_label,priority_color,priority_price_bs,cancel_reason,created_at,updated_at",
-          )
-          .in("order_id", ids)
-      : { data: [] as unknown as Array<Record<string, unknown>> };
+          .select(fulColsSafe)
+          .in("order_id", ids);
+        if (ful2.error) throw new Error(ful2.error.message);
+        fulfillments = ful2.data as unknown[] | null;
+      } else {
+        fulfillments = ful1.data as unknown[] | null;
+      }
+    }
 
     const activeCount = filtered.filter((o) => !HISTORY.has(o.status)).length;
 
