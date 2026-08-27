@@ -33,15 +33,9 @@ import { ChatGptGlyph } from "@/components/chatgpt-glyph";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Brain,
   Camera,
+  Check,
   ChevronDown,
   Film,
   ImagePlus,
@@ -190,6 +184,187 @@ function ModeGlyph({ vendor }: { vendor: "openai" | "google" }) {
         <GoogleGlyph className="h-4 w-4 shrink-0" />
       )}
     </span>
+  );
+}
+
+function SkippeModePicker({
+  value,
+  onChange,
+}: {
+  value: SkippeMode;
+  onChange: (v: SkippeMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected =
+    SKIPPE_MODE_OPTIONS.find((o) => o.value === value) ?? SKIPPE_MODE_OPTIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <motion.button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        whileTap={{ scale: 0.98 }}
+        className={[
+          "group relative flex h-11 w-[18rem] items-center gap-2.5 overflow-hidden rounded-2xl border px-3 text-left text-sm font-semibold transition",
+          open
+            ? "border-cherry/40 bg-white shadow-[0_0_0_3px_rgba(196,30,90,0.12)]"
+            : "border-ink/10 bg-white hover:border-cherry/25 hover:shadow-md",
+        ].join(" ")}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span
+          className="pointer-events-none absolute inset-0 opacity-80"
+          style={{
+            background:
+              "linear-gradient(120deg, rgba(255,214,230,0.55), transparent 40%, rgba(255,232,240,0.4))",
+          }}
+          aria-hidden
+        />
+        <span className="relative z-[1] grid h-7 w-7 place-items-center rounded-xl bg-ink/[0.04] ring-1 ring-ink/5">
+          <ModeGlyph vendor={selected.vendor} />
+        </span>
+        <span className="relative z-[1] min-w-0 flex-1 truncate">{selected.label}</span>
+        <span className="relative z-[1] shrink-0 rounded-full bg-ink/[0.06] px-2 py-0.5 text-[10px] font-bold tracking-wide text-ink/55">
+          {selected.cost}
+        </span>
+        <motion.span
+          animate={{ rotate: open ? 180 : 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 22 }}
+          className="relative z-[1] text-ink/45"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </motion.span>
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.96, filter: "blur(4px)" }}
+            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: 6, scale: 0.97, filter: "blur(3px)" }}
+            transition={{ type: "spring", stiffness: 420, damping: 28, mass: 0.7 }}
+            className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[22rem] overflow-hidden rounded-3xl border border-ink/10 bg-white/95 p-2 shadow-[0_24px_60px_-12px_rgba(28,12,24,0.28)] backdrop-blur-xl"
+            role="listbox"
+            aria-label="Skippe model"
+          >
+            <div
+              className="pointer-events-none absolute inset-0 opacity-90"
+              style={{
+                background:
+                  "radial-gradient(ellipse 80% 60% at 10% 0%, rgba(255,182,210,0.35), transparent 55%), radial-gradient(ellipse 70% 50% at 100% 100%, rgba(196,30,90,0.08), transparent 50%)",
+              }}
+              aria-hidden
+            />
+            <p className="relative z-[1] px-3 pb-1.5 pt-2 text-[10px] font-black uppercase tracking-[0.22em] text-cherry/80">
+              Model · cost
+            </p>
+            <ul className="relative z-[1] space-y-1">
+              {SKIPPE_MODE_OPTIONS.map((o, i) => {
+                const active = o.value === value;
+                return (
+                  <motion.li
+                    key={o.value}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      delay: 0.03 * i,
+                      type: "spring",
+                      stiffness: 500,
+                      damping: 30,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => {
+                        onChange(o.value);
+                        setOpen(false);
+                      }}
+                      className={[
+                        "group flex w-full items-start gap-3 rounded-2xl px-3 py-2.5 text-left transition",
+                        active
+                          ? "bg-cherry/10 ring-1 ring-cherry/20"
+                          : "hover:bg-ink/[0.04]",
+                      ].join(" ")}
+                    >
+                      <span
+                        className={[
+                          "mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl transition",
+                          active
+                            ? "bg-white shadow-sm ring-1 ring-cherry/15"
+                            : "bg-ink/[0.04] group-hover:bg-white group-hover:shadow-sm",
+                        ].join(" ")}
+                      >
+                        <ModeGlyph vendor={o.vendor} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="truncate text-sm font-semibold text-ink">
+                            {o.label}
+                          </span>
+                          {o.recommended && (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-cherry/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-cherry">
+                              <Sparkles className="h-2.5 w-2.5" />
+                              Rec
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block text-[11px] leading-snug text-ink/50">
+                          {o.note}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+                        <span
+                          className={[
+                            "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide",
+                            active
+                              ? "bg-cherry text-cream"
+                              : "bg-ink/[0.06] text-ink/55",
+                          ].join(" ")}
+                        >
+                          {o.cost}
+                        </span>
+                        <AnimatePresence>
+                          {active && (
+                            <motion.span
+                              initial={{ scale: 0.5, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0.5, opacity: 0 }}
+                              className="text-cherry"
+                            >
+                              <Check className="h-3.5 w-3.5" strokeWidth={2.5} />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </span>
+                    </button>
+                  </motion.li>
+                );
+              })}
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 
@@ -1533,22 +1708,7 @@ function PandaPage() {
                 {sharing ? "Stop share" : "Fridge share"}
               </span>
             </button>
-            <Select value={mode} onValueChange={(v) => pickMode(v as SkippeMode)}>
-              <SelectTrigger className="h-11 w-[17.5rem] shrink-0 rounded-2xl border-ink/10 bg-white text-left text-sm font-semibold [&>span]:flex [&>span]:min-w-0 [&>span]:items-center [&>span]:gap-2 [&>span]:truncate">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="rounded-2xl">
-                {SKIPPE_MODE_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value} className="rounded-xl py-2.5">
-                    <span className="flex w-full min-w-0 items-center gap-2">
-                      <ModeGlyph vendor={o.vendor} />
-                      <span className="min-w-0 flex-1 truncate font-semibold">{o.label}</span>
-                      <span className="ml-auto shrink-0 pl-3 text-xs text-ink/50">Cost: {o.cost}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <SkippeModePicker value={mode} onChange={pickMode} />
             <button
               onClick={clearChat}
               className="grid h-11 w-11 place-items-center rounded-2xl border border-ink/10 bg-white text-ink/60 transition hover:text-destructive"
