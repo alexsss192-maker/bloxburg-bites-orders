@@ -2093,48 +2093,6 @@ function finalizeSkippeReply(args: {
   const cleaned = (modelReply || "").trim();
   return cleaned || synthesizeReplyFromRuns(runs);
 }
-function finalizeSkippeReply(args: {
-  userText: string;
-  imageCount: number;
-  runs: SkippeToolRun[];
-  modelReply: string;
-}): string {
-  const { userText, imageCount, runs, modelReply } = args;
-  const creates = successfulCreates(runs);
-  const askedAdd = askedToAddFromPicture(userText, imageCount);
-  const modelClaimedAdd =
-    /\b(added|created|imported|all set|i'?ve added|successfully added)\b/i.test(
-      modelReply || "",
-    );
-
-  if (creates.length > 0) {
-    return synthesizeReplyFromRuns(runs);
-  }
-
-  if (askedAdd && creates.length === 0) {
-    return imageCount > 0
-      ? "I did **not** add menu items this turn (no successful create tool ran). I got your picture(s) but could not map food names into create_menu_items_batch. Send a sharper Content close-up, or type: `add Pancakes stock 12, Taco stock 5`."
-      : "I did **not** add menu items this turn (no successful create tool ran). Re-attach the picture or type the food names.";
-  }
-
-  if (modelClaimedAdd) {
-    // CRITICAL FIX: The model claimed success but creates.length === 0.
-    // This means we already checked and found NO successful create runs.
-    // The model was hallucinating. Do NOT display the failed run summaries.
-    if (creates.length === 0) {
-      return "The model claimed success, but no items were actually added. No create tool succeeded. " +
-             (imageCount > 0 
-               ? "Try sending a clearer Content picture or type: `add Pancakes stock 12, Taco stock 5`."
-               : "Re-attach the picture or type the food names.");
-    }
-    return runs.length > 0
-      ? synthesizeReplyFromRuns(runs)
-      : "Nothing was added — no create tool succeeded.";
-  }
-
-  const cleaned = (modelReply || "").trim();
-  return cleaned || synthesizeReplyFromRuns(runs);
-}
 
 /**
  * Google / non-OpenAI path via OpenAI-compatible /v1/chat/completions.
@@ -3314,37 +3272,47 @@ async function addMenuFromPictures(args: {
 
   // ── Gate: must look like a real Bloxburg Content panel before we write anything.
   // This is what stops "default menu" hallucinations on blank / wrong-window shares.
-  let verdict = await classifyBloxburgFridge({
-    model: args.model,
-    images: args.images,
-    userText: args.userText,
-  });
-  if (verdict !== "fridge" && args.model.includes("2.5-flash")) {
-    usedModel = MODEL_BY_MODE.lite_31;
+  // HOWEVER: if the user explicitly asked to add from pictures, trust their intent
+  // and skip the classification gate — let the transcriber be the filter instead.
+  const skipClassification = 
+    /\b(add|create|import|scan|restock|rebuild|replace)\b/i.test(args.userText) &&
+    !/\b(show|display|help|explain|what|how)\b/i.test(args.userText);
+
+  let verdict: "fridge" | "not_fridge" | "unclear" = "fridge";
+  
+  if (!skipClassification) {
     verdict = await classifyBloxburgFridge({
-      model: usedModel,
+      model: args.model,
       images: args.images,
       userText: args.userText,
     });
-  }
+    if (verdict !== "fridge" && args.model.includes("2.5-flash")) {
+      usedModel = MODEL_BY_MODE.lite_31;
+      verdict = await classifyBloxburgFridge({
+        model: usedModel,
+        images: args.images,
+        userText: args.userText,
+      });
+    }
 
-  if (verdict === "not_fridge") {
-    return {
-      reply:
-        "I don't see a Bloxburg **Content** panel in those frames (need the white list with qty numbers and blue **Take** buttons). Share the **Roblox** window → open fridge → View Content, then Send. I will **not** invent menu items.",
-      thinking: "",
-      runs: [],
-      model: usedModel,
-    };
-  }
-  if (verdict === "unclear") {
-    return {
-      reply:
-        "Those frames are too unclear to trust (dark, wrong window, or share paused). Resume share on Roblox, open **View Content**, capture clear rows, then Send. I will **not** guess foods that aren't on screen.",
-      thinking: "",
-      runs: [],
-      model: usedModel,
-    };
+    if (verdict === "not_fridge") {
+      return {
+        reply:
+          "I don't see a Bloxburg **Content** panel in those frames (need the white list with qty numbers and blue **Take** buttons). Share the **Roblox** window → open fridge → View Content, then Send. I will **not** invent menu items.",
+        thinking: "",
+        runs: [],
+        model: usedModel,
+      };
+    }
+    if (verdict === "unclear") {
+      return {
+        reply:
+          "Those frames are too unclear to trust (dark, wrong window, or share paused). Resume share on Roblox, open **View Content**, capture clear rows, then Send. I will **not** guess foods that aren't on screen.",
+        thinking: "",
+        runs: [],
+        model: usedModel,
+      };
+    }
   }
 
   let { items } = await transcribeMenuFromImages({
