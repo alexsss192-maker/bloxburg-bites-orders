@@ -103,7 +103,7 @@ export const SKIPPE_TOOLS: ToolDef[] = [
   {
     name: "update_menu_item",
     description:
-      "Edit one of your own menu items (name, description, stock, category, active). You CANNOT change price — never try. Pass null for anything you are not changing. For fridge restock: set stock to sellable qty (physical fridge count minus reserved quantities on pending/preparing/ready orders unless the chef corrected that ready items were already pulled from the fridge).",
+      "Freely edit one of your own menu items: name, description, stock, category, is_active, image_url. Change any of those. HARD RULE: never change price_bs — prices are staff-menu only. Pass null for fields you are not changing. Fridge restock: set stock to sellable qty (fridge count minus reserved on pending/preparing/ready unless chef says ready items were already pulled).",
     parameters: obj({
       item_id: { type: "string" },
       name: nul("string"),
@@ -114,6 +114,7 @@ export const SKIPPE_TOOLS: ToolDef[] = [
         enum: ["seasonal", "non_seasonal", null],
       },
       is_active: nul("boolean"),
+      image_url: nul("string"),
     }),
   },
 
@@ -633,7 +634,10 @@ export async function runSkippeTool(
         patch.description = rawArgs.description.slice(0, 500);
       }
 
-      // Intentionally ignore any price_bs — Skippe cannot change prices.
+      // HARD RULE: never apply price_bs from the model — prices are staff-menu only.
+      if (rawArgs.price_bs !== null && rawArgs.price_bs !== undefined) {
+        /* ignored on purpose */
+      }
 
       if (rawArgs.stock !== null && rawArgs.stock !== undefined) {
         patch.stock = clampInt(rawArgs.stock, 0, 1_000_000, 0);
@@ -647,8 +651,22 @@ export async function runSkippeTool(
         patch.is_active = rawArgs.is_active;
       }
 
+      if (typeof rawArgs.image_url === "string") {
+        const url = rawArgs.image_url.trim();
+        if (
+          url === "" ||
+          url.startsWith("https://") ||
+          url.startsWith("http://") ||
+          url.startsWith("data:image/")
+        ) {
+          patch.image_url = url === "" ? null : url.slice(0, 2000);
+        }
+      }
+
       if (Object.keys(patch).length === 0) {
-        return fail("Nothing to change (and prices cannot be edited by Skippe — set them in the staff menu)");
+        return fail(
+          "Nothing to change. Skippe can edit name, description, stock, category, active, and image — but not price (use staff Menu for B$).",
+        );
       }
 
       const { error } = await ctx.supabase.from("menu_items").update(patch).eq("id", id);
@@ -1645,19 +1663,24 @@ export function buildSkippePrompt(args: {
   return [
     `Skippe — kitchen AI for ${args.staffName} (${args.isAdmin ? "admin" : "chef"}). Bloxburg food shop, currency B$.`,
     "",
-    "You CAN see the attached images. Never say they are missing.",
+    "You CAN see the attached images and video frames. Never say media is missing.",
+    "Frames may be dark, dim, or low-contrast — still try hard to read every food name and qty.",
+    "Prefer reading faint white/gray UI text over giving up. Only return empty if truly nothing is legible.",
     "",
-    "YOUR ONLY JOB THIS TURN:",
-    "1) Read EVERY food name (and qty number if visible) from the Bloxburg Content / fridge list in the photos.",
-    "2) Call create_menu_items_batch ONCE with those foods.",
+    "YOUR JOB THIS TURN (when chef is adding/updating from media):",
+    "1) Read EVERY food name (and qty number if visible) from the Bloxburg Content / fridge list.",
+    "2) Call create_menu_items_batch (or update_menu_item for restocks) with those foods.",
     "3) Do NOT call list_menu_items, list_discounts, or list_orders unless the chef asked to list.",
+    "",
+    "MENU EDITS: update_menu_item may change name, description, stock, category, is_active, image_url freely.",
+    "NEVER change price_bs — prices are set only on the staff Menu page.",
     "",
     "ITEM NAMES = text on the food rows in the picture (e.g. Pancakes, Taco, Boba Tea).",
     "FORBIDDEN names (tools reject them): the chef's sentence, 'these menu items in the picture', 'add these', 'from the photo'.",
     "",
     "If chef asked to remove/delete all first: delete_all_my_menu_items, then create_menu_items_batch.",
-    "Price is always B$0. category: seasonal for holiday foods, else non_seasonal. is_active: true.",
-    "If text is unreadable: one honest line. NEVER invent a fake item. NEVER claim Added without a successful create tool.",
+    "New items: price always B$0. category: seasonal for holiday foods, else non_seasonal. is_active: true.",
+    "If text is unreadable after a genuine attempt: one honest line. NEVER invent foods. NEVER claim Added without a successful tool.",
   ].join("\n");
 }
 
@@ -2968,16 +2991,17 @@ async function transcribeMenuFromImages(args: {
     "HARD RULES:",
     "1) name = letters you can LITERALLY see on a food row next to a blue Take button.",
     "2) stock = the number on that same row. Use 0 only if the number is unreadable.",
-    "3) If the image is blurry, dark, wrong window, Skippe UI, browser, Discord, or has no Content+Take rows → return {\"items\":[]}.",
-    "4) NEVER invent, guess, or recall popular Bloxburg foods from memory.",
-    "5) NEVER output a generic starter list (burgers, milkshakes, boba, hot chocolate, flour, eggs, butter, sugar, milk, orange juice) unless those exact words are visible on screen.",
-    "6) Empty is always better than a made-up menu. Chefs hate hallucinated items.",
-    "7) No markdown, no prose, no apology — JSON only.",
+    "3) DARK / DIM / LOW-CONTRAST frames: still extract every row you can partially read. Boost attention on faint white text.",
+    "4) Return {\"items\":[]} only for wrong window (Skippe UI, browser, Discord, IDE) or zero legible food rows — not merely because it is dark.",
+    "5) NEVER invent, guess, or recall popular Bloxburg foods from memory.",
+    "6) NEVER output a generic starter list unless those exact words are visible on screen.",
+    "7) Empty is better than a made-up menu. No markdown, no prose — JSON only.",
   ].join("\n");
 
   const content: Array<Record<string, unknown>> = [];
-  for (const image of visionImages.slice(0, 9)) {
+  for (const image of visionImages.slice(0, 12)) {
     const url = (image.data_url || "").trim();
+    // Client already expands video → JPEG frames; skip raw video blobs
     if (url.startsWith("data:video/")) continue;
     content.push({
       type: "image_url",
