@@ -468,17 +468,7 @@ export const deleteMenuItem = createServerFn({ method: "POST" })
 export const listOrders = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertStaff(context);
-
-    // Prefer service-role (bypasses RLS). Fall back to the signed-in client
-    // if the service key is missing — SQL policies must allow staff SELECT.
-    let db: typeof context.supabase = context.supabase;
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      db = supabaseAdmin as typeof context.supabase;
-    } catch {
-      /* keep authenticated client */
-    }
+    const { isAdmin } = await assertStaff(context);
 
     // Cap for chef UI: at most 40 recent orders. Delivered/cancelled older
     // than 7 days are dropped from the chef queue (customers still see them
@@ -492,19 +482,66 @@ export const listOrders = createServerFn({ method: "GET" })
     const orderColsSafe =
       "id,discord_username,note,subtotal_bs,discount_bs,total_bs,status,created_at";
 
+    // Chefs only see orders assigned to them (fulfillment) or with their items.
+    // Admins see the full kitchen queue.
+    let allowedOrderIds: Set<string> | null = null;
+    if (!isAdmin) {
+      allowedOrderIds = new Set<string>();
+      const fulMine = await context.supabase
+        .from("order_fulfillments" as any)
+        .select("order_id")
+        .eq("chef_id", context.userId)
+        .order("created_at", { ascending: false })
+        .limit(120);
+      if (!fulMine.error && fulMine.data) {
+        for (const row of fulMine.data as Array<{ order_id: string }>) {
+          if (row.order_id) allowedOrderIds.add(row.order_id);
+        }
+      }
+      const itemsMine = await context.supabase
+        .from("order_items" as any)
+        .select("order_id")
+        .eq("owner_id", context.userId)
+        .limit(200);
+      if (!itemsMine.error && itemsMine.data) {
+        for (const row of itemsMine.data as Array<{ order_id: string }>) {
+          if (row.order_id) allowedOrderIds.add(row.order_id);
+        }
+      }
+      if (allowedOrderIds.size === 0) {
+        return {
+          orders: [],
+          items: [],
+          fulfillments: [],
+          capped: false,
+          active_count: 0,
+          shown_count: 0,
+          max_shown: 40,
+        };
+      }
+    }
+
     let rawOrders: unknown[] | null = null;
     {
-      const first = await db
+      let firstQ = context.supabase
         .from("orders" as any)
         .select(orderColsFull)
         .order("created_at", { ascending: false })
         .limit(80);
+      if (allowedOrderIds) {
+        firstQ = firstQ.in("id", Array.from(allowedOrderIds));
+      }
+      const first = await firstQ;
       if (first.error) {
-        const second = await db
+        let secondQ = context.supabase
           .from("orders" as any)
           .select(orderColsSafe)
           .order("created_at", { ascending: false })
           .limit(80);
+        if (allowedOrderIds) {
+          secondQ = secondQ.in("id", Array.from(allowedOrderIds));
+        }
+        const second = await secondQ;
         if (second.error) throw new Error(second.error.message);
         rawOrders = second.data as unknown[] | null;
       } else {
@@ -539,7 +576,7 @@ export const listOrders = createServerFn({ method: "GET" })
     const ids = orders.map((o) => o.id);
 
     const { data: items } = ids.length
-      ? await db
+      ? await context.supabase
           .from("order_items" as any)
           .select(
             "id,order_id,menu_item_id,item_name,quantity,unit_price_bs,subtotal_bs,discount_bs,discount_name,owner_id",
@@ -552,15 +589,23 @@ export const listOrders = createServerFn({ method: "GET" })
         "id,order_id,chef_id,status,subtotal_bs,discount_bs,total_bs,priority_tier,priority_label,priority_color,priority_price_bs,cancel_reason,created_at,updated_at";
       const fulColsSafe =
         "id,order_id,chef_id,status,subtotal_bs,discount_bs,total_bs,created_at,updated_at";
-      const ful1 = await db
+      let ful1Q = context.supabase
         .from("order_fulfillments" as any)
         .select(fulColsFull)
         .in("order_id", ids);
+      if (!isAdmin) {
+        ful1Q = ful1Q.eq("chef_id", context.userId);
+      }
+      const ful1 = await ful1Q;
       if (ful1.error) {
-        const ful2 = await db
+        let ful2Q = context.supabase
           .from("order_fulfillments" as any)
           .select(fulColsSafe)
           .in("order_id", ids);
+        if (!isAdmin) {
+          ful2Q = ful2Q.eq("chef_id", context.userId);
+        }
+        const ful2 = await ful2Q;
         if (ful2.error) throw new Error(ful2.error.message);
         fulfillments = ful2.data as unknown[] | null;
       } else {
@@ -570,16 +615,25 @@ export const listOrders = createServerFn({ method: "GET" })
 
     const activeCount = filtered.filter((o) => !HISTORY.has(o.status)).length;
 
+    // Chefs never see other kitchens' line items in the payload
+    let safeItems = (items ?? []) as unknown as Array<{
+      order_id: string;
+      item_name: string;
+      quantity: number;
+      unit_price_bs: number;
+      subtotal_bs: number;
+      discount_bs: number;
+      owner_id?: string | null;
+    }>;
+    if (!isAdmin) {
+      safeItems = safeItems.filter(
+        (it) => !it.owner_id || it.owner_id === context.userId,
+      );
+    }
+
     return {
       orders,
-      items: (items ?? []) as unknown as Array<{
-        order_id: string;
-        item_name: string;
-        quantity: number;
-        unit_price_bs: number;
-        subtotal_bs: number;
-        discount_bs: number;
-      }>,
+      items: safeItems,
       fulfillments: (fulfillments ?? []) as unknown as Array<{
         id: string;
         order_id: string;
@@ -614,14 +668,7 @@ export const updateOrderStatus = createServerFn({ method: "POST" })
   )
   .handler(async ({ context, data }) => {
     await assertStaff(context);
-    let db: typeof context.supabase = context.supabase;
-    try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      db = supabaseAdmin as typeof context.supabase;
-    } catch {
-      /* keep authenticated client */
-    }
-    const { error } = await db
+    const { error } = await context.supabase
       .from("order_fulfillments" as any)
       .update({ status: data.status })
       .eq("id", data.id);
