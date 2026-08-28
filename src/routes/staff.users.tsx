@@ -3,8 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { KeyRound, ShieldCheck, UserPlus } from "lucide-react";
-import { listStaffUsers, setUserRole, createStaffUser, resetStaffPassword } from "@/lib/menu.functions";
+import { KeyRound, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import {
+  listStaffUsers,
+  setUserRole,
+  createStaffUser,
+  resetStaffPassword,
+  deleteStaffUser,
+} from "@/lib/menu.functions";
 import { normalizeStaffUsername } from "@/lib/staff-username";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +38,7 @@ function UsersPage() {
   const roleFn = useServerFn(setUserRole);
   const createFn = useServerFn(createStaffUser);
   const resetFn = useServerFn(resetStaffPassword);
+  const deleteFn = useServerFn(deleteStaffUser);
   const qc = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["staff-users"],
@@ -71,6 +78,16 @@ function UsersPage() {
       setNewPassword("");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Could not change the password"),
+  });
+
+  const remove = useMutation({
+    mutationFn: (user_id: string) => deleteFn({ data: { user_id } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-users"] });
+      toast.success("Staff account deleted");
+    },
+    onError: (e) =>
+      toast.error(e instanceof Error ? e.message : "Could not delete the account"),
   });
 
   const users = data ?? [];
@@ -157,6 +174,20 @@ function UsersPage() {
                 className="rounded-full text-ink hover:bg-petal"
               >
                 <KeyRound className="mr-1.5 h-4 w-4" /> Password
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={remove.isPending}
+                onClick={() => {
+                  const ok = window.confirm(
+                    `Permanently delete "${u.username}"?\n\nThis removes their login, roles, and staff profile. Menu items they own stay in the database but they cannot sign in again.`,
+                  );
+                  if (!ok) return;
+                  remove.mutate(u.id);
+                }}
+                className="rounded-full text-cherry hover:bg-cherry/10"
+              >
+                <Trash2 className="mr-1.5 h-4 w-4" /> Delete
               </Button>
             </article>
           ))}
