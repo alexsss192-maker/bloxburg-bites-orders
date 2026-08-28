@@ -890,6 +890,30 @@ export const resetStaffPassword = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * Permanently delete a staff member: roles, profile, then Auth user.
+ * Admin only. Cannot delete yourself.
+ */
+export const deleteStaffUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ user_id: z.string().uuid() }).parse(d))
+  .handler(async ({ context, data }) => {
+    const { isAdmin } = await assertStaff(context);
+    if (!isAdmin) throw new Error("Admin only");
+    if (data.user_id === context.userId) {
+      throw new Error("You cannot delete your own account");
+    }
+
+    await context.supabase.from("user_roles" as any).delete().eq("user_id", data.user_id);
+    await context.supabase.from("staff_profiles" as any).delete().eq("user_id", data.user_id);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
+    if (error) throw new Error(error.message);
+
+    return { ok: true };
+  });
+
 // -------- low stock alerts (DB table removed — empty client API) --------
 
 export type StockAlert = {
