@@ -33,7 +33,11 @@ function UsersPage() {
   const createFn = useServerFn(createStaffUser);
   const resetFn = useServerFn(resetStaffPassword);
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["staff-users"], queryFn: () => listFn() });
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["staff-users"],
+    queryFn: () => listFn(),
+    retry: false,
+  });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ username: "", password: "", role: "chef" as "admin" | "chef" });
   const [resetting, setResetting] = useState<{ id: string; username: string } | null>(null);
@@ -71,6 +75,18 @@ function UsersPage() {
 
   const users = data ?? [];
   const signInPreview = normalizeStaffUsername(form.username);
+
+  if (isError) {
+    const msg = error instanceof Error ? error.message : "Admin only";
+    return (
+      <div className="mx-auto max-w-lg px-4 py-16 text-center">
+        <p className="font-display text-2xl">Admins only</p>
+        <p className="mt-2 text-sm text-ink/60">
+          Staff accounts are hidden from chefs. {msg}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>
