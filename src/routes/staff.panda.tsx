@@ -501,7 +501,7 @@ function loadSkippeChat(): Msg[] {
       thinking: typeof m.thinking === "string" ? m.thinking : undefined,
       runs: Array.isArray(m.runs) ? m.runs : undefined,
       images: Array.isArray(m.images)
-        ? m.images.filter((x): x is string => typeof x === "string").slice(0, 9)
+        ? m.images.filter((x): x is string => typeof x === "string").slice(0, 12)
         : undefined,
     }));
   } catch {
@@ -803,14 +803,52 @@ function PandaPage() {
     toast.success("Conversation cleared");
   }
 
+  /**
+   * Brighten + contrast boost for dark / low-light captures so OCR can still
+   * read Bloxburg Content rows. Applied after drawImage on the same canvas.
+   */
+  function enhanceCanvasForOcr(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+  ) {
+    try {
+      const img = ctx.getImageData(0, 0, w, h);
+      const d = img.data;
+      let sum = 0;
+      const step = 16;
+      for (let i = 0; i < d.length; i += 4 * step) {
+        sum += (d[i] + d[i + 1] + d[i + 2]) / 3;
+      }
+      const avg = sum / Math.max(1, Math.floor(d.length / (4 * step)));
+      if (avg >= 110) return;
+      const brightness = avg < 50 ? 48 : avg < 80 ? 32 : 18;
+      const contrast = avg < 50 ? 1.35 : avg < 80 ? 1.22 : 1.12;
+      const intercept = 128 * (1 - contrast);
+      for (let i = 0; i < d.length; i += 4) {
+        d[i] = Math.min(255, Math.max(0, d[i] * contrast + intercept + brightness));
+        d[i + 1] = Math.min(
+          255,
+          Math.max(0, d[i + 1] * contrast + intercept + brightness),
+        );
+        d[i + 2] = Math.min(
+          255,
+          Math.max(0, d[i + 2] * contrast + intercept + brightness),
+        );
+      }
+      ctx.putImageData(img, 0, 0);
+    } catch {
+      /* tainted canvas — keep original */
+    }
+  }
+
   /** Grab one frame from a <video> → JPEG data URL. Keep Content text OCR-readable. */
   function frameFromVideo(video: HTMLVideoElement): string | null {
     const w = video.videoWidth;
     const h = video.videoHeight;
     if (!w || !h) return null;
     const canvas = document.createElement("canvas");
-    // 1600px + higher JPEG quality — soft 1280/0.82 frames caused invent-not-read
-    const max = 1600;
+    const max = 1800;
     const scale = Math.min(1, max / Math.max(w, h));
     canvas.width = Math.max(1, Math.round(w * scale));
     canvas.height = Math.max(1, Math.round(h * scale));
@@ -819,11 +857,42 @@ function PandaPage() {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    enhanceCanvasForOcr(ctx, canvas.width, canvas.height);
     try {
-      return canvas.toDataURL("image/jpeg", 0.92);
+      return canvas.toDataURL("image/jpeg", 0.94);
     } catch {
       return null;
     }
+  }
+
+  /** Still image → OCR-ready JPEG (same enhance path as video frames). */
+  async function enhanceImageDataUrl(dataUrl: string): Promise<string> {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          const max = 1800;
+          const scale = Math.min(1, max / Math.max(img.width, img.height));
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(dataUrl);
+            return;
+          }
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          enhanceCanvasForOcr(ctx, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.94));
+        } catch {
+          resolve(dataUrl);
+        }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
   }
 
   /** Wait until video has real dimensions (or timeout). */
@@ -875,11 +944,15 @@ function PandaPage() {
         Number.isFinite(video.duration) && video.duration > 0
           ? video.duration
           : 1;
-      const count = Math.max(1, Math.min(maxFrames, 9));
+      // Dense sampling for longer fridge-scroll videos (up to 12 frames)
+      const count = Math.max(1, Math.min(maxFrames, 12));
       const out: string[] = [];
 
       for (let i = 0; i < count; i++) {
-        const t = Math.min(duration * ((i + 0.5) / count), Math.max(0, duration - 0.05));
+        const t = Math.min(
+          duration * ((i + 0.5) / count),
+          Math.max(0, duration - 0.05),
+        );
         video.currentTime = t;
         await new Promise<void>((resolve) => {
           const onSeeked = () => {
@@ -900,9 +973,10 @@ function PandaPage() {
 
   async function addFiles(files: FileList | null) {
     if (!files) return;
-    let remaining = 9 - images.length;
+    // Allow more frames so long fridge-scroll videos / multi-angle photos fit
+    let remaining = 12 - images.length;
     if (remaining <= 0) {
-      toast.error("Max 9 frames — remove some first");
+      toast.error("Max 12 frames — remove some first");
       return;
     }
 
@@ -940,13 +1014,14 @@ function PandaPage() {
           reader.onerror = reject;
           reader.readAsDataURL(file);
         });
-        next.push(dataUrl);
+        // Brighten dark photos before they hit Skippe
+        next.push(await enhanceImageDataUrl(dataUrl));
         remaining -= 1;
       }
     }
 
     if (next.length > 0) {
-      setImages((prev) => [...prev, ...next].slice(0, 9));
+      setImages((prev) => [...prev, ...next].slice(0, 12));
     }
   }
 
@@ -1030,7 +1105,7 @@ function PandaPage() {
           const dataUrl = frameFromVideo(video);
           if (!dataUrl) return prev;
           if (prev.length > 0 && prev[prev.length - 1] === dataUrl) return prev;
-          return [...prev, dataUrl].slice(0, 9);
+          return [...prev, dataUrl].slice(0, 12);
         });
       }, 400);
       return () => window.clearInterval(id);
@@ -1067,7 +1142,7 @@ function PandaPage() {
   async function captureScreenshot() {
     if (!requireVisionCapture()) return;
     if (images.length >= 9) {
-      toast.error("Max 9 frames — remove one first");
+      toast.error("Max 12 frames — remove one first");
       return;
     }
     if (!navigator.mediaDevices?.getDisplayMedia) {
@@ -1117,7 +1192,7 @@ function PandaPage() {
         );
         return;
       }
-      setImages((prev) => [...prev, dataUrl].slice(0, 9));
+      setImages((prev) => [...prev, dataUrl].slice(0, 12));
       toast.success("Screenshot added for Skippe");
     } catch (err) {
       if (err instanceof DOMException && err.name === "NotAllowedError") {
@@ -1241,7 +1316,7 @@ function PandaPage() {
 
   async function snapFromShare() {
     if (images.length >= 9) {
-      toast.error("Max 9 frames — remove one first");
+      toast.error("Max 12 frames — remove one first");
       return;
     }
     const video = shareVideoRef.current;
@@ -1263,7 +1338,7 @@ function PandaPage() {
       toast.error("Couldn’t snap — try Resume share on the game window");
       return;
     }
-    setImages((prev) => [...prev, dataUrl].slice(0, 9));
+    setImages((prev) => [...prev, dataUrl].slice(0, 12));
     toast.success("Frame snapped for Skippe");
   }
 
@@ -1977,7 +2052,7 @@ function PandaPage() {
               <>
                 📷 Screenshot / 🖥️ Fridge share / 🎬 Video frames work on{" "}
                 <b>Auto</b> or any <b>Gemini</b> model. Pick the{" "}
-                <b>Roblox/game window</b> (not this tab). Max 9 frames.
+                <b>Roblox/game window</b> (not this tab). Max 12 frames.
               </>
             ) : (
               <>
